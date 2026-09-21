@@ -1,0 +1,23 @@
+<svg width="100%" viewBox="0 0 680 460" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>Kumvwa Finance</title>
+  <defs>
+    <linearGradient id="disc" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2E63E6"/>
+      <stop offset="1" stop-color="#0D2C6E"/>
+    </linearGradient>
+    <linearGradient id="bars" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#1E8F55"/>
+      <stop offset="1" stop-color="#2ECC71"/>
+    </linearGradient>
+  </defs>
+  <circle cx="340" cy="150" r="108" fill="url(#disc)"/>
+  <g fill="url(#bars)">
+    <rect x="300" y="168" width="20" height="34" rx="5"/>
+    <rect x="330" y="148" width="20" height="54" rx="5"/>
+    <rect x="360" y="124" width="20" height="78" rx="5"/>
+  </g>
+  <path d="M296 174 L359 115" stroke="#FFFFFF" stroke-width="10" stroke-linecap="round" fill="none"/>
+  <polygon points="378,97 367.5,123.5 351,106.5" fill="#FFFFFF"/>
+  <text x="340" y="352" text-anchor="middle" font-family="Poppins, Arial, sans-serif" font-size="50" font-weight="600" fill="#0F1115">Kumvwa</text>
+  <text x="340" y="386" text-anchor="middle" font-family="Poppins, Arial, sans-serif" font-size="16" font-weight="600" letter-spacing="7" fill="#1A4FBF">FINANCE</text>
+</svg>

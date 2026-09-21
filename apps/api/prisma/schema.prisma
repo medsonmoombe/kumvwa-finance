@@ -1,0 +1,433 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── enums ─────────────────────────
+
+enum TenantStatus {
+  pending_verification
+  active
+  rejected
+  suspended
+}
+
+enum UserRole {
+  platform_admin
+  tenant_owner
+  tenant_staff
+  client
+}
+
+enum UserStatus {
+  active
+  disabled
+}
+
+enum ClientStatus {
+  active
+  blocked
+}
+
+enum OtpPurpose {
+  registration
+  login
+  password_reset
+  phone_change
+}
+
+enum OtpStatus {
+  pending
+  verified
+  expired
+  consumed
+}
+
+enum InviteStatus {
+  pending
+  completed
+  expired
+  revoked
+}
+
+enum LoanStatus {
+  active
+  overdue
+  cleared
+  defaulted
+}
+
+enum InstallmentStatus {
+  pending
+  paid
+  overdue
+}
+
+enum LoanRequestStatus {
+  pending
+  approved
+  rejected
+}
+
+enum RepaymentMethod {
+  cash
+  mobile_money
+  bank
+  in_app
+}
+
+enum NotificationType {
+  payment_due
+  payment_received
+  loan_overdue
+  verification
+  client_activity
+  loan_request
+  request_approved
+  request_rejected
+  system
+}
+
+enum SmsStatus {
+  queued
+  sent
+  failed
+}
+
+enum CreditCheckSource {
+  internal
+  transunion
+  experian
+}
+
+enum FileKind {
+  boz_certificate
+  kyc_document
+  other
+}
+
+// ───────────────────────── models ────────────────────────
+// Money rule: all amounts are BigInt MINOR units (ngwee).
+// Rate rule: Int basis points (15% = 1500).
+// NRC rule:  nrcHash = HMAC-SHA256 (unique, dedupe key),
+//            nrcEncrypted = AES-256-GCM (display, audited).
+
+model Tenant {
+  id        String       @id @default(cuid())
+  name      String
+  type      String // sacco | mfi | individual_lender | other
+  status    TenantStatus @default(pending_verification)
+  settings  Json         @default("{}")
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  users        User[]
+  files        File[]             @relation("TenantFiles")
+  bozFile      File?              @relation("BozCert")
+  products     LoanProduct[]
+  loans        Loan[]
+  clientLinks  ClientLenderLink[]
+  invites      Invite[]
+  requests     LoanRequest[]
+  repayments   Repayment[]
+  creditChecks CreditCheck[]
+}
+
+model User {
+  id           String     @id @default(cuid())
+  phone        String     @unique // E.164, e.g. +260971234567
+  passwordHash String
+  displayName  String
+  role         UserRole
+  status       UserStatus @default(active)
+  tenantId     String? // set for tenant_owner / tenant_staff
+  clientId     String?    @unique // set for client (links identity)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  tenant        Tenant?           @relation(fields: [tenantId], references: [id])
+  client        Client?           @relation(fields: [clientId], references: [id])
+  refreshTokens RefreshToken[]
+  notifications Notification[]
+  devices       DevicePushToken[]
+
+  @@index([tenantId])
+}
+
+model Client {
+  id           String       @id @default(cuid())
+  nrcHash      String       @unique // platform-wide dedupe key
+  nrcEncrypted String
+  firstName    String
+  lastName     String
+  phone        String       @unique
+  dob          DateTime?
+  address      String?
+  status       ClientStatus @default(active)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  user         User?
+  lenderLinks  ClientLenderLink[]
+  loans        Loan[]
+  requests     LoanRequest[]
+  creditChecks CreditCheck[]
+  invites      Invite[]
+}
+
+model ClientLenderLink {
+  id        String   @id @default(cuid())
+  clientId  String
+  tenantId  String
+  createdAt DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([clientId, tenantId])
+  @@index([tenantId])
+}
+
+model Invite {
+  id          String       @id @default(cuid())
+  tokenHash   String       @unique // never store raw invite token
+  tenantId    String
+  clientId    String? // linked when dedupe-match occurs
+  clientName  String
+  phone       String
+  status      InviteStatus @default(pending)
+  createdBy   String // userId of lender
+  expiresAt   DateTime
+  completedAt DateTime?
+  createdAt   DateTime     @default(now())
+
+  tenant Tenant  @relation(fields: [tenantId], references: [id])
+  client Client? @relation(fields: [clientId], references: [id])
+
+  @@index([tenantId, status])
+}
+
+model LoanProduct {
+  id        String   @id @default(cuid())
+  tenantId  String
+  name      String
+  rateBps   Int
+  minAmount BigInt // ngwee
+  maxAmount BigInt
+  minTerm   Int
+  maxTerm   Int
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  loans  Loan[]
+
+  @@index([tenantId])
+}
+
+model Loan {
+  id          String     @id @default(cuid())
+  tenantId    String
+  clientId    String
+  productId   String?
+  principal   BigInt
+  rateBps     Int
+  termCount   Int
+  totalDue    BigInt
+  paidAmount  BigInt     @default(0)
+  status      LoanStatus @default(active)
+  disbursedAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id])
+  client       Client        @relation(fields: [clientId], references: [id])
+  product      LoanProduct?  @relation(fields: [productId], references: [id])
+  installments Installment[]
+  repayments   Repayment[]
+  request      LoanRequest?  @relation("LoanFromRequest")
+
+  @@index([tenantId, status])
+  @@index([clientId])
+}
+
+model Installment {
+  id         String            @id @default(cuid())
+  loanId     String
+  seq        Int
+  dueDate    DateTime          @db.Date
+  amount     BigInt
+  paidAmount BigInt            @default(0)
+  status     InstallmentStatus @default(pending)
+  paidAt     DateTime?
+
+  loan Loan @relation(fields: [loanId], references: [id])
+
+  @@unique([loanId, seq])
+  @@index([status, dueDate]) // overdue-scan job hot path
+}
+
+model Repayment {
+  id             String          @id @default(cuid())
+  loanId         String
+  tenantId       String
+  amount         BigInt
+  method         RepaymentMethod
+  reference      String?
+  idempotencyKey String          @unique
+  recordedBy     String? // userId
+  createdAt      DateTime        @default(now())
+
+  loan   Loan   @relation(fields: [loanId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([loanId])
+  @@index([tenantId, createdAt])
+}
+
+model LoanRequest {
+  id         String            @id @default(cuid())
+  tenantId   String
+  clientId   String
+  amount     BigInt
+  termCount  Int
+  purpose    String
+  status     LoanRequestStatus @default(pending)
+  feedback   String?
+  reviewedBy String?
+  reviewedAt DateTime?
+  loanId     String?           @unique // set when approved
+  createdAt  DateTime          @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  client Client @relation(fields: [clientId], references: [id])
+  loan   Loan?  @relation("LoanFromRequest", fields: [loanId], references: [id])
+
+  @@index([tenantId, status])
+  @@index([clientId])
+}
+
+model CreditCheck {
+  id        String            @id @default(cuid())
+  clientId  String
+  tenantId  String // who requested the check
+  source    CreditCheckSource
+  score     Int?
+  band      String? // low | medium | high
+  payload   Json?
+  checkedAt DateTime          @default(now())
+
+  client Client @relation(fields: [clientId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([clientId, checkedAt])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  body      String
+  data      Json? // deep-link payload, e.g. { "loanId": "..." }
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+model DevicePushToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  platform  String // android | ios
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model SmsOutbox {
+  id          String    @id @default(cuid())
+  phone       String
+  body        String
+  purpose     String // otp | reminder | notification
+  status      SmsStatus @default(queued)
+  provider    String?
+  providerRef String?
+  error       String?
+  attempts    Int       @default(0)
+  sentAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([status, createdAt])
+}
+
+model OtpCode {
+  id         String     @id @default(cuid())
+  phone      String
+  purpose    OtpPurpose
+  codeHash   String // OTP is hashed like a password — never plaintext
+  status     OtpStatus  @default(pending)
+  attempts   Int        @default(0)
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@index([phone, purpose, status])
+}
+
+model RefreshToken {
+  id          String    @id @default(cuid())
+  userId      String
+  tokenHash   String    @unique
+  deviceId    String?
+  ip          String?
+  rotatedFrom String?   @unique // rotation family chain → reuse detection
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String? // loose ref (no FK) — log survives user deletion
+  action    String // auth.login | loan.approve | pii.read | ...
+  entity    String?
+  entityId  String?
+  tenantId  String?
+  diff      Json?
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([actorId, createdAt])
+  @@index([tenantId, createdAt])
+}
+
+model File {
+  id         String    @id @default(cuid())
+  tenantId   String?
+  kind       FileKind
+  storageKey String    @unique
+  mime       String
+  size       Int
+  checksum   String
+  scannedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  tenant      Tenant? @relation("TenantFiles", fields: [tenantId], references: [id])
+  bozCertOf   Tenant? @relation("BozCert", fields: [bozCertOfId], references: [id])
+  bozCertOfId String? @unique
+}
+

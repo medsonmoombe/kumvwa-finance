@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kumvwa
+          POSTGRES_PASSWORD: kumvwa_dev
+          POSTGRES_DB: kumvwa
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U kumvwa"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://kumvwa:kumvwa_dev@localhost:5432/kumvwa?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-access-ci-access-ci-access-ci-access
+      JWT_REFRESH_SECRET: ci-refresh-ci-refresh-ci-refresh-ci-refresh
+      NRC_HMAC_KEY: ci-hmac-ci-hmac-ci-hmac-ci-hmac-ci-hmac
+      FIELD_ENCRYPTION_KEY: ci-enc-ci-enc-ci-enc-ci-enc-ci-enc
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: .
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm prisma migrate deploy
+      - run: pnpm test
+      - run: pnpm test:e2e
+      - run: pnpm build
