@@ -8,6 +8,7 @@ import {
 import Redis from 'ioredis';
 
 import { PrismaService } from '../../infra/prisma.module';
+import { Public } from '../../common/guards/public.decorator';
 import { REDIS } from '../../infra/redis.module';
 
 @Controller('health')
@@ -17,11 +18,13 @@ export class HealthController {
     @Inject(REDIS) private readonly redis: Redis,
   ) {}
 
+  @Public()
   @Get()
   liveness(): { status: string } {
     return { status: 'ok' };
   }
 
+  @Public()
   @Get('ready')
   async readiness(): Promise<{ status: string; checks: Record<string, string> }> {
     const checks: Record<string, string> = {};

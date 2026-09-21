@@ -386,6 +386,7 @@ model RefreshToken {
   id          String    @id @default(cuid())
   userId      String
   tokenHash   String    @unique
+  sessionId   String // rotation family — all tokens from one login share it
   deviceId    String?
   ip          String?
   rotatedFrom String?   @unique // rotation family chain → reuse detection
@@ -396,6 +397,7 @@ model RefreshToken {
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId])
+  @@index([sessionId])
 }
 
 model AuditLog {
