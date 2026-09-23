@@ -5,3 +5,7 @@ coverage/
 *.log
 *.tsbuildinfo
 .DS_Store
+
+# Local postgres data dirs
+.localpg/
+.localpg13/
