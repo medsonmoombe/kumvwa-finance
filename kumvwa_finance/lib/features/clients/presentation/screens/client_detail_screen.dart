@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:kumvwa_finance/core/domain/loan_status.dart';
 import 'package:kumvwa_finance/core/theme/app_colors.dart';
@@ -173,63 +174,75 @@ class _Body extends StatelessWidget {
                     for (final loan in client.loans)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 8),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 31,
-                              height: 31,
-                              decoration: BoxDecoration(
-                                color: loan.status == LoanStatus.overdue
-                                    ? AppColors.red50
-                                    : AppColors.blue50,
-                                borderRadius: BorderRadius.circular(10),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: () =>
+                              context.push('/loans/${loan.id}'),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 31,
+                                height: 31,
+                                decoration: BoxDecoration(
+                                  color: loan.status == LoanStatus.overdue
+                                      ? AppColors.red50
+                                      : AppColors.blue50,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(
+                                  loan.status == LoanStatus.cleared
+                                      ? Icons.check
+                                      : Icons.description_outlined,
+                                  size: 15,
+                                  color: loan.status == LoanStatus.overdue
+                                      ? AppColors.red
+                                      : AppColors.blue600,
+                                ),
                               ),
-                              child: Icon(
-                                loan.status == LoanStatus.cleared
-                                    ? Icons.check
-                                    : Icons.description_outlined,
-                                size: 15,
-                                color: loan.status == LoanStatus.overdue
-                                    ? AppColors.red
-                                    : AppColors.blue600,
-                              ),
-                            ),
-                            const SizedBox(width: 11),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    loan.id,
-                                    style: AppText.body.copyWith(
-                                      fontWeight: FontWeight.w700,
+                              const SizedBox(width: 11),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      loan.id,
+                                      style: AppText.body.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        decoration: TextDecoration.underline,
+                                        decorationColor: AppColors.blue600,
+                                        color: AppColors.blue600,
+                                      ),
                                     ),
-                                  ),
-                                  Text(
-                                    'Due ${Fmt.date(loan.dueDate)}',
-                                    style: AppText.subText,
-                                  ),
-                                ],
+                                    Text(
+                                      'Due ${Fmt.date(loan.dueDate)} '
+                                      '· tap for details',
+                                      style: AppText.subText.copyWith(
+                                        fontSize: 9.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            AmountText(loan.amount),
-                            const SizedBox(width: 8),
-                            switch (loan.status) {
-                              LoanStatus.active => const AppBadge(
-                                'Active',
-                                variant: BadgeVariant.green,
-                              ),
-                              LoanStatus.overdue => const AppBadge(
-                                'Overdue',
-                                variant: BadgeVariant.red,
-                              ),
-                              LoanStatus.cleared => const AppBadge(
-                                'Cleared',
-                                variant: BadgeVariant.blue,
-                              ),
-                            },
-                          ],
+                              const SizedBox(width: 8),
+                              AmountText(loan.amount),
+                              const SizedBox(width: 8),
+                              switch (loan.status) {
+                                LoanStatus.active => const AppBadge(
+                                  'Active',
+                                  variant: BadgeVariant.green,
+                                ),
+                                LoanStatus.overdue => const AppBadge(
+                                  'Overdue',
+                                  variant: BadgeVariant.red,
+                                ),
+                                LoanStatus.cleared => const AppBadge(
+                                  'Cleared',
+                                  variant: BadgeVariant.blue,
+                                ),
+                              },
+                            ],
+                          ),
                         ),
                       ),
                   ],

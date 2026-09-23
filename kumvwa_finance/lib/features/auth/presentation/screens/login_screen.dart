@@ -146,9 +146,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       style: TextStyle(fontSize: 13, color: AppColors.muted),
                     ),
                     GestureDetector(
-                      onTap: () => context.go('/onboarding'),
+                      onTap: () => context.go('/register/client'),
                       child: const Text(
-                        'Create an account',
+                        'Enter an invite code',
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
@@ -158,8 +158,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                   ],
                 ),
-                // Dev-only banner: absent from release builds entirely, so
-                // the mock credentials never ship.
+                // Dev-only banner: absent from release builds entirely.
                 if (Env.isDev) ...[
                   const SizedBox(height: 24),
                   Container(
@@ -168,12 +167,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       color: AppColors.blue50,
                       borderRadius: BorderRadius.circular(11),
                     ),
-                    child: const Text(
-                      'Dev build — mock credentials\n'
-                      'Lender: 0971234567 · kumvwa123\n'
-                      'Client: 0971112233 · kumvwa123',
+                    child: Text(
+                      Env.useMocks
+                          ? 'Dev build — mock credentials\n'
+                              'Lender: 0971234567 · kumvwa123\n'
+                              'Client: 0971112233 · kumvwa123'
+                          // Live mode: accounts come from real invites, so
+                          // no credentials are printed here.
+                          : 'Connected to Kumvwa API\n'
+                              '${Env.apiBaseUrl}',
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 11,
                         color: AppColors.blue600,
                         fontWeight: FontWeight.w600,

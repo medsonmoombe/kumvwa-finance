@@ -196,6 +196,8 @@ void main() {
       expect(restored.displayName, session.displayName);
       expect(restored.phone, session.phone);
       expect(restored.role, session.role);
+      expect(restored.profileComplete, session.profileComplete);
+      expect(restored.profilePercent, session.profilePercent);
     });
 
     test('serialises every field', () {
@@ -205,6 +207,8 @@ void main() {
         'displayName': 'Chilenje Community SACCO',
         'phone': '0971234567',
         'role': 'business',
+        'profileComplete': true,
+        'profilePercent': 100,
       });
     });
   });

@@ -31,7 +31,8 @@ class Validators {
   static String? password(String? value) {
     final v = value ?? '';
     if (v.isEmpty) return 'Password is required';
-    if (v.length < 6) return 'Must be at least 6 characters';
+    // Matches the API contract (auth DTOs enforce min 8).
+    if (v.length < 8) return 'Must be at least 8 characters';
     return null;
   }
 

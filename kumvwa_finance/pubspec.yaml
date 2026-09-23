@@ -23,6 +23,8 @@ dependencies:
   package_info_plus: ^10.2.1
   share_plus: ^13.3.0
   shared_preferences: ^2.5.5
+  url_launcher: ^6.3.2
+  uuid: ^4.6.0
 
 dev_dependencies:
   flutter_test:

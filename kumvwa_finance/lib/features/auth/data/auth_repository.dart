@@ -1,5 +1,10 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:kumvwa_finance/core/config/env.dart';
+import 'package:kumvwa_finance/core/network/api_client.dart';
+import 'package:kumvwa_finance/core/network/api_exception.dart';
+import 'package:kumvwa_finance/core/network/api_parse.dart';
 import 'package:kumvwa_finance/core/storage/token_store.dart';
 import 'package:kumvwa_finance/features/auth/domain/user_session.dart';
 
@@ -47,6 +52,10 @@ class MockAuthRepository implements AuthRepository {
         displayName: 'Mwansa Bwalya',
         phone: '0971112233',
         role: 'client',
+        // Matches MockClientsRepository.getMe: the invite only minted the
+        // account, so the KYC wizard greets a freshly logged-in borrower.
+        profileComplete: false,
+        profilePercent: 40,
       ),
     ),
   };
@@ -97,10 +106,93 @@ class MockAuthRepository implements AuthRepository {
   Future<void> logout() => _tokenStore.clear();
 }
 
+// ---------- API-backed implementation ----------
+
+/// Real backend auth via `/auth/login`, `/auth/refresh`, `/auth/me` and
+/// `/auth/logout`. Tokens live in [ApiClient]; [TokenStore] persists them.
+class ApiAuthRepository implements AuthRepository {
+  ApiAuthRepository({required this.client, required this.tokenStore});
+
+  final ApiClient client;
+  final TokenStore tokenStore;
+
+  @override
+  Future<UserSession?> restoreSession() async {
+    final access = await client.restoreTokens();
+    if (access == null) return null;
+
+    // Revalidate against the server: upgrades a stale refresh token and
+    // keeps displayName/role fresh. The 401 path already cleared the
+    // session via the interceptor, so a failure simply means logged out.
+    try {
+      final res = await client.getA('/auth/me');
+      final user = res.data as Map<String, dynamic>;
+      final session = UserSession(
+        token: client.accessToken ?? access,
+        userId: user['userId'] as String? ?? '',
+        displayName: user['displayName'] as String? ?? '',
+        phone: user['phone'] as String? ?? '',
+        role: toAppRole(user['role'] as String? ?? 'client'),
+        refreshToken: client.refreshToken,
+        profileComplete: user['profileComplete'] as bool? ?? true,
+        profilePercent: user['profilePercent'] as int? ?? 100,
+      );
+      await tokenStore.saveSession(session);
+      return session;
+    } catch (e) {
+      if (e is DioException && e.response?.statusCode == 401) return null;
+      // Offline / server down — keep the cached session rather than
+      // force-logging-out someone who can't reach us.
+      return tokenStore.readSession();
+    }
+  }
+
+  @override
+  Future<UserSession> login({
+    required String phone,
+    required String password,
+  }) async {
+    try {
+      final res = await client.postPublic('/auth/login', data: {
+        'phone': toE164(phone.trim()),
+        'password': password,
+      });
+      return await client.adoptSession(res.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        throw const AuthException('Invalid phone number or password');
+      }
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  @override
+  Future<void> logout() async {
+    try {
+      final refresh = client.refreshToken;
+      if (refresh != null) {
+        await client.postA(
+          '/auth/logout',
+          data: {'refreshToken': refresh},
+        );
+      }
+    } catch (_) {
+      // Server unreachable — local sign-out is still the honest outcome.
+    }
+    client.clearTokens();
+    await tokenStore.clear();
+  }
+}
+
 // ---------- DI ----------
 
 final tokenStoreProvider = Provider<TokenStore>((ref) => TokenStore());
 
 final authRepositoryProvider = Provider<AuthRepository>(
-  (ref) => MockAuthRepository(ref.watch(tokenStoreProvider)),
+  (ref) => Env.useMocks
+      ? MockAuthRepository(ref.watch(tokenStoreProvider))
+      : ApiAuthRepository(
+          client: ref.watch(apiClientProvider),
+          tokenStore: ref.watch(tokenStoreProvider),
+        ),
 );

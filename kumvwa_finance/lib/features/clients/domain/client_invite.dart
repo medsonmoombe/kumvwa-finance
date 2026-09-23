@@ -1,18 +1,29 @@
-/// An invite sent by a business to a borrower, letting them complete
-/// their own profile via a link.
+/// An invite minted by a lender, claimed in the mobile app by typing the
+/// short code (e.g. `KMV-7XQ4P`).
 class ClientInvite {
   ClientInvite({
-    required this.token,
+    required this.code,
     required this.businessName,
     required this.clientName,
     required this.phone,
+    this.phoneMasked,
+    this.link,
     this.completed = false,
   });
 
-  final String token;
+  /// Short human-typeable code (`KMV-XXXXX`).
+  final String code;
   final String businessName;
   final String clientName;
+
+  /// Lender-side views get the full phone; the public lookup only ever
+  /// receives a masked form (`••••• 1353`).
   final String phone;
+  final String? phoneMasked;
+
+  /// App download page — paired with [code] so the share card carries both
+  /// "go get the app" and "redeem this in-app".
+  final String? link;
   bool completed;
 }
 

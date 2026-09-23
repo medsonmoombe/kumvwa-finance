@@ -1,5 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:kumvwa_finance/core/config/env.dart';
+import 'package:kumvwa_finance/core/network/api_client.dart';
+import 'package:kumvwa_finance/core/network/api_parse.dart';
 import 'package:kumvwa_finance/features/reports/domain/report_data.dart';
 
 abstract class ReportsRepository {
@@ -32,8 +35,67 @@ class MockReportsRepository implements ReportsRepository {
   }
 }
 
+// ---------- API-backed implementation ----------
+
+/// Real reports from `/reports/summary` + `/reports/monthly`.
+class ApiReportsRepository implements ReportsRepository {
+  ApiReportsRepository(this._client);
+
+  final ApiClient _client;
+
+  @override
+  Future<ReportData> load() async {
+    final results = await Future.wait([
+      _client.getA('/reports/summary'),
+      _client.getA('/reports/monthly'),
+    ]);
+    final summary = results[0].data as Map<String, dynamic>;
+    final counts = summary['counts'] as Map<String, dynamic>? ?? const {};
+    final monthly = (results[1].data as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+
+    final months = <MonthlyFigure>[];
+    var windowDisbursed = 0.0;
+    var windowCollected = 0.0;
+    for (final item in monthly) {
+      final disbursed = minorToKwacha(item['disbursedMinor']);
+      final collected = minorToKwacha(item['collectedMinor']);
+      windowDisbursed += disbursed;
+      windowCollected += collected;
+      months.add(
+        MonthlyFigure(
+          label: monthShortLabel(item['month'] as String? ?? ''),
+          disbursed: disbursed,
+          collected: collected,
+        ),
+      );
+    }
+
+    return ReportData(
+      totalDisbursed: _numOf(summary['disbursed']),
+      totalCollected: windowCollected,
+      outstanding: _numOf(summary['outstanding']),
+      repaymentRatePct: windowDisbursed > 0
+          ? (windowCollected / windowDisbursed) * 100
+          : 0,
+      months: months,
+      activeCount: _intOf(counts['active']),
+      overdueCount: _intOf(counts['overdue']),
+      clearedCount: _intOf(counts['cleared']),
+    );
+  }
+
+  static double _numOf(dynamic value) => value is num ? value.toDouble() : 0;
+  static int _intOf(dynamic value) => value is num ? value.toInt() : 0;
+}
+
+// ---------- DI ----------
+
 final reportsRepositoryProvider = Provider<ReportsRepository>(
-  (ref) => MockReportsRepository(),
+  (ref) => Env.useMocks
+      ? MockReportsRepository()
+      : ApiReportsRepository(ref.watch(apiClientProvider)),
 );
 
 final reportDataProvider = FutureProvider<ReportData>(

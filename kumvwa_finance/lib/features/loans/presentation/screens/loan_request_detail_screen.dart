@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:dio/dio.dart';
 
 import 'package:kumvwa_finance/core/domain/loan_status.dart';
+import 'package:kumvwa_finance/core/network/api_exception.dart';
 import 'package:kumvwa_finance/core/theme/app_colors.dart';
 import 'package:kumvwa_finance/core/utils/format.dart';
 import 'package:kumvwa_finance/core/widgets/app_badge.dart';
 import 'package:kumvwa_finance/core/widgets/app_loader.dart';
 import 'package:kumvwa_finance/core/widgets/skeleton.dart';
+import 'package:kumvwa_finance/features/auth/presentation/auth_controller.dart';
 import 'package:kumvwa_finance/features/loans/data/loan_requests_repository.dart';
 import 'package:kumvwa_finance/features/loans/data/loans_repository.dart';
 import 'package:kumvwa_finance/features/loans/domain/loan.dart';
@@ -67,6 +70,19 @@ class _LoanRequestDetailScreenState
           );
         }
         if (mounted) context.pop();
+      } catch (e) {
+        if (!mounted) return;
+        final raw = e
+            .toString()
+            .replaceFirst(RegExp(r'^.*Exception: '), '')
+            .trim();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              raw.isEmpty ? 'Action failed. Please try again.' : raw,
+            ),
+          ),
+        );
       } finally {
         if (mounted) setState(() => _busy = false);
       }
@@ -232,11 +248,50 @@ class _LoanRequestDetailScreenState
               ],
             ),
           ),
-          error: (_, _) => const Center(child: Text('Request not found')),
+          error: (err, _) => Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error_outline,
+                      size: 40, color: AppColors.muted),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Could not load this request',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _friendlyError(err),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 12, color: AppColors.muted),
+                  ),
+                  const SizedBox(height: 14),
+                  OutlinedButton.icon(
+                    onPressed: () => ref.invalidate(
+                      loanRequestByIdProvider(widget.requestId),
+                    ),
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          ),
           data: (r) => Column(
             children: [
               Expanded(child: _Content(request: r)),
-              if (r.status == LoanRequestStatus.pending)
+              // Lender-only review controls. When a borrower opens their own
+              // application they can read it — the decision belongs to the lender.
+              if (r.status == LoanRequestStatus.pending &&
+                  ref.watch(authControllerProvider).session?.role ==
+                      'business')
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
                   child: Row(
@@ -277,6 +332,19 @@ class _LoanRequestDetailScreenState
       ),
     );
   }
+}
+
+String _friendlyError(Object err) {
+  final message = err is ApiException
+      ? err.message
+      : err is DioException
+          ? err.message
+          : null;
+  if (message == null || message.isEmpty) return 'Please try again.';
+  if (message.toLowerCase().contains('not found')) {
+    return 'This request no longer exists.';
+  }
+  return message;
 }
 
 enum _Action { approve, reject }
@@ -430,7 +498,7 @@ class _Content extends ConsumerWidget {
               ),
               const SizedBox(height: 3),
               const Text(
-                'Internal platform data · bureau scoring runs server-side',
+                'Internal platform data · bureau scoring',
                 style: TextStyle(fontSize: 10, color: AppColors.muted),
               ),
               const SizedBox(height: 10),

@@ -13,12 +13,15 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/guards/public.decorator';
 import { AuthService } from './auth.service';
 import {
+  ChangePasswordDto,
+  ForgotPasswordDto,
   LoginDto,
   LogoutDto,
   OtpRequestDto,
   OtpVerifyDto,
   RefreshDto,
   RegisterTenantDto,
+  ResetPasswordDto,
 } from './dto/auth.dto';
 
 @Controller('auth')
@@ -72,5 +75,30 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: { sub: string }) {
     return this.auth.me(user.sub);
+  }
+
+  @Public()
+  @Post('password/forgot')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.auth.forgotPassword(dto);
+  }
+
+  @Public()
+  @Post('password/reset')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  resetPassword(@Body() dto: ResetPasswordDto, @Req() req: Request) {
+    return this.auth.resetPassword(dto, req);
+  }
+
+  @Post('password/change')
+  changePassword(
+    @Body() dto: ChangePasswordDto,
+    @Req() req: Request,
+    @CurrentUser() user: { sub: string },
+  ) {
+    return this.auth.changePassword(dto, user.sub, req);
   }
 }

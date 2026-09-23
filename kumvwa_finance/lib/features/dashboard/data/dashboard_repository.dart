@@ -1,5 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:kumvwa_finance/core/config/env.dart';
+import 'package:kumvwa_finance/core/network/api_client.dart';
+import 'package:kumvwa_finance/core/network/api_parse.dart';
 import 'package:kumvwa_finance/features/dashboard/domain/dashboard_data.dart';
 
 abstract class DashboardRepository {
@@ -49,8 +52,79 @@ class MockDashboardRepository implements DashboardRepository {
   }
 }
 
+// ---------- API-backed implementation ----------
+
+/// Real dashboard from `/reports/summary` + `/reports/monthly`.
+class ApiDashboardRepository implements DashboardRepository {
+  ApiDashboardRepository(this._client);
+
+  final ApiClient _client;
+
+  @override
+  Future<DashboardData> load() async {
+    final results = await Future.wait([
+      _client.getA('/reports/summary'),
+      _client.getA('/reports/monthly'),
+    ]);
+    final summary = results[0].data as Map<String, dynamic>;
+    final counts = summary['counts'] as Map<String, dynamic>? ?? const {};
+    final monthly = (results[1].data as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .toList();
+
+    final activeLoans = _intOf(counts['active']);
+    final overdue = _intOf(counts['overdue']);
+    final cleared = _intOf(counts['cleared']);
+
+    final recent = <RecentLoan>[];
+    for (final item
+        in (summary['recentLoans'] as List<dynamic>? ?? const [])
+            .whereType<Map<String, dynamic>>()) {
+      recent.add(
+        RecentLoan(
+          id: item['id'] as String? ?? '',
+          clientName: item['clientName'] as String? ?? '',
+          amount: _numOf(item['principal']),
+          dueDate: isoDate(item['createdAt']) ?? DateTime.now(),
+          status: toLoanStatus(item['status'] as String?),
+        ),
+      );
+    }
+
+    // month-over-month disbursement trend — the closest real signal to the
+    // mock's "portfolio growth" figure.
+    var trend = 0.0;
+    if (monthly.length >= 2) {
+      final last = minorToKwacha(monthly.last['disbursedMinor']);
+      final prev = minorToKwacha(monthly[monthly.length - 2]['disbursedMinor']);
+      if (prev > 0) trend = ((last - prev) / prev) * 100;
+    }
+
+    return DashboardData(
+      totalPortfolio: _numOf(summary['outstanding']),
+      trendPercent: trend,
+      activeLoans: activeLoans,
+      // The API reports monthly, not weekly — dueThisMonth is the closest
+      // available figure for the "upcoming collections" card.
+      dueThisWeek: _numOf(summary['dueThisMonth']),
+      overduePercent: activeLoans > 0 ? overdue * 100 / activeLoans : 0,
+      healthActive: activeLoans,
+      healthRepaid: cleared,
+      healthOverdue: overdue,
+      recentLoans: recent,
+    );
+  }
+
+  static int _intOf(dynamic value) => value is num ? value.toInt() : 0;
+  static double _numOf(dynamic value) => value is num ? value.toDouble() : 0;
+}
+
+// ---------- DI ----------
+
 final dashboardRepositoryProvider = Provider<DashboardRepository>(
-  (ref) => MockDashboardRepository(),
+  (ref) => Env.useMocks
+      ? MockDashboardRepository()
+      : ApiDashboardRepository(ref.watch(apiClientProvider)),
 );
 
 final dashboardDataProvider = FutureProvider<DashboardData>(

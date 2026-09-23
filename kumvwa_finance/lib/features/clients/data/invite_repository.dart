@@ -1,26 +1,35 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:kumvwa_finance/core/config/env.dart';
+import 'package:kumvwa_finance/core/network/api_client.dart';
+import 'package:kumvwa_finance/core/network/api_exception.dart';
+import 'package:kumvwa_finance/core/network/api_parse.dart';
 import 'package:kumvwa_finance/features/clients/domain/client_invite.dart';
 
 abstract class InviteRepository {
+  /// Lender-side: mint a short invite code for a client.
   Future<ClientInvite> createInvite({
     required String clientName,
     required String phone,
   });
 
-  /// Throws [InviteException] when the token is unknown.
-  Future<ClientInvite> getByToken(String token);
+  /// Public lookup so the app can show who invited whom before the client
+  /// commits. Throws [InviteException] when the code is unknown/expired/used.
+  Future<ClientInvite> getByCode(String code);
 
-  Future<void> submitProfile({
-    required String token,
-    required String nrc,
-    required DateTime dateOfBirth,
-    required String address,
+  /// Option-A onboarding: the invite code mints the ACCOUNT (name +
+  /// password). KYC (NRC / DOB / address) is completed post-login in the
+  /// app's profile wizard.
+  Future<void> submitAccount({
+    required String code,
+    required String fullName,
+    required String password,
+    required bool consent,
   });
 }
 
 /// In-memory mock — invites die on app restart (expected in dev).
-/// Swap for the API-backed implementation later; nothing else changes.
 class MockInviteRepository implements InviteRepository {
   final _invites = <String, ClientInvite>{};
   var _counter = 0;
@@ -31,39 +40,40 @@ class MockInviteRepository implements InviteRepository {
     required String phone,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 700));
-    final token = 'INV${1000 + _counter++}';
+    final code = 'KMV-${1000 + _counter++}';
     final invite = ClientInvite(
-      token: token,
+      code: code,
       // Mock: the real API derives this from the auth token.
       businessName: 'Chilenje Community SACCO',
       clientName: clientName.trim(),
       phone: phone.trim(),
+      link: 'https://kumvwa.finance',
     );
-    _invites[token] = invite;
+    _invites[code] = invite;
     return invite;
   }
 
   @override
-  Future<ClientInvite> getByToken(String token) async {
+  Future<ClientInvite> getByCode(String code) async {
     await Future<void>.delayed(const Duration(milliseconds: 500));
-    final invite = _invites[token.trim().toUpperCase()];
+    final invite = _invites[code.trim().toUpperCase()];
     if (invite == null) {
       throw const InviteException(
-        'This invite link is invalid or has expired.',
+        'This invite code is invalid or has expired.',
       );
     }
     return invite;
   }
 
   @override
-  Future<void> submitProfile({
-    required String token,
-    required String nrc,
-    required DateTime dateOfBirth,
-    required String address,
+  Future<void> submitAccount({
+    required String code,
+    required String fullName,
+    required String password,
+    required bool consent,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 800));
-    final invite = _invites[token];
+    final invite = _invites[code.trim().toUpperCase()];
     if (invite == null) {
       throw const InviteException('This invite is no longer valid.');
     }
@@ -71,14 +81,100 @@ class MockInviteRepository implements InviteRepository {
   }
 }
 
+// ---------- API-backed implementation ----------
+
+/// Real invites against the short-code endpoints:
+///  * `POST /invites` (lender) — creation.
+///  * `GET /invites/:code` (public) — pre-claim lookup.
+///  * `POST /invites/:code/complete` (public) — account creation.
+class ApiInviteRepository implements InviteRepository {
+  ApiInviteRepository(this._client);
+
+  final ApiClient _client;
+
+  @override
+  Future<ClientInvite> createInvite({
+    required String clientName,
+    required String phone,
+  }) async {
+    try {
+      final results = await Future.wait([
+        _client.postA('/invites', data: {
+          'clientName': clientName.trim(),
+          'phone': toE164(phone.trim()),
+        }),
+        _client.getA('/tenants/me'),
+      ]);
+      final data = results[0].data as Map<String, dynamic>;
+      final tenant = results[1].data as Map<String, dynamic>;
+      return ClientInvite(
+        code: (data['code'] as String?) ?? (data['token'] as String? ?? ''),
+        businessName: tenant['name'] as String? ?? '',
+        clientName: data['clientName'] as String? ?? clientName.trim(),
+        phone: data['phone'] as String? ?? phone.trim(),
+        link: data['link'] as String?,
+      );
+    } on DioException catch (e) {
+      throw InviteException(_friendly(ApiException.fromDio(e)));
+    }
+  }
+
+  @override
+  Future<ClientInvite> getByCode(String code) async {
+    try {
+      final res = await _client.getPublic('/invites/${code.trim()}');
+      final data = res.data as Map<String, dynamic>;
+      return ClientInvite(
+        code: code.trim().toUpperCase(),
+        businessName: data['businessName'] as String? ?? '',
+        clientName: data['clientName'] as String? ?? '',
+        phone: data['phone'] as String? ?? '',
+        phoneMasked: data['phoneMasked'] as String?,
+        link: data['link'] as String?,
+      );
+    } on DioException catch (e) {
+      throw InviteException(_friendly(ApiException.fromDio(e)));
+    }
+  }
+
+  @override
+  Future<void> submitAccount({
+    required String code,
+    required String fullName,
+    required String password,
+    required bool consent,
+  }) async {
+    try {
+      await _client.postPublic(
+        '/invites/${code.trim()}/complete',
+        data: {
+          'fullName': fullName.trim(),
+          'password': password,
+          'consent': consent,
+        },
+      );
+    } on DioException catch (e) {
+      throw InviteException(_friendly(ApiException.fromDio(e)));
+    }
+  }
+
+  static String _friendly(ApiException e) => switch (e.statusCode) {
+        404 => 'This invite code is invalid or has expired.',
+        409 => e.message,
+        _ => e.message,
+      };
+}
+
 // ---------- DI ----------
 
 final inviteRepositoryProvider = Provider<InviteRepository>(
-  (ref) => MockInviteRepository(),
+  (ref) => Env.useMocks
+      ? MockInviteRepository()
+      : ApiInviteRepository(ref.watch(apiClientProvider)),
 );
 
-/// Loads the invite behind a deep-linked token.
-final inviteByTokenProvider = FutureProvider.autoDispose
+/// Loads the invite behind a typed code.
+final inviteByCodeProvider = FutureProvider.autoDispose
     .family<ClientInvite, String>(
-      (ref, token) => ref.watch(inviteRepositoryProvider).getByToken(token),
+      (ref, code) => ref.watch(inviteRepositoryProvider).getByCode(code),
     );

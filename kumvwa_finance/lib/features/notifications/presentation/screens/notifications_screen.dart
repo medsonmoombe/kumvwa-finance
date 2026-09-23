@@ -143,6 +143,21 @@ class _NotificationTile extends StatelessWidget {
           AppColors.green700,
           Icons.check_circle_outline,
         ),
+      NotificationType.loanOverdue => (
+          AppColors.red50,
+          AppColors.red,
+          Icons.alarm,
+        ),
+      NotificationType.requestApproved => (
+          AppColors.green50,
+          AppColors.green700,
+          Icons.check_circle_outline,
+        ),
+      NotificationType.requestRejected => (
+          AppColors.red50,
+          AppColors.red,
+          Icons.cancel_outlined,
+        ),
       NotificationType.verification => (
           AppColors.blue50,
           AppColors.blue600,

@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Client" ALTER COLUMN "nrcHash" DROP NOT NULL,
+ALTER COLUMN "nrcEncrypted" DROP NOT NULL;

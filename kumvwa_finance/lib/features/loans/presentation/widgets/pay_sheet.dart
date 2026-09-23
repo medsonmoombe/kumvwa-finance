@@ -27,7 +27,11 @@ Future<void> showPaySheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
-    builder: (sheetCtx) => _PaySheet(loan: loan, amount: next.amount),
+    builder: (sheetCtx) => _PaySheet(
+      loan: loan,
+      amount: next.amount,
+      ref: ref,
+    ),
   );
 
   // Refresh every provider that shows loan state.
@@ -37,10 +41,11 @@ Future<void> showPaySheet(
 }
 
 class _PaySheet extends StatefulWidget {
-  const _PaySheet({required this.loan, required this.amount});
+  const _PaySheet({required this.loan, required this.amount, required this.ref});
 
   final Loan loan;
   final double amount;
+  final WidgetRef ref;
 
   @override
   State<_PaySheet> createState() => _PaySheetState();
@@ -53,11 +58,24 @@ class _PaySheetState extends State<_PaySheet> {
   Future<void> _confirm() async {
     setState(() => _processing = true);
     try {
-      // The global mock singleton — the same instance all providers read,
-      // so the payment is visible everywhere immediately after.
-      await mockLoansRepository.recordPayment(widget.loan.id);
-    } catch (_) {
-      // even in mock this shouldn't fail; keep UI honest anyway
+      // Via the repository provider so mock AND API modes share the same
+      // call site (API: POST /loans/:id/repayments). The pay sheet knows the
+      // exact amount — the next installment — and passes it through.
+      await widget.ref.read(loansRepositoryProvider).recordPayment(
+        widget.loan.id,
+        amount: widget.amount,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceFirst(RegExp(r'^.*Exception: '), ''),
+          ),
+        ),
+      );
+      return;
     }
     if (!mounted) return;
     Navigator.pop(context);
@@ -143,8 +161,8 @@ class _PaySheetState extends State<_PaySheet> {
             ),
             const SizedBox(height: 8),
             const Text(
-              'Demo build — payments are simulated. '
-              'Mobile money goes live with the backend.',
+              'Repayments are recorded against this loan. '
+              'Mobile-money collection is handled by your lender.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 10.5, color: AppColors.muted),
             ),

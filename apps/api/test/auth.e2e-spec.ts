@@ -85,6 +85,7 @@ describe('Auth (e2e)', () => {
         businessName: 'Test SACCO',
         businessType: 'sacco',
         otpToken: v.otpToken,
+        acceptedTermsVersion: 1,
       })
       .expect(201);
     const r = reg.body as RegisterRes;

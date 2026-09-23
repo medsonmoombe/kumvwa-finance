@@ -1,6 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
+import 'package:kumvwa_finance/core/config/env.dart';
 import 'package:kumvwa_finance/core/domain/loan_status.dart';
+import 'package:kumvwa_finance/core/network/api_client.dart';
+import 'package:kumvwa_finance/core/network/api_exception.dart';
+import 'package:kumvwa_finance/core/network/api_parse.dart';
 import 'package:kumvwa_finance/features/auth/presentation/auth_controller.dart';
 import 'package:kumvwa_finance/features/loans/domain/loan.dart';
 
@@ -19,6 +24,11 @@ abstract class LoansRepository {
     required double interestRatePct,
     required int termInstallments,
   });
+
+  /// Records a repayment of [amount] kwacha against the loan and returns
+  /// the updated loan. The caller (pay sheet) always knows the exact figure
+  /// — the next installment — so it passes it rather than being re-derived.
+  Future<Loan> recordPayment(String loanId, {required double amount});
 }
 
 /// Global mock singleton — payments mutate THIS instance, so every provider
@@ -287,15 +297,15 @@ class MockLoansRepository implements LoansRepository {
     return loan;
   }
 
-  /// Simulated repayment: settles the next unpaid installment.
-  /// Paying before its due date = paying in advance (same code path).
-  /// Real mobile-money flow lands with the backend.
-  Future<Loan> recordPayment(String loanId) async {
+  @override
+  Future<Loan> recordPayment(String loanId, {required double amount}) async {
     await Future<void>.delayed(const Duration(milliseconds: 1300));
     final loan = _db[loanId];
     if (loan == null) throw StateError('Loan not found');
     final next = loan.nextInstallment;
     if (next == null) throw StateError('Loan already cleared');
+    // The mock settles the next installment regardless of the amount passed
+    // — mock schedules have fixed per-installment figures.
 
     final schedule = loan.schedule
         .map(
@@ -332,10 +342,205 @@ class MockLoansRepository implements LoansRepository {
   }
 }
 
+// ---------- API-backed implementation ----------
+
+/// Real loans. Client sessions hit `/my/loans` (cross-lender view); lender
+/// sessions hit `/loans` + `/loans/:id`. List items have no schedule, so the
+/// summary cards render from outstandings while the detail screen does a
+/// per-loan fetch that carries the full installment schedule.
+class ApiLoansRepository implements LoansRepository {
+  ApiLoansRepository(this._client, {required this.role, this.clientId});
+
+  final ApiClient _client;
+  final String? role;
+  final String? clientId;
+
+  bool get _isClient => role == 'client';
+
+  @override
+  Future<List<Loan>> load() async {
+    if (_isClient) {
+      final res = await _client.getA('/my/loans');
+      final items = (res.data as Map<String, dynamic>)['items']
+          as List<dynamic>? ?? const [];
+      return items
+          .whereType<Map<String, dynamic>>()
+          .map(_myLoan)
+          .toList();
+    }
+
+    // Lender view: `/loans` items don't carry clientId, but `/clients`
+    // gives us phone → id, and loan items expose clientPhone.
+    final results = await Future.wait([
+      _client.getA('/loans'),
+      _client.getA('/clients'),
+    ]);
+    final items = (results[0].data as Map<String, dynamic>)['items']
+        as List<dynamic>? ?? const [];
+    final clientById = <String, String>{};
+    final clients = (results[1].data as Map<String, dynamic>)['items']
+        as List<dynamic>? ?? const [];
+    for (final c in clients.whereType<Map<String, dynamic>>()) {
+      final phone = c['phone'] as String?;
+      final id = c['id'] as String?;
+      if (phone != null && id != null) clientById[phone] = id;
+    }
+
+    return items
+        .whereType<Map<String, dynamic>>()
+        .map((item) => _listLoan(item, clientById))
+        .toList();
+  }
+
+  @override
+  Future<Loan> getById(String id) async {
+    if (_isClient) {
+      final all = await loansForClient(clientId ?? '');
+      return all.firstWhere(
+        (l) => l.id == id,
+        orElse: () => throw StateError('Loan not found'),
+      );
+    }
+
+    final res = await _client.getA('/loans/$id');
+    return _detailLoan(res.data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<List<Loan>> loansForClient(String clientId) async {
+    if (!_isClient) return load();
+    final res = await _client.getA('/my/loans');
+    final items = (res.data as Map<String, dynamic>)['items']
+        as List<dynamic>? ?? const [];
+    final loans = items
+        .whereType<Map<String, dynamic>>()
+        .map(_myLoan)
+        .toList();
+    return loans
+        .where((l) => clientId.isEmpty || l.clientId == clientId)
+        .toList();
+  }
+
+  @override
+  Future<Loan> createLoan({
+    required String clientId,
+    required String clientName,
+    required String nrc,
+    required String lenderName,
+    required double principal,
+    required double interestRatePct,
+    required int termInstallments,
+  }) async {
+    // Real loans are born from an approved loan request
+    // (POST /loan-requests/:id/approve) — there is no bare loan POST.
+    throw const ApiException(
+      'Loans are created by approving a loan request.',
+    );
+  }
+
+  @override
+  Future<Loan> recordPayment(String loanId, {required double amount}) async {
+    final loan = await getById(loanId);
+    if (loan.nextInstallment == null) {
+      throw const ApiException('Loan already fully repaid');
+    }
+    // Idempotency-Key makes a retried POST safe (no double-crediting) —
+    // the API replays the original repayment instead.
+    await _client.postA(
+      '/loans/$loanId/repayments',
+      data: {'amount': amount, 'method': 'in_app'},
+      headers: {'Idempotency-Key': const Uuid().v4()},
+    );
+    return getById(loanId);
+  }
+
+  // ---- mappers ----
+
+  Loan _myLoan(Map<String, dynamic> item) => Loan(
+    id: item['id'] as String? ?? '',
+    clientId: clientId ?? '',
+    clientName: '',
+    lenderName: item['lenderName'] as String? ?? '',
+    nrc: '',
+    principal: _num(item['principal']),
+    interestRatePct: _bps(item['rateBps']),
+    termInstallments: _int(item['termCount']),
+    totalDue: _num(item['totalDue']),
+    amountPaid: _num(item['paid']),
+    status: toLoanStatus(item['status'] as String?),
+    schedule: _installments(item['installments']),
+  );
+
+  Loan _listLoan(
+    Map<String, dynamic> item,
+    Map<String, String> clientById,
+  ) =>
+      Loan(
+        id: item['id'] as String? ?? '',
+        clientId: clientById[item['clientPhone'] as String?] ?? '',
+        clientName: item['clientName'] as String? ?? '',
+        lenderName: '',
+        nrc: '',
+        principal: _num(item['principal']),
+        interestRatePct: _bps(item['rateBps']),
+        termInstallments: _int(item['termCount']),
+        totalDue: _num(item['totalDue']),
+        amountPaid: _num(item['paidAmount']),
+        status: toLoanStatus(item['status'] as String?),
+        schedule: const [],
+      );
+
+  Loan _detailLoan(Map<String, dynamic> item) => Loan(
+    id: item['id'] as String? ?? '',
+    clientId: item['clientId'] as String? ?? '',
+    clientName: item['clientName'] as String? ?? '',
+    lenderName: '',
+    nrc: '',
+    principal: _num(item['principal']),
+    interestRatePct: _bps(item['rateBps']),
+    termInstallments: _int(item['termCount']),
+    totalDue: _num(item['totalDue']),
+    amountPaid: _num(item['paidAmount']),
+    status: toLoanStatus(item['status'] as String?),
+    schedule: _installments(item['schedule']),
+  );
+
+  List<Installment> _installments(dynamic raw) {
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map((i) {
+          final dueDate = isoDate(i['dueDate']);
+          return Installment(
+            number: _int(i['seq']),
+            dueDate: dueDate ?? DateTime.now(),
+            amount: _num(i['amount']) != 0
+                ? _num(i['amount'])
+                : minorToKwacha(i['amountMinor']),
+            status: toInstallmentStatus(i['status'] as String?, dueDate),
+          );
+        })
+        .toList();
+  }
+
+  static double _num(dynamic value) => value is num ? value.toDouble() : 0;
+  static int _int(dynamic value) => value is num ? value.toInt() : 0;
+  static double _bps(dynamic value) =>
+      value is num ? value.toDouble() / 100 : 0;
+}
+
 // ---------- DI ----------
 
 final loansRepositoryProvider = Provider<LoansRepository>(
-  (ref) => mockLoansRepository,
+  (ref) {
+    if (Env.useMocks) return mockLoansRepository;
+    final session = ref.watch(authControllerProvider).session;
+    return ApiLoansRepository(
+      ref.watch(apiClientProvider),
+      role: session?.role,
+      clientId: session?.userId,
+    );
+  },
 );
 
 final loansProvider = FutureProvider<List<Loan>>(

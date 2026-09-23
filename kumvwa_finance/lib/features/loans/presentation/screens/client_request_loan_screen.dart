@@ -60,6 +60,20 @@ class _ClientRequestLoanScreenState
             termInstallments: _term,
             purpose: _purposeCtrl.text,
           );
+    } catch (e) {
+      if (!mounted) return;
+      final raw = e
+          .toString()
+          .replaceFirst(RegExp(r'^.*Exception: '), '')
+          .trim();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            raw.isEmpty ? 'Request failed. Please try again.' : raw,
+          ),
+        ),
+      );
+      return;
     } finally {
       if (mounted) setState(() => _submitting = false);
     }

@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:kumvwa_finance/core/network/api_client.dart';
+import 'package:kumvwa_finance/core/network/api_exception.dart';
 import 'package:kumvwa_finance/features/auth/data/auth_repository.dart';
 import 'package:kumvwa_finance/features/auth/domain/user_session.dart';
 
@@ -61,6 +63,13 @@ class AuthState {
 class AuthController extends Notifier<AuthState> {
   @override
   AuthState build() {
+    // A failed background token refresh means the session is dead server-side.
+    // ApiClient bumps this provider and we log out instead of leaving the
+    // router stuck in a phantom authenticated state.
+    ref.listen<int>(sessionExpiryStampProvider, (previous, next) {
+      if (state.status == AuthStatus.authenticated) logout();
+    });
+
     _restore();
     return const AuthState.restoring();
   }
@@ -100,6 +109,8 @@ class AuthController extends Notifier<AuthState> {
       state = AuthState.authenticated(session);
     } on AuthException catch (e) {
       state = state.copyWith(isSubmitting: false, errorMessage: e.message);
+    } on ApiException catch (e) {
+      state = state.copyWith(isSubmitting: false, errorMessage: e.message);
     } catch (_) {
       state = state.copyWith(
         isSubmitting: false,
@@ -111,6 +122,14 @@ class AuthController extends Notifier<AuthState> {
   Future<void> logout() async {
     await ref.read(authRepositoryProvider).logout();
     state = const AuthState.unauthenticated();
+  }
+
+  /// Post-KYC refresh: swap the session (same token, updated profile fields).
+  /// No-op unless currently authenticated.
+  void applyUpdatedSession(UserSession updated) {
+    if (state.status == AuthStatus.authenticated) {
+      state = AuthState.authenticated(updated);
+    }
   }
 }
 

@@ -5,6 +5,7 @@ import 'package:kumvwa_finance/core/domain/loan_status.dart';
 import 'package:kumvwa_finance/features/clients/data/clients_repository.dart';
 import 'package:kumvwa_finance/features/clients/domain/client.dart';
 import 'package:kumvwa_finance/features/clients/presentation/clients_controller.dart';
+import 'package:kumvwa_finance/features/profile/domain/client_profile.dart';
 
 // ---------- fixtures ----------
 
@@ -88,6 +89,27 @@ class _FakeClientsRepository implements ClientsRepository {
   @override
   Future<Client> getById(String id) async =>
       clients.firstWhere((c) => c.id == id);
+
+  @override
+  Future<ClientProfile> getMe() async => const ClientProfile(
+        fullName: 'Mwansa Bwalya',
+        phone: '0971112233',
+        profilePercent: 100,
+        complete: true,
+      );
+
+  @override
+  Future<ClientProfile> updateProfile({
+    String? nrc,
+    DateTime? dateOfBirth,
+    String? address,
+  }) async =>
+      const ClientProfile(
+        fullName: 'Mwansa Bwalya',
+        phone: '0971112233',
+        profilePercent: 100,
+        complete: true,
+      );
 }
 
 ProviderContainer containerWith(ClientsRepository repo) {

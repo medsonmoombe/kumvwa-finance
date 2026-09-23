@@ -16,6 +16,7 @@ describe('loadEnv', () => {
     expect(env.OTP_DEV_MODE).toBe(true);
     expect(env.OTP_DEV_CODE).toBe('123456');
     expect(env.SMS_PROVIDER).toBe('none');
+    expect(env.APP_DOWNLOAD_URL).toBe('https://kumvwa.finance');
   });
 
   it('parses OTP_DEV_MODE=false', () => {

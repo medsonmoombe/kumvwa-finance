@@ -8,7 +8,15 @@ void main() {
   late ProviderContainer container;
 
   setUp(() {
-    container = ProviderContainer();
+    // The default provider now points at the live API; these tests exercise
+    // the repository CONTRACT against the in-memory mock.
+    container = ProviderContainer(
+      overrides: [
+        notificationsRepositoryProvider.overrideWithValue(
+          MockNotificationsRepository(),
+        ),
+      ],
+    );
     addTearDown(container.dispose);
   });
 

@@ -14,9 +14,15 @@ void main() {
   late MockLoanRequestsRepository repo;
 
   setUp(() {
-    container = ProviderContainer();
-    addTearDown(container.dispose);
     repo = MockLoanRequestsRepository();
+    // The default provider now points at the live API; route the provider
+    // tests through the mock to keep them hermetic.
+    container = ProviderContainer(
+      overrides: [
+        loanRequestsRepositoryProvider.overrideWithValue(repo),
+      ],
+    );
+    addTearDown(container.dispose);
   });
 
   group('seed data', () {

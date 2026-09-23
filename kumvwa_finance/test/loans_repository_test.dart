@@ -177,7 +177,7 @@ void main() {
       final before = await repo.getById('LN-2025-00841'); // 2 of 3 paid
       final next = before.nextInstallment!;
 
-      final after = await repo.recordPayment('LN-2025-00841');
+      final after = await repo.recordPayment('LN-2025-00841', amount: next.amount);
 
       expect(after.schedule.firstWhere((i) => i.number == next.number).status,
           InstallmentStatus.paid);
@@ -191,14 +191,14 @@ void main() {
     test('mutates the shared store — getById reflects the payment', () async {
       final before = await repo.getById('LN-2025-00860'); // 1 installment, unpaid
 
-      await repo.recordPayment('LN-2025-00860');
+      await repo.recordPayment('LN-2025-00860', amount: before.totalDue);
       final after = await repo.getById('LN-2025-00860');
 
       expect(after.amountPaid, closeTo(before.amountPaid + before.totalDue, 0.0001));
     });
 
     test('flips a loan to cleared once the schedule is fully paid', () async {
-      await repo.recordPayment('LN-2025-00860'); // term of 1 → done
+      await repo.recordPayment('LN-2025-00860', amount: 1); // term of 1 → done
 
       final loan = await repo.getById('LN-2025-00860');
 
@@ -213,7 +213,7 @@ void main() {
       final before = await repo.getById('LN-2025-00860');
       expect(before.nextInstallment, isNotNull);
 
-      final after = await repo.recordPayment('LN-2025-00860');
+      final after = await repo.recordPayment('LN-2025-00860', amount: 1);
 
       expect(after.schedule.every((i) => i.status == InstallmentStatus.paid), isTrue);
       expect(after.status, LoanStatus.cleared);
@@ -222,14 +222,14 @@ void main() {
 
     test('refuses to pay an already-cleared loan', () async {
       await expectLater(
-        repo.recordPayment('LN-2025-00690'), // Tamara, cleared
+        repo.recordPayment('LN-2025-00690', amount: 1), // Tamara, cleared
         throwsStateError,
       );
     });
 
     test('refuses an unknown loan id', () async {
       await expectLater(
-        repo.recordPayment('LN-NOPE'),
+        repo.recordPayment('LN-NOPE', amount: 1),
         throwsStateError,
       );
     });

@@ -7,10 +7,8 @@ import 'package:kumvwa_finance/core/dev/loaders_preview_screen.dart';
 import 'package:kumvwa_finance/core/widgets/app_shell.dart';
 import 'package:kumvwa_finance/core/widgets/client_shell.dart';
 import 'package:kumvwa_finance/features/auth/presentation/auth_controller.dart';
-import 'package:kumvwa_finance/features/auth/presentation/screens/business_registration_screen.dart';
 import 'package:kumvwa_finance/features/auth/presentation/screens/login_screen.dart';
 import 'package:kumvwa_finance/features/auth/presentation/screens/splash_screen.dart';
-import 'package:kumvwa_finance/features/auth/presentation/screens/verification_pending_screen.dart';
 import 'package:kumvwa_finance/features/clients/presentation/screens/add_client_screen.dart';
 import 'package:kumvwa_finance/features/clients/presentation/screens/client_detail_screen.dart';
 import 'package:kumvwa_finance/features/clients/presentation/screens/client_invite_screen.dart';
@@ -19,14 +17,15 @@ import 'package:kumvwa_finance/features/clients/presentation/screens/invite_code
 import 'package:kumvwa_finance/features/dashboard/presentation/screens/home_screen.dart';
 import 'package:kumvwa_finance/features/loans/presentation/screens/client_home_screen.dart';
 import 'package:kumvwa_finance/features/loans/presentation/screens/client_loan_detail_screen.dart';
+import 'package:kumvwa_finance/features/loans/presentation/screens/client_loan_history_screen.dart';
 import 'package:kumvwa_finance/features/loans/presentation/screens/client_request_loan_screen.dart';
 import 'package:kumvwa_finance/features/loans/presentation/screens/loan_detail_screen.dart';
 import 'package:kumvwa_finance/features/loans/presentation/screens/loan_request_detail_screen.dart';
 import 'package:kumvwa_finance/features/loans/presentation/screens/loan_requests_screen.dart';
 import 'package:kumvwa_finance/features/loans/presentation/screens/loans_screen.dart';
 import 'package:kumvwa_finance/features/notifications/presentation/screens/notifications_screen.dart';
-import 'package:kumvwa_finance/features/onboarding/presentation/screens/onboarding_screen.dart';
 import 'package:kumvwa_finance/features/profile/presentation/screens/client_profile_screen.dart';
+import 'package:kumvwa_finance/features/profile/presentation/screens/complete_profile_screen.dart';
 import 'package:kumvwa_finance/features/profile/presentation/screens/profile_screen.dart';
 import 'package:kumvwa_finance/features/reports/presentation/screens/reports_screen.dart';
 
@@ -50,7 +49,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // Routes reachable while logged OUT. Invites are reachable in BOTH
       // states: a borrower opens the link logged out, and a lender may want
       // to preview the link they just created.
-      const preLogin = ['/login', '/onboarding', '/register', '/invite'];
+      const preLogin = ['/login', '/register', '/invite'];
 
       return switch (auth.status) {
         // Still restoring: the splash is the only legal destination.
@@ -75,6 +74,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 loc.startsWith('/invite') || loc.startsWith('/dev');
 
             if (role == 'client') {
+              final needs = auth.session?.needsProfile ?? false;
+              if (needs) {
+                // While KYC is outstanding, a borrower may only reach the
+                // wizard, their profile, invites and dev previews. Loan
+                // features unlock once the profile hits 100%.
+                final allowedWhileIncomplete = loc.startsWith('/c/complete-profile') ||
+                    loc.startsWith('/c/profile') ||
+                    shared;
+                return allowedWhileIncomplete ? null : '/c/complete-profile';
+              }
               return (isClientArea || shared) ? null : '/c/home';
             }
             return (isBusinessArea || shared) ? null : '/home';
@@ -93,23 +102,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const LoginScreen(),
       ),
       GoRoute(
-        path: '/onboarding',
-        name: 'onboarding',
-        builder: (_, _) => const OnboardingScreen(),
-      ),
-      GoRoute(
-        path: '/register/business',
-        name: 'register-business',
-        builder: (_, _) => const BusinessRegistrationScreen(),
-        routes: [
-          GoRoute(
-            path: 'pending',
-            name: 'register-business-pending',
-            builder: (_, _) => const VerificationPendingScreen(),
-          ),
-        ],
-      ),
-      GoRoute(
         path: '/register/client',
         name: 'register-client',
         builder: (_, _) => const InviteCodeScreen(),
@@ -118,7 +110,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/invite/:token',
         name: 'client-invite',
         builder: (_, state) =>
-            ClientInviteScreen(token: state.pathParameters['token']!),
+            ClientInviteScreen(code: state.pathParameters['token']!),
       ),
       // Dev-only: never registered in release, so the loaders preview
       // cannot ship.
@@ -176,6 +168,24 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const ClientRequestLoanScreen(),
       ),
 
+      // ---------- client loan request detail (read-only for borrower) ----------
+      GoRoute(
+        path: '/c/request/:id',
+        name: 'client-request-detail',
+        builder: (_, state) => LoanRequestDetailScreen(
+          requestId: state.pathParameters['id']!,
+        ),
+      ),
+
+      // ---------- post-login KYC wizard (borrower) ----------
+      // Root-level so there is no bottom-nav shell while the profile is
+      // incomplete; it redirects the borrower home once they reach 100%.
+      GoRoute(
+        path: '/c/complete-profile',
+        name: 'client-complete-profile',
+        builder: (_, _) => const CompleteProfileScreen(),
+      ),
+
       // ---------- client shell (borrower bottom-nav tabs) ----------
       StatefulShellRoute.indexedStack(
         builder: (_, _, shell) => ClientShell(shell: shell),
@@ -186,6 +196,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 path: '/c/home',
                 name: 'client-home',
                 builder: (_, _) => const ClientHomeScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/c/history',
+                name: 'client-history',
+                builder: (_, _) => const ClientLoanHistoryScreen(),
               ),
             ],
           ),

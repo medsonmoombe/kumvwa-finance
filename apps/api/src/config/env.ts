@@ -19,6 +19,15 @@ const envSchema = z.object({
   NRC_HMAC_KEY: z.string().min(32),
   FIELD_ENCRYPTION_KEY: z.string().min(32),
 
+  /**
+   * Dev only: newly registered tenants skip the BOZ verification gate and can
+   * lend immediately. Never enable in prod — the gate is the compliance story.
+   */
+  DEV_AUTO_VERIFY_TENANTS: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+
   OTP_DEV_MODE: z.string().default('true').transform((v) => v === 'true'),
   OTP_DEV_CODE: z.string().regex(/^\d{6}$/).default('123456'),
   OTP_TTL_MIN: z.coerce.number().int().positive().default(10),
@@ -28,6 +37,29 @@ const envSchema = z.object({
   SMS_SENDER_ID: z.string().default('KUMVWA'),
   AFRICASTALKING_API_KEY: z.string().default(''),
   AFRICASTALKING_USERNAME: z.string().default(''),
+
+  /**
+   * Email (invites, notifications). Empty SMTP_HOST = log-only dev mode,
+   * mirroring the SMS strategy. Point at localhost:1025 for MailHog.
+   */
+  SMTP_HOST: z.string().default(''),
+  SMTP_PORT: z.coerce.number().int().default(1025),
+  SMTP_USER: z.string().default(''),
+  SMTP_PASS: z.string().default(''),
+  SMTP_FROM: z.string().default('Kumvwa Finance <no-reply@kumvwa.co.zm>'),
+  APP_BASE_URL: z.string().default('http://localhost:5173'),
+
+  /**
+   * Public download page for the borrower mobile app. Attached to every
+   * invite so the share card can carry BOTH the download link and the
+   * sign-up code (link = get the app, code = redeem in-app).
+   */
+  APP_DOWNLOAD_URL: z.string().url().default('https://kumvwa.finance'),
+
+  REQUEST_MIN_KWACHA: z.coerce.number().positive().default(100),
+  REQUEST_MAX_TERM: z.coerce.number().int().positive().default(12),
+  CREDIT_LIMIT_NO_HISTORY_KWACHA: z.coerce.number().positive().default(1000),
+  FCM_SERVER_KEY: z.string().default(''),
 
   S3_ENDPOINT: z.string().default('http://localhost:9000'),
   S3_ACCESS_KEY: z.string().default('kumvwa-dev'),

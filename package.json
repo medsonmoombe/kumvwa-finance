@@ -5,6 +5,9 @@
   "engines": { "node": ">=22" },
   "scripts": {
     "dev": "pnpm --filter api start:dev",
+    "dev:api": "pnpm --filter api start:dev",
+    "dev:console": "pnpm --filter console dev",
+    "dev:worker": "pnpm --filter worker dev",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test"

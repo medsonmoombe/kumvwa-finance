@@ -107,7 +107,30 @@ enum CreditCheckSource {
 enum FileKind {
   boz_certificate
   kyc_document
+  nrc_photo
+  tenant_logo
   other
+}
+
+enum EmploymentStatus {
+  formal_employment
+  self_employed
+  farming
+  informal
+  other
+}
+
+enum IncomeBand {
+  b0_1000
+  b1001_3000
+  b3001_6000
+  b6000_plus
+}
+
+enum TermsScope {
+  platform_business
+  platform_client
+  tenant
 }
 
 // ───────────────────────── models ────────────────────────
@@ -117,15 +140,33 @@ enum FileKind {
 //            nrcEncrypted = AES-256-GCM (display, audited).
 
 model Tenant {
-  id        String       @id @default(cuid())
-  name      String
-  type      String // sacco | mfi | individual_lender | other
-  status    TenantStatus @default(pending_verification)
-  settings  Json         @default("{}")
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id                String       @id @default(cuid())
+  name              String
+  type              String // sacco | mfi | individual_lender | other
+  status            TenantStatus @default(pending_verification)
+  settings          Json         @default("{}")
+  // BOZ verification journey: stamped when the owner submits their
+  // certificate, and `verificationNote` carries the reviewer's reason on
+  // rejection (shown back to the owner on the pending screen).
+  bozSubmittedAt    DateTime?
+  verificationNote  String?
+  // Owner's NRC as AES-256-GCM ciphertext, so the reviewer can check it
+  // against the certificate. Never emitted except to platform_admin.
+  ownerNrcEncrypted String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  // ── Business info + white-label branding (logo/color/name) ──
+  email             String?
+  address           String?
+  tpin              String?
+  contactPerson     String?
+  logoFileId        String?      @unique
+  primaryColor      String?
+  tagline           String?
 
   users        User[]
+  logoFile     File?              @relation("TenantLogo", fields: [logoFileId], references: [id])
+  terms        TenantTerms[]
   files        File[]             @relation("TenantFiles")
   bozFile      File?              @relation("BozCert")
   products     LoanProduct[]
@@ -159,17 +200,31 @@ model User {
 }
 
 model Client {
-  id           String       @id @default(cuid())
-  nrcHash      String       @unique // platform-wide dedupe key
-  nrcEncrypted String
-  firstName    String
-  lastName     String
-  phone        String       @unique
-  dob          DateTime?
-  address      String?
-  status       ClientStatus @default(active)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id                 String            @id @default(cuid())
+  // Nullable until the client completes their profile in the app wizard:
+  // an invite only mints name + phone + password, KYC lands afterwards.
+  nrcHash            String?           @unique // platform-wide dedupe key
+  nrcEncrypted       String?
+  firstName          String
+  lastName           String
+  phone              String            @unique
+  dob                DateTime?
+  address            String?
+  // ── Profile stepper (first-login wizard) ──
+  // Email is free-text from the stepper (not used for login yet — the OTP
+  // question for clients is still open). The rest is the rich profile the
+  // lender's KYC review consumes.
+  email              String?
+  nrcPhotoFileId     String?
+  employmentStatus   EmploymentStatus?
+  incomeBand         IncomeBand?
+  incomeSource       String?
+  kinName            String?
+  kinPhone           String?
+  profileCompletedAt DateTime?
+  status             ClientStatus      @default(active)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   user         User?
   lenderLinks  ClientLenderLink[]
@@ -428,8 +483,65 @@ model File {
   scannedAt  DateTime?
   createdAt  DateTime  @default(now())
 
-  tenant      Tenant? @relation("TenantFiles", fields: [tenantId], references: [id])
-  bozCertOf   Tenant? @relation("BozCert", fields: [bozCertOfId], references: [id])
-  bozCertOfId String? @unique
+  tenant       Tenant? @relation("TenantFiles", fields: [tenantId], references: [id])
+  bozCertOf    Tenant? @relation("BozCert", fields: [bozCertOfId], references: [id])
+  bozCertOfId  String? @unique
+  logoOfTenant Tenant? @relation("TenantLogo")
 }
 
+// ───────────────── terms (two-layer, versioned) ─────────────────
+// Platform terms are Kumvwa-wide; tenant terms belong to one lender. Both
+// are append-only version streams — acceptances reference a specific version.
+
+model PlatformTerms {
+  id          String   @id @default(cuid())
+  version     Int      @unique
+  body        String   @db.Text
+  publishedAt DateTime @default(now())
+}
+
+model TenantTerms {
+  id          String   @id @default(cuid())
+  tenantId    String
+  version     Int
+  body        String   @db.Text
+  publishedAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, version])
+  @@index([tenantId])
+}
+
+model TermsAcceptance {
+  id              String     @id @default(cuid())
+  actorId         String
+  clientId        String?
+  scope           TermsScope
+  tenantId        String?
+  platformVersion Int?
+  tenantVersion   Int?
+  ip              String?
+  createdAt       DateTime   @default(now())
+
+  @@index([actorId, scope])
+  @@index([clientId, scope])
+}
+
+// ───────────────── email outbox ─────────────────
+// Same shape as SmsOutbox so the worker consumer pattern is identical.
+
+model EmailOutbox {
+  id        String    @id @default(cuid())
+  to        String
+  subject   String
+  body      String    @db.Text
+  purpose   String // invite | notification | otp
+  status    SmsStatus @default(queued)
+  attempts  Int       @default(0)
+  error     String?
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([status, createdAt])
+}

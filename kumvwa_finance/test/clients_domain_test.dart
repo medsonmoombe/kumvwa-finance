@@ -92,7 +92,7 @@ void main() {
   group('ClientInvite', () {
     test('defaults to not completed', () {
       final invite = ClientInvite(
-        token: 'INV1000',
+        code: 'KMV-1000',
         businessName: 'Chilenje Community SACCO',
         clientName: 'Mwansa Bwalya',
         phone: '0971112233',
@@ -103,7 +103,7 @@ void main() {
 
     test('mutable completed flag can be flipped', () {
       final invite = ClientInvite(
-        token: 'INV1000',
+        code: 'KMV-1000',
         businessName: 'SACCO',
         clientName: 'A',
         phone: '0971111111',

@@ -1,5 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:kumvwa_finance/core/config/env.dart';
+import 'package:kumvwa_finance/core/network/api_client.dart';
+import 'package:kumvwa_finance/core/network/api_parse.dart';
 import 'package:kumvwa_finance/features/notifications/domain/app_notification.dart';
 
 abstract class NotificationsRepository {
@@ -94,8 +97,47 @@ class MockNotificationsRepository implements NotificationsRepository {
   }
 }
 
+// ---------- API-backed implementation ----------
+
+/// Real notifications from `/notifications`. The feed is the caller's own
+/// (token-scoped), so the `role` param is ignored in API mode.
+class ApiNotificationsRepository implements NotificationsRepository {
+  ApiNotificationsRepository(this._client);
+
+  final ApiClient _client;
+
+  @override
+  Future<List<AppNotification>> load({required String role}) async {
+    final res = await _client.getA('/notifications', query: {'limit': 50});
+    final raw = (res.data as Map<String, dynamic>)['items'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (n) => AppNotification(
+            id: n['id'] as String? ?? '',
+            title: n['title'] as String? ?? '',
+            body: n['body'] as String? ?? '',
+            time: isoDate(n['createdAt']) ?? DateTime.now(),
+            type: toNotificationType(n['type'] as String?),
+            read: n['readAt'] != null,
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<void> markAllRead({required String role}) async {
+    await _client.postA('/notifications/read-all');
+  }
+}
+
+// ---------- DI ----------
+
 final notificationsRepositoryProvider = Provider<NotificationsRepository>(
-  (ref) => MockNotificationsRepository(),
+  (ref) => Env.useMocks
+      ? MockNotificationsRepository()
+      : ApiNotificationsRepository(ref.watch(apiClientProvider)),
 );
 
 final notificationsProvider = FutureProvider.autoDispose

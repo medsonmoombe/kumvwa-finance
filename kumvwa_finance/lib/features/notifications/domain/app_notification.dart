@@ -1,10 +1,14 @@
-/// Kind of notification — drives the tile icon and colour.
+/// Kind of notification — drives the tile icon and colour. Mirrors the
+/// API's `NotificationType` enum (snake_case over the wire).
 enum NotificationType {
   paymentDue,
   paymentReceived,
+  loanOverdue,
   verification,
   clientActivity,
   loanRequest,
+  requestApproved,
+  requestRejected,
   system,
 }
 

@@ -84,9 +84,9 @@ void main() {
       expect(Validators.password(null), 'Password is required');
     });
 
-    test('enforces a 6 character minimum', () {
-      expect(Validators.password('12345'), 'Must be at least 6 characters');
-      expect(Validators.password('123456'), isNull);
+    test('enforces an 8 character minimum (API contract)', () {
+      expect(Validators.password('1234567'), 'Must be at least 8 characters');
+      expect(Validators.password('12345678'), isNull);
     });
   });
 

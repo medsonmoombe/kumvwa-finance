@@ -1,5 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:kumvwa_finance/core/config/env.dart';
+import 'package:kumvwa_finance/core/network/api_client.dart';
+import 'package:kumvwa_finance/core/network/api_exception.dart';
+import 'package:kumvwa_finance/core/network/api_parse.dart';
 import 'package:kumvwa_finance/features/loans/data/loans_repository.dart';
 import 'package:kumvwa_finance/features/loans/domain/loan.dart';
 import 'package:kumvwa_finance/features/loans/domain/loan_request.dart';
@@ -261,12 +265,161 @@ class MockLoanRequestsRepository implements LoanRequestsRepository {
   }
 }
 
+// ---------- API-backed implementation ----------
+
+/// Real loan requests. `/loan-requests` is client-scoped, `/loan-requests/
+/// inbox` is lender-scoped; both resolve back to the same JSON item shape.
+class ApiLoanRequestsRepository implements LoanRequestsRepository {
+  ApiLoanRequestsRepository(this._client);
+
+  static const _path = '/loan-requests';
+  final ApiClient _client;
+
+  @override
+  Future<List<LoanRequest>> loadByLender(String lenderId) async {
+    final res = await _client.getA('$_path/inbox');
+    return _items(res.data);
+  }
+
+  @override
+  Future<List<LoanRequest>> loadByClient(String clientId) async {
+    final res = await _client.getA(_path);
+    return _items(res.data);
+  }
+
+  @override
+  Future<LoanRequest> getById(String id) async {
+    final res = await _client.getA('$_path/$id');
+    return _item(res.data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<List<({String id, String name})>> linkedLenders(
+    String clientId,
+  ) async {
+    final res = await _client.getA('/clients/me/lenders');
+    final raw = (res.data as Map<String, dynamic>)['items'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (l) => (
+            id: l['id'] as String? ?? '',
+            name: l['name'] as String? ?? '',
+          ),
+        )
+        .toList();
+  }
+
+  @override
+  Future<LoanRequest> create({
+    required String clientId,
+    required String clientName,
+    required String lenderId,
+    required String lenderName,
+    required double amount,
+    required int termInstallments,
+    required String purpose,
+  }) async {
+    final res = await _client.postA(_path, data: {
+      'lenderId': lenderId,
+      'amount': amount,
+      'termCount': termInstallments,
+      'purpose': purpose.trim(),
+    });
+    final data = res.data as Map<String, dynamic>;
+    return LoanRequest(
+      id: data['id'] as String? ?? '',
+      clientId: clientId,
+      clientName: clientName,
+      nrc: '',
+      phone: '',
+      lenderId: lenderId,
+      lenderName: data['lenderName'] as String? ?? lenderName,
+      amount: (data['amount'] as num?)?.toDouble() ?? amount,
+      termInstallments: (data['termCount'] as num?)?.toInt() ??
+          termInstallments,
+      purpose: purpose.trim(),
+      requestedAt: DateTime.now(),
+    );
+  }
+
+  @override
+  Future<double> creditLimit(String clientId) async {
+    // Server-computed (internal score + history), same figure the request
+    // flow enforces — the banner can't disagree with a submit rejection.
+    final res = await _client.getA('/credit-limit');
+    final data = res.data as Map<String, dynamic>;
+    return ((data['limitKwacha'] as num?) ?? 0).toDouble();
+  }
+
+  @override
+  Future<Loan> approve(
+    String requestId, {
+    required double interestRatePct,
+  }) async {
+    final res = await _client.postA(
+      '$_path/$requestId/approve',
+      data: {'rateBps': (interestRatePct * 100).round()},
+    );
+    final data = res.data as Map<String, dynamic>;
+    final loanId = data['loanId'] as String?;
+    if (loanId == null) {
+      throw const ApiException(
+        'Loan was approved but no loan ID was returned.',
+      );
+    }
+    // Approve is a lender-action; fetch the born loan as lender view.
+    return ApiLoansRepository(_client, role: 'business').getById(loanId);
+  }
+
+  @override
+  Future<LoanRequest> reject(
+    String requestId, {
+    required String feedback,
+  }) async {
+    await _client.postA(
+      '$_path/$requestId/reject',
+      data: {'feedback': feedback.trim()},
+    );
+    return getById(requestId);
+  }
+
+  List<LoanRequest> _items(dynamic data) {
+    final raw = (data as Map<String, dynamic>)['items'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map<String, dynamic>>()
+        .map(_item)
+        .toList();
+  }
+
+  LoanRequest _item(Map<String, dynamic> item) => LoanRequest(
+    id: item['id'] as String? ?? '',
+    clientId: item['clientId'] as String? ?? '',
+    clientName: item['clientName'] as String? ?? '',
+    nrc: '',
+    phone: item['phone'] as String? ?? '',
+    lenderId: item['lenderId'] as String? ?? '',
+    lenderName: item['lenderName'] as String? ?? '',
+    amount: (item['amount'] as num?)?.toDouble() ?? 0,
+    termInstallments: (item['termCount'] as num?)?.toInt() ?? 0,
+    purpose: item['purpose'] as String? ?? '',
+    requestedAt: isoDate(item['requestedAt']) ?? DateTime.now(),
+    status: toLoanRequestStatus(item['status'] as String?),
+    feedback: item['feedback'] as String?,
+    reviewedAt: isoDate(item['reviewedAt']),
+  );
+}
+
 // ---------- DI ----------
 
 final mockLoanRequestsRepository = MockLoanRequestsRepository();
 
 final loanRequestsRepositoryProvider = Provider<LoanRequestsRepository>(
-  (ref) => mockLoanRequestsRepository,
+  (ref) => Env.useMocks
+      ? mockLoanRequestsRepository
+      : ApiLoanRequestsRepository(ref.watch(apiClientProvider)),
 );
 
 final loanRequestsByLenderProvider =

@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-surface text-ink antialiased;
+}
+
+::selection {
+  @apply bg-brand-100;
+}
+
+/* subtle scrollbars */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-gray-300;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+input[type='range'] {
+  @apply h-1.5 w-full cursor-pointer appearance-none rounded-full bg-gray-200 accent-brand-600;
+}

@@ -2,9 +2,12 @@
     <!-- Required in RELEASE builds; the debug manifest adds it automatically.
          Without this, release builds have no network access. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- usesCleartextTraffic is TEMPORARY for the demo APK against an http
+         host (10.0.2.2 / LAN IP). Remove once https://api.kumvwa... exists. -->
     <application
         android:label="Kumvwa Finance"
         android:name="${applicationName}"
+        android:usesCleartextTraffic="true"
         android:icon="@mipmap/ic_launcher">
         <activity
             android:name=".MainActivity"

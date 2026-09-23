@@ -8,40 +8,41 @@ void main() {
 
   setUp(() => repo = MockInviteRepository());
 
-  test('createInvite returns a token and echoes the client details', () async {
+  test('createInvite returns a short code and echoes the client details',
+      () async {
     final invite = await repo.createInvite(
       clientName: '  Mwansa Bwalya  ',
       phone: ' 0971234567 ',
     );
 
-    expect(invite.token, 'INV1000');
+    expect(invite.code, 'KMV-1000');
     expect(invite.clientName, 'Mwansa Bwalya'); // trimmed
     expect(invite.phone, '0971234567');
     expect(invite.completed, isFalse);
   });
 
-  test('tokens increment across invites', () async {
+  test('codes increment across invites', () async {
     final first = await repo.createInvite(clientName: 'A', phone: '0971111111');
     final second = await repo.createInvite(
       clientName: 'B',
       phone: '0972222222',
     );
 
-    expect(first.token, 'INV1000');
-    expect(second.token, 'INV1001');
+    expect(first.code, 'KMV-1000');
+    expect(second.code, 'KMV-1001');
   });
 
-  test('getByToken is case- and whitespace-insensitive', () async {
+  test('getByCode is case- and whitespace-insensitive', () async {
     await repo.createInvite(clientName: 'A', phone: '0971111111');
 
-    final invite = await repo.getByToken('  inv1000 ');
+    final invite = await repo.getByCode('  kmv-1000 ');
 
     expect(invite.clientName, 'A');
   });
 
-  test('getByToken throws InviteException for an unknown token', () async {
+  test('getByCode throws InviteException for an unknown code', () async {
     expect(
-      () => repo.getByToken('INV9999'),
+      () => repo.getByCode('KMV-9999'),
       throwsA(
         isA<InviteException>().having(
           (e) => e.message,
@@ -52,30 +53,30 @@ void main() {
     );
   });
 
-  test('submitProfile marks the invite completed', () async {
+  test('submitAccount marks the invite completed', () async {
     final invite = await repo.createInvite(
       clientName: 'A',
       phone: '0971111111',
     );
 
-    await repo.submitProfile(
-      token: invite.token,
-      nrc: '245711/63/1',
-      dateOfBirth: DateTime(1998, 4, 12),
-      address: 'Plot 12, Chilenje',
+    await repo.submitAccount(
+      code: invite.code,
+      fullName: 'A Mwape',
+      password: 'kumvwa123',
+      consent: true,
     );
 
-    final reloaded = await repo.getByToken(invite.token);
+    final reloaded = await repo.getByCode(invite.code);
     expect(reloaded.completed, isTrue);
   });
 
-  test('submitProfile throws InviteException for an unknown token', () async {
+  test('submitAccount throws InviteException for an unknown code', () async {
     expect(
-      () => repo.submitProfile(
-        token: 'INV9999',
-        nrc: '245711/63/1',
-        dateOfBirth: DateTime(1998, 4, 12),
-        address: 'Plot 12, Chilenje',
+      () => repo.submitAccount(
+        code: 'KMV-9999',
+        fullName: 'A Mwape',
+        password: 'kumvwa123',
+        consent: true,
       ),
       throwsA(isA<InviteException>()),
     );

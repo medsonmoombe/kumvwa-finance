@@ -1,0 +1,132 @@
+import type { ReactNode } from 'react';
+import {
+  BrowserRouter as Router,
+  Navigate,
+  Route,
+  Routes,
+} from 'react-router-dom';
+
+import { Shell } from './components/layout';
+import { CenteredSpinner } from './components/ui';
+import { useAuth } from './lib/auth';
+import { AdminQueuePage } from './features/admin/AdminQueuePage';
+import { AuthPage } from './features/auth/AuthPage';
+import { PendingPage } from './features/auth/PendingPage';
+import { ClientsPage } from './features/clients/ClientsPage';
+import { DashboardPage } from './features/dashboard/DashboardPage';
+import { LoanDetailPage } from './features/loans/LoanDetailPage';
+import { LoansPage } from './features/loans/LoansPage';
+import { ReportsPage } from './features/reports/ReportsPage';
+import { RequestsPage } from './features/requests/RequestsPage';
+import { SettingsPage } from './features/settings/SettingsPage';
+
+/** Sends each role to the landing screen it actually has. */
+function Home() {
+  const { user } = useAuth();
+  if (user?.role === 'platform_admin') return <Navigate to="/admin" replace />;
+  if (user?.role === 'client') return <Navigate to="/login" replace />;
+  return <Navigate to="/dashboard" replace />;
+}
+
+/** Pending tenants may only reach the verification screen. */
+function RequireTenant({ children }: { children: ReactNode }) {
+  const { user, tenant } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role === 'platform_admin') return <Navigate to="/admin" replace />;
+  if (tenant && tenant.status !== 'active') {
+    return <Navigate to="/verify" replace />;
+  }
+  return <>{children}</>;
+}
+
+function Guard({ children }: { children: ReactNode }) {
+  return (
+    <RequireTenant>
+      <>{children}</>
+    </RequireTenant>
+  );
+}
+
+export default function App() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <CenteredSpinner />
+      </div>
+    );
+  }
+
+  return (
+    <Router>
+      <Routes>
+        <Route path="/login" element={user ? <Home /> : <AuthPage />} />
+
+        <Route
+          element={user ? <Shell /> : <Navigate to="/login" replace />}
+        >
+          <Route
+            path="/dashboard"
+            element={
+              <Guard>
+                <DashboardPage />
+              </Guard>
+            }
+          />
+          <Route
+            path="/clients"
+            element={
+              <Guard>
+                <ClientsPage />
+              </Guard>
+            }
+          />
+          <Route
+            path="/requests"
+            element={
+              <Guard>
+                <RequestsPage />
+              </Guard>
+            }
+          />
+          <Route
+            path="/loans"
+            element={
+              <Guard>
+                <LoansPage />
+              </Guard>
+            }
+          />
+          <Route
+            path="/loans/:id"
+            element={
+              <Guard>
+                <LoanDetailPage />
+              </Guard>
+            }
+          />
+          <Route
+            path="/reports"
+            element={
+              <Guard>
+                <ReportsPage />
+              </Guard>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <Guard>
+                <SettingsPage />
+              </Guard>
+            }
+          />
+          <Route path="/verify" element={<PendingPage />} />
+          <Route path="/admin" element={<AdminQueuePage />} />
+          <Route path="*" element={<Home />} />
+        </Route>
+      </Routes>
+    </Router>
+  );
+}
