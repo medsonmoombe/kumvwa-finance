@@ -34,9 +34,9 @@ services:
           type: redis
           property: connectionString
       - key: CORS_ORIGINS
-        sync: false          # set in Render dashboard: your Vercel console URL
+        sync: false
       - key: APP_BASE_URL
-        sync: false          # set in Render dashboard: your Vercel console URL
+        sync: false
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
@@ -52,11 +52,11 @@ services:
       - key: SMTP_PORT
         value: 587
       - key: SMTP_USER
-        sync: false          # set in Render dashboard
+        sync: false
       - key: SMTP_PASS
-        sync: false          # set in Render dashboard
+        sync: false
       - key: SMTP_FROM
-        sync: false          # set in Render dashboard
+        sync: false
       - key: S3_ENDPOINT
         sync: false
       - key: S3_ACCESS_KEY
@@ -79,11 +79,11 @@ services:
   # ── Worker (email outbox + overdue jobs) ───────────────────────────────────
   - type: worker
     name: kumvwa-worker
-    runtime: docker
-    dockerfilePath: apps/api/Dockerfile
-    dockerContext: .
+    runtime: node
+    rootDir: apps/worker
+    buildCommand: cd ../.. && npm install -g pnpm && pnpm install --frozen-lockfile && pnpm --filter @kumvwa/core build && pnpm --filter worker build
+    startCommand: node dist/main.js
     plan: free
-    startCommand: node apps/worker/dist/main.js
     envVars:
       - key: DATABASE_URL
         fromDatabase:
