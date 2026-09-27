@@ -178,13 +178,19 @@ export class AuthService {
     return { otpToken };
   }
 
-  // ─────────────────── Registration (OTP-gated) ───────────────────
+  // ─────────────────── Registration (OTP-verified when offered) ───────────────────
 
   async registerTenant(dto: RegisterTenantDto, req: Request) {
     const phone = this.mustPhone(dto.phone);
-    const claims = await this.tokens.verify(dto.otpToken, 'otp');
-    if (claims.purpose !== 'registration' || claims.phone !== phone) {
-      throw new UnauthorizedException('Phone verification required');
+
+    // The console signs a lender up without an SMS step, so a token is
+    // optional. When one IS sent (the mobile app), it still has to match this
+    // phone number — a token can never be used to register a different one.
+    if (dto.otpToken) {
+      const claims = await this.tokens.verify(dto.otpToken, 'otp');
+      if (claims.purpose !== 'registration' || claims.phone !== phone) {
+        throw new UnauthorizedException('Phone verification required');
+      }
     }
 
     const exists = await this.prisma.user.findUnique({ where: { phone } });

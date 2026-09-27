@@ -32,6 +32,6 @@ class Env {
 
   static bool get isDev => appEnv == 'dev';
 
-  static const connectTimeout = Duration(seconds: 12);
-  static const receiveTimeout = Duration(seconds: 20);
+  static const connectTimeout = Duration(seconds: 60);
+  static const receiveTimeout = Duration(seconds: 60);
 }

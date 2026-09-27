@@ -94,6 +94,31 @@ describe('Auth (e2e)', () => {
     expect(r.accessToken).toBeDefined();
   });
 
+  it('registers a lender from the console wizard without an SMS token', async () => {
+    // The console's three-step sign-up has no SMS step, so its payload carries
+    // no `otpToken` at all. Regression guard: the API used to answer it with
+    // 400 "otpToken must be a string".
+    const consolePhone = `094${Math.floor(1_000_000 + Math.random() * 8_999_999)}`;
+    const reg = await request(server())
+      .post('/api/v1/auth/register/tenant')
+      .send({
+        phone: consolePhone,
+        password,
+        email: `console.lender.${consolePhone}@example.zm`,
+        businessName: 'Console Wizard SACCO',
+        businessType: 'sacco',
+        contactPerson: 'Console Owner',
+        acceptedTermsVersion: 1,
+      })
+      .expect(201);
+
+    const r = reg.body as RegisterRes;
+    expect(r.user.role).toBe('tenant_owner');
+    expect(r.tenantStatus).toBe('pending_verification');
+    expect(r.accessToken).toBeDefined();
+    expect(r.refreshToken).toBeDefined();
+  });
+
   it('rejects a wrong OTP code', async () => {
     const wrongPhone = `096${Math.floor(1_000_000 + Math.random() * 8_999_999)}`;
     await request(server())

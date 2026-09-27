@@ -51,9 +51,13 @@ export class RegisterTenantDto {
   @IsIn(['sacco', 'mfi', 'individual_lender', 'other'])
   businessType!: string;
 
-  @ApiProperty({ description: 'Token from POST /auth/otp/verify' })
+  @ApiProperty({
+    required: false,
+    description: 'Token from POST /auth/otp/verify. Optional — console sign-up has no SMS step.',
+  })
+  @IsOptional()
   @IsString()
-  otpToken!: string;
+  otpToken?: string;
 
   // ── Business info (branding/billing contact) ──
   @ApiProperty({ example: 'info@sacco.zm' })
