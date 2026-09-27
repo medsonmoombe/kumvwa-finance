@@ -1,0 +1,103 @@
+databases:
+  - name: kumvwa-db
+    databaseName: kumvwa
+    user: kumvwa
+    plan: free
+
+services:
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  - type: redis
+    name: kumvwa-redis
+    plan: free
+    ipAllowList: []
+
+  # ── API (NestJS) ───────────────────────────────────────────────────────────
+  - type: web
+    name: kumvwa-api
+    runtime: docker
+    dockerfilePath: apps/api/Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: prod
+      - key: PORT
+        value: 8080
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kumvwa-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: kumvwa-redis
+          type: redis
+          property: connectionString
+      - key: CORS_ORIGINS
+        sync: false          # set in Render dashboard: your Vercel console URL
+      - key: APP_BASE_URL
+        sync: false          # set in Render dashboard: your Vercel console URL
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: NRC_HMAC_KEY
+        generateValue: true
+      - key: FIELD_ENCRYPTION_KEY
+        generateValue: true
+      - key: OTP_DEV_MODE
+        value: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        sync: false          # set in Render dashboard
+      - key: SMTP_PASS
+        sync: false          # set in Render dashboard
+      - key: SMTP_FROM
+        sync: false          # set in Render dashboard
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_ACCESS_KEY
+        sync: false
+      - key: S3_SECRET_KEY
+        sync: false
+      - key: S3_BUCKET
+        value: kumvwa-documents
+      - key: REQUEST_MIN_KWACHA
+        value: 100
+      - key: REQUEST_MAX_TERM
+        value: 12
+      - key: CREDIT_LIMIT_NO_HISTORY_KWACHA
+        value: 1000
+      - key: ROLLOVER_MAX
+        value: 2
+      - key: DEV_AUTO_VERIFY_TENANTS
+        value: false
+
+  # ── Worker (email outbox + overdue jobs) ───────────────────────────────────
+  - type: worker
+    name: kumvwa-worker
+    runtime: docker
+    dockerfilePath: apps/api/Dockerfile
+    dockerContext: .
+    plan: free
+    startCommand: node apps/worker/dist/main.js
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: kumvwa-db
+          property: connectionString
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: 587
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: WORKER_TICK_MS
+        value: 30000
