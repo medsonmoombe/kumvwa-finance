@@ -139,11 +139,43 @@ export function AdminTenantDetailPage() {
         </FormSection>
       </div>
 
-      {tenant.status === 'pending_verification' && <div className="mt-3 overflow-hidden rounded-card border border-line bg-white"><FormSection title="Review decision" defaultOpen>
-        <textarea value={reason} onChange={(e) => setReason(e.target.value)} className="min-h-20 w-full border border-line p-2.5 text-[12px] outline-none focus:border-brand-500" placeholder="Required reason when rejecting this business" />
-        <div className="mt-3 flex gap-2"><Pill onClick={() => review('approve')} disabled={busy || !tenant.review.canApprove}><FiCheck /> Approve business</Pill><button onClick={() => review('reject')} disabled={busy || reason.trim().length < 10} className="flex items-center gap-1 rounded-[3px] border border-danger-500 px-3 py-1.5 text-[11px] font-bold text-danger-500 disabled:opacity-40"><FiX /> Reject with note</button></div>
-        {reason.trim().length > 0 && reason.trim().length < 10 && <p className="mt-2 text-[11px] text-ink-muted">Rejection needs at least 10 characters.</p>}
-      </FormSection></div>}
+      {tenant.status === 'pending_verification' && (
+        <div className="mt-3 overflow-hidden rounded-card border border-line bg-white">
+          <FormSection title="Review decision" defaultOpen>
+            {!tenant.review.canApprove && tenant.review.blockers.length > 0 && (
+              <div className="mb-3 rounded-[3px] border border-warn-500/30 bg-warn-50 p-2.5 text-[11px] text-warn-500">
+                <b>Cannot approve yet — missing items:</b>
+                <ul className="mt-1 list-disc pl-4">
+                  {tenant.review.blockers.map((b) => (
+                    <li key={b}>{b}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              className="min-h-20 w-full border border-line p-2.5 text-[12px] outline-none focus:border-brand-500"
+              placeholder="Required reason when rejecting this business"
+            />
+            <div className="mt-3 flex gap-2">
+              <Pill onClick={() => review('approve')} disabled={busy || !tenant.review.canApprove}>
+                <FiCheck /> Approve business
+              </Pill>
+              <button
+                onClick={() => review('reject')}
+                disabled={busy || reason.trim().length < 10}
+                className="flex items-center gap-1 rounded-[3px] border border-danger-500 px-3 py-1.5 text-[11px] font-bold text-danger-500 disabled:opacity-40"
+              >
+                <FiX /> Reject with note
+              </button>
+            </div>
+            {reason.trim().length > 0 && reason.trim().length < 10 && (
+              <p className="mt-2 text-[11px] text-ink-muted">Rejection needs at least 10 characters.</p>
+            )}
+          </FormSection>
+        </div>
+      )}
 
       <div className="mt-3 overflow-hidden rounded-card border border-line bg-white"><div className="band"><span className="t">Portfolio loans</span></div><DataGrid columns={loanColumns} rows={tenant.loans} empty="No lending activity" /></div>
 

@@ -11,7 +11,6 @@ import { NrcCryptoService } from '../../common/crypto/nrc-crypto.service';
 import { PrismaService } from '../../infra/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { BOZ_FILE_SELECT } from '../tenants/tenants.service';
 import type { ReviewVerificationDto } from './dto/admin.dto';
 
 const TENANT_STATUSES: TenantStatus[] = [
@@ -25,7 +24,10 @@ type AdminTenantRow = {
   id: string;
   name: string;
   type: string;
-  status: string;
+  status: TenantStatus;
+  email: string | null;
+  contactPerson: string | null;
+  ownerNrcEncrypted: string | null;
   verificationNote: string | null;
   bozSubmittedAt: Date | null;
   createdAt: Date;
@@ -35,6 +37,7 @@ type AdminTenantRow = {
     mime: string;
     size: number;
     createdAt: Date;
+    checksum: string;
   } | null;
   users: { phone: string; displayName: string }[];
 };
@@ -64,10 +67,23 @@ export class AdminService {
         name: true,
         type: true,
         status: true,
+        email: true,
+        contactPerson: true,
+        ownerNrcEncrypted: true,
         verificationNote: true,
         bozSubmittedAt: true,
         createdAt: true,
-        bozFile: BOZ_FILE_SELECT,
+        // `checksum` decides "confirmed in storage" for the approval checklist.
+        bozFile: {
+          select: {
+            id: true,
+            kind: true,
+            mime: true,
+            size: true,
+            createdAt: true,
+            checksum: true,
+          },
+        },
         users: {
           where: { role: 'tenant_owner' },
           select: { phone: true, displayName: true },
@@ -292,29 +308,79 @@ export class AdminService {
     };
   }
 
-  /** One source of truth for the decision UI and the approval endpoint. */
+  /**
+   * One source of truth for the decision UI and the approval endpoint: the
+   * reviewer must be able to see every item below before a lender can lend.
+   * `checks` drives the per-item tick list in the console; `blockers` is the
+   * same information as the messages the approve endpoint refuses with.
+   */
   private reviewReadiness(tenant: {
     status: TenantStatus;
-    name: string;
-    type: string;
-    email: string | null;
-    contactPerson: string | null;
-    bozSubmittedAt: Date | null;
-    ownerNrcEncrypted: string | null;
-    bozFile: { id: string; checksum: string } | null;
-    users: { id: string }[];
+    name?: string | null;
+    type?: string | null;
+    email?: string | null;
+    contactPerson?: string | null;
+    bozSubmittedAt?: Date | null;
+    ownerNrcEncrypted?: string | null;
+    bozFile?: { id: string; checksum: string } | null;
+    users?: readonly unknown[];
   }) {
-    const blockers: string[] = [];
-    if (!tenant.name.trim()) blockers.push('Business name is missing');
-    if (!tenant.type.trim()) blockers.push('Business type is missing');
-    if (!tenant.email?.trim()) blockers.push('Business email is missing');
-    if (!tenant.contactPerson?.trim()) blockers.push('Contact person is missing');
-    if (!tenant.users.length) blockers.push('A business owner account is missing');
-    if (!tenant.ownerNrcEncrypted) blockers.push('Owner NRC is missing');
-    if (!tenant.bozSubmittedAt) blockers.push('BOZ certificate has not been submitted');
-    if (!tenant.bozFile || tenant.bozFile.checksum === '') {
-      blockers.push('A confirmed BOZ certificate is required');
-    }
+    const certificateConfirmed = tenant.bozFile
+      ? tenant.bozFile.checksum !== ''
+      : false;
+
+    const checks = [
+      {
+        key: 'name',
+        label: 'Business name',
+        ok: Boolean(tenant.name?.trim()),
+        blocker: 'Business name is missing',
+      },
+      {
+        key: 'type',
+        label: 'Business type',
+        ok: Boolean(tenant.type?.trim()),
+        blocker: 'Business type is missing',
+      },
+      {
+        key: 'email',
+        label: 'Business email',
+        ok: Boolean(tenant.email?.trim()),
+        blocker: 'Business email is missing',
+      },
+      {
+        key: 'contactPerson',
+        label: 'Contact person',
+        ok: Boolean(tenant.contactPerson?.trim()),
+        blocker: 'Contact person is missing',
+      },
+      {
+        key: 'owner',
+        label: 'Owner account',
+        ok: Boolean(tenant.users?.length),
+        blocker: 'A business owner account is missing',
+      },
+      {
+        key: 'nrc',
+        label: 'Owner NRC on file',
+        ok: Boolean(tenant.ownerNrcEncrypted),
+        blocker: 'Owner NRC is missing',
+      },
+      {
+        key: 'submitted',
+        label: 'BOZ certificate submitted',
+        ok: Boolean(tenant.bozSubmittedAt),
+        blocker: 'BOZ certificate has not been submitted',
+      },
+      {
+        key: 'certificate',
+        label: 'Certificate confirmed in storage',
+        ok: certificateConfirmed,
+        blocker: 'A confirmed BOZ certificate is required',
+      },
+    ];
+
+    const blockers = checks.filter((c) => !c.ok).map((c) => c.blocker);
     if (tenant.status !== 'pending_verification') {
       blockers.unshift(
         tenant.status === 'active'
@@ -324,7 +390,12 @@ export class AdminService {
             : 'This business is suspended and cannot be approved',
       );
     }
-    return { canApprove: tenant.status === 'pending_verification' && blockers.length === 0, blockers };
+    return {
+      canApprove:
+        tenant.status === 'pending_verification' && blockers.length === 0,
+      blockers,
+      checks: checks.map(({ key, label, ok }) => ({ key, label, ok })),
+    };
   }
 
   /** The console's platform overview band — one query per slice, parallel. */
@@ -630,13 +701,33 @@ export class AdminService {
     }
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { id: true, status: true, bozSubmittedAt: true },
+      select: {
+        id: true,
+        status: true,
+        name: true,
+        type: true,
+        email: true,
+        contactPerson: true,
+        bozSubmittedAt: true,
+        ownerNrcEncrypted: true,
+        bozFile: { select: { id: true, checksum: true } },
+        users: {
+          where: { role: 'tenant_owner' },
+          select: { id: true },
+          take: 1,
+        },
+      },
     });
     if (!tenant) throw new NotFoundException('Tenant not found');
-    if (status === 'active' && !tenant.bozSubmittedAt) {
-      throw new BadRequestException(
-        'Tenant has not submitted a certificate yet',
-      );
+    // Activation goes through the same checklist as the review endpoint —
+    // otherwise this break-glass path could approve an incomplete file.
+    if (status === 'active' && tenant.status !== 'active') {
+      const readiness = this.reviewReadiness(tenant);
+      if (!readiness.canApprove) {
+        throw new BadRequestException(
+          `Cannot activate this business: ${readiness.blockers.join('; ')}`,
+        );
+      }
     }
 
     const updated = await this.prisma.tenant.update({
@@ -676,6 +767,7 @@ export class AdminService {
   }
 
   private toJson(t: AdminTenantRow) {
+    const { canApprove, blockers } = this.reviewReadiness(t);
 
     return {
       id: t.id,
@@ -684,9 +776,20 @@ export class AdminService {
       status: t.status,
       verificationNote: t.verificationNote,
       bozSubmittedAt: t.bozSubmittedAt,
-      bozFile: t.bozFile,
+      // The ETag/checksum stays server-side; the queue only needs the summary.
+      bozFile: t.bozFile
+        ? {
+            id: t.bozFile.id,
+            kind: t.bozFile.kind,
+            mime: t.bozFile.mime,
+            size: t.bozFile.size,
+            createdAt: t.bozFile.createdAt,
+          }
+        : null,
       ownerPhone: t.users[0]?.phone ?? null,
       ownerName: t.users[0]?.displayName ?? null,
+      /** Lets the queue disable "Approve" for an incomplete application. */
+      review: { canApprove, blockers },
       createdAt: t.createdAt,
     };
   }

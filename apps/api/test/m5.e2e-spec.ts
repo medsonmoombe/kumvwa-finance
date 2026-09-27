@@ -63,8 +63,10 @@ describe('M5: bullet loans, credit ladder, overrides (e2e)', () => {
       .send({
         phone: lenderPhone,
         password,
+        email: `lender.${lenderPhone}@example.zm`,
         businessName: 'M5 SACCO',
         businessType: 'sacco',
+        contactPerson: 'M5 Owner',
         otpToken: (v.body as { otpToken: string }).otpToken,
         acceptedTermsVersion: 1,
       })

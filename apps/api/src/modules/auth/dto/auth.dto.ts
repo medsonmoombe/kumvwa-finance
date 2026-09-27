@@ -4,6 +4,7 @@ import {
   IsBoolean,
   IsIn,
   IsInt,
+  IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
@@ -36,6 +37,7 @@ export class OtpVerifyDto extends OtpRequestDto {
 export class RegisterTenantDto {
   @ApiProperty({ example: '0971234567' })
   @IsString()
+  @IsNotEmpty({ message: 'Phone number is required' })
   phone!: string;
 
   @ApiProperty({ minLength: 8 })
@@ -45,6 +47,8 @@ export class RegisterTenantDto {
 
   @ApiProperty({ example: 'Chilenje Community SACCO' })
   @IsString()
+  @IsNotEmpty({ message: 'Business name is required' })
+  @MaxLength(160)
   businessName!: string;
 
   @ApiProperty({ enum: ['sacco', 'mfi', 'individual_lender', 'other'] })
@@ -61,7 +65,7 @@ export class RegisterTenantDto {
 
   // ── Business info (branding/billing contact) ──
   @ApiProperty({ example: 'info@sacco.zm' })
-  @IsEmail()
+  @IsEmail({}, { message: 'Enter a valid business email address' })
   email!: string;
 
   @ApiProperty({ required: false, example: 'Plot 7, Lusaka' })
@@ -76,11 +80,16 @@ export class RegisterTenantDto {
   @MaxLength(20)
   tpin?: string;
 
-  @ApiProperty({ required: false, example: 'Ms. Bwalya' })
-  @IsOptional()
+  /**
+   * The human Kumvwa contacts about this business. Required: the reviewer
+   * checks this person against the BOZ certificate, and an approval without a
+   * named contact is not a reviewable application.
+   */
+  @ApiProperty({ example: 'Ms. Bwalya' })
   @IsString()
+  @IsNotEmpty({ message: 'Contact person is required' })
   @MaxLength(120)
-  contactPerson?: string;
+  contactPerson!: string;
 
   /** The platform terms version shown and agreed to in the UI. */
   @ApiProperty({ example: 1, description: 'Version of the platform terms accepted' })

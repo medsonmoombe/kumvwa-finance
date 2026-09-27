@@ -65,8 +65,10 @@ describe('Loan requests lifecycle (e2e)', () => {
       .send({
         phone,
         password,
+        email: `lender.${phone.replace('+', '')}@example.zm`,
         businessName: `L${phone.slice(-3)}`,
         businessType: 'sacco',
+        contactPerson: 'Loan Requests Owner',
         otpToken: (v.body as { otpToken: string }).otpToken,
         acceptedTermsVersion: 1,
       })

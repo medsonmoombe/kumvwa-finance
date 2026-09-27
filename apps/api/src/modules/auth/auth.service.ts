@@ -208,12 +208,12 @@ export class AuthService {
     const { tenant, user } = await this.prisma.$transaction(async (tx) => {
       const tenant = await tx.tenant.create({
         data: {
-          name: dto.businessName,
+          name: dto.businessName.trim(),
           type: dto.businessType,
           email: dto.email?.toLowerCase(),
-          address: dto.address,
-          tpin: dto.tpin,
-          contactPerson: dto.contactPerson,
+          address: dto.address?.trim(),
+          tpin: dto.tpin?.trim(),
+          contactPerson: dto.contactPerson.trim(),
           // Dev convenience: skip the BOZ gate so the whole loop is testable
           // without object storage. The gate itself stays in place for prod.
           status: this.env.DEV_AUTO_VERIFY_TENANTS

@@ -82,8 +82,10 @@ describe('Auth (e2e)', () => {
       .send({
         phone,
         password,
+        email: `lender.${phone}@example.zm`,
         businessName: 'Test SACCO',
         businessType: 'sacco',
+        contactPerson: 'Test Owner',
         otpToken: v.otpToken,
         acceptedTermsVersion: 1,
       })

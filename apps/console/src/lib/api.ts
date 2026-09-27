@@ -3,6 +3,8 @@ import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 const API_URL =
   import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1';
 
+export { API_URL };
+
 /**
  * Access token: memory only, so an XSS payload cannot read it off disk and it
  * dies on reload. Refresh token: localStorage for now — the hardening path is
@@ -110,7 +112,11 @@ export async function bootRefresh(): Promise<boolean> {
   return (await refreshAccess()) !== null;
 }
 
-/** Nest returns `message` as a string, or an array from ValidationPipe. */
+/**
+ * Nest returns `message` as a string, or an array from ValidationPipe. A body
+ * without one — or no response at all — tells the user nothing, so every
+ * branch here names what actually went wrong.
+ */
 export function apiError(err: unknown): string {
   if (axios.isAxiosError(err)) {
     const data = err.response?.data as
@@ -118,8 +124,20 @@ export function apiError(err: unknown): string {
       | undefined;
     const msg = data?.message;
     if (Array.isArray(msg)) return msg.join(', ');
-    if (typeof msg === 'string') return msg;
-    return 'Something went wrong';
+    if (typeof msg === 'string' && msg.trim()) return msg;
+
+    // No response: DNS/CORS/connection refused — never the request's fault.
+    if (!err.response) {
+      return `Cannot reach the API at ${API_URL}. Check that it is running, then try again.`;
+    }
+    const status = err.response.status;
+    if (status >= 500) {
+      return `The server failed to handle this request (${status}). Try again — if it keeps failing, ask an admin to check the API logs.`;
+    }
+    return `Request failed (${status})`;
   }
+  // Thrown by our own helpers (storage PUT, file guards) — the message is the
+  // reason we want to show.
+  if (err instanceof Error && err.message.trim()) return err.message;
   return 'Something went wrong';
 }

@@ -64,8 +64,10 @@ describe('M1: profiles, branding, terms, email (e2e)', () => {
       .send({
         phone: lenderPhone,
         password,
+        email: lenderEmail,
         businessName: 'M1 SACCO',
         businessType: 'sacco',
+        contactPerson: 'Ms. Bwalya',
         otpToken: (v.body as { otpToken: string }).otpToken,
         acceptedTermsVersion: 99, // stale/wrong
       })

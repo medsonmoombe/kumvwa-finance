@@ -119,6 +119,20 @@ export class FilesService {
   }
 
   /**
+   * Re-checks storage for an already-confirmed row. `confirm()` proves the
+   * bytes landed once; this catches objects deleted afterwards (bucket reset,
+   * lifecycle rule, manual cleanup) so a submission never points at nothing.
+   */
+  async assertObjectPresent(storageKey: string): Promise<void> {
+    const head = await this.storage.head(storageKey);
+    if (!head) {
+      throw new BadRequestException(
+        'The certificate is no longer in storage — upload it again before submitting',
+      );
+    }
+  }
+
+  /**
    * Step 3 of 3. Admins review any tenant's certificate; everyone else is
    * scoped to their own. Reading a BOZ certificate is a PII read → audited.
    */

@@ -45,6 +45,8 @@ export function filesMock() {
       .mockImplementation((key: string) =>
         Promise.resolve(`https://storage.test/${key}`),
       ),
+    // Storage re-check on submit — the happy path is "the object is there".
+    assertObjectPresent: jest.fn().mockResolvedValue(undefined),
   };
 }
 

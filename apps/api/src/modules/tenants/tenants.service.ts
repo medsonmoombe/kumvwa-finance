@@ -119,6 +119,11 @@ export class TenantsService {
       );
     }
 
+    // A confirmed row can still point at bytes that are gone (bucket reset,
+    // lifecycle cleanup). Re-check storage so a submission is never empty and
+    // the reviewer never opens a dead link.
+    await this.files.assertObjectPresent(file.storageKey);
+
     const updated = await this.prisma.tenant.update({
       where: { id: tenantId },
       data: {

@@ -58,8 +58,10 @@ describe('M4: fees, weekly cycles, rollover, PAR (e2e)', () => {
       .send({
         phone: lenderPhone,
         password,
+        email: `lender.${lenderPhone}@example.zm`,
         businessName: 'M4 SACCO',
         businessType: 'sacco',
+        contactPerson: 'M4 Owner',
         otpToken: (v.body as { otpToken: string }).otpToken,
         acceptedTermsVersion: 1,
       })

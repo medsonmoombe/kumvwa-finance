@@ -15,6 +15,7 @@ interface TenantRow {
   verificationNote: string | null; bozSubmittedAt: string | null;
   bozFile: { id: string; mime: string; size: number } | null;
   ownerPhone: string | null; ownerName: string | null; createdAt: string;
+  review?: { canApprove: boolean; blockers: string[] };
 }
 
 interface PlatformTerms { version: number; body: string; publishedAt: string }
@@ -329,6 +330,16 @@ export function AdminQueuePage() {
             {drawer.status === 'pending_verification' && (
               <div className="space-y-2.5 border-t border-line pt-4">
                 <div className="text-[9.5px] font-extrabold uppercase tracking-wide text-ink-muted">Decision</div>
+                {drawer.review && !drawer.review.canApprove && drawer.review.blockers.length > 0 && (
+                  <div className="rounded-[3px] border border-warn-500/30 bg-warn-50 p-2.5 text-[11px] text-warn-500">
+                    <b>Cannot approve yet — missing items:</b>
+                    <ul className="mt-1 list-disc pl-4">
+                      {drawer.review.blockers.map((b) => (
+                        <li key={b}>{b}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
                 <input
                   className={inputCls}
                   placeholder="Rejection note (required, min 10 chars)"
@@ -342,13 +353,13 @@ export function AdminQueuePage() {
                     Reject
                   </Pill>
                   <Pill
-                    disabled={busyId === drawer.id || !drawer.bozFile}
+                    disabled={busyId === drawer.id || (drawer.review ? !drawer.review.canApprove : !drawer.bozFile)}
                     onClick={() => void review(drawer.id, 'approve')}>
                     {busyId === drawer.id ? 'Working…' : '✓ Approve'}
                   </Pill>
                 </div>
                 <p className="text-[10.5px] text-ink-muted">
-                  Approving activates lending immediately. A certificate must be uploaded first.
+                  Approving activates lending immediately. All required fields and confirmed certificate must be present.
                 </p>
               </div>
             )}

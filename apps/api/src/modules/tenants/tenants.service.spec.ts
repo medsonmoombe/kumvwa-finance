@@ -17,6 +17,7 @@ function setup(overrides: {
   tenant?: Record<string, unknown> | null;
   file?: Record<string, unknown> | null;
   admins?: { id: string }[];
+  storageMissing?: boolean;
 } = {}) {
   const prisma = {
     tenant: {
@@ -58,6 +59,13 @@ function setup(overrides: {
   const notify = notifyMock();
   const nrc = nrcMock();
   const files = filesMock();
+  if (overrides.storageMissing) {
+    files.assertObjectPresent.mockRejectedValue(
+      new Error(
+        'The certificate is no longer in storage — upload it again before submitting',
+      ),
+    );
+  }
 
   const service = new TenantsService(
     asPrisma(prisma),
@@ -186,6 +194,15 @@ describe('TenantsService.submitVerification', () => {
     await expect(service.submitVerification('t1', 'u1', dto)).rejects.toThrow(
       /Confirm the upload/,
     );
+  });
+
+  it('rejects a confirmed certificate whose bytes are gone from storage', async () => {
+    const { service, prisma } = setup({ storageMissing: true });
+
+    await expect(service.submitVerification('t1', 'u1', dto)).rejects.toThrow(
+      /no longer in storage/,
+    );
+    expect(prisma.tenant.update).not.toHaveBeenCalled();
   });
 });
 
