@@ -34,6 +34,8 @@ const envSchema = z.object({
   OTP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   CONSOLE_2FA_TTL_MIN: z.coerce.number().int().positive().default(5),
   TRUSTED_DEVICE_DAYS: z.coerce.number().int().positive().default(30),
+  /** Set to 'disabled' to bypass console 2FA entirely (e.g. when email delivery is broken). */
+  CONSOLE_OTP_FLOW: z.enum(['enabled', 'disabled']).default('enabled'),
 
   SMS_PROVIDER: z.enum(['none', 'africastalking']).default('none'),
   SMS_SENDER_ID: z.string().default('KUMVWA'),

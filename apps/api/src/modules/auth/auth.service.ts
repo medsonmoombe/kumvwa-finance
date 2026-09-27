@@ -343,7 +343,7 @@ export class AuthService {
       });
       return this.issueConsoleTokens(user, req);
     }
-    if (!user.twoFactorEnabled) return this.issueConsoleTokens(user, req);
+    if (!user.twoFactorEnabled || this.env.CONSOLE_OTP_FLOW === 'disabled') return this.issueConsoleTokens(user, req);
 
     const code = this.env.OTP_DEV_MODE
       ? this.env.OTP_DEV_CODE
