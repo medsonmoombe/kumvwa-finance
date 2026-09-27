@@ -6,13 +6,19 @@ import { DataGrid, type Column } from '../../components/kit';
 import { api, apiError } from '../../lib/api';
 import { money } from '../../lib/format';
 
+/** Tiny guard so the modal reads as intent, not a truthiness accident. */
+function showPhoto(url: string | null): boolean {
+  return url !== null && url.length > 0;
+}
+
 interface Row {
   id: string; name: string; phone: string; email: string | null;
   status: string; lenders: number; loans: number; overdue: number; accountStatus: string;
 }
 interface Detail {
   id: string; name: string; phone: string; email: string | null; status: string;
-  createdAt: string; nrc: string | null; dob: string | null; address: string | null;
+  createdAt: string;  nrc: string | null; dob: string | null; address: string | null;
+  documents: Array<{ id: string; kind: string; mime: string; size: number; side: 'front' | 'back'; createdAt: string }>;
   employmentStatus: string | null; incomeBand: string | null; incomeSource: string | null;
   kinName: string | null; kinPhone: string | null; profileCompletedAt: string | null;
   lenders: Array<{ id: string; name: string; status: string; linkedAt: string }>;
@@ -29,6 +35,9 @@ export function AdminClientsPage() {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [q, setQ] = useState('');
   const [selected, setSelected] = useState<Detail | null>(null);
+  // Which face is open in the photo viewer, plus its freshly minted URL.
+  const [photoSide, setPhotoSide] = useState<'front' | 'back'>('front');
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -44,7 +53,20 @@ export function AdminClientsPage() {
     try {
       const res = await api.get<Detail>(`/admin/clients/${id}`);
       setSelected(res.data);
+      setPhotoUrl(null);
     } catch (e) { setError(apiError(e)); }
+  }
+
+  // Presigned per open — a URL held from a previous look is already stale,
+  // and every reveal of a borrower's ID is its own audit entry.
+  async function viewNrc(side: 'front' | 'back') {
+    if (!selected) return;
+    setError('');
+    try {
+      const res = await api.get<{ url: string }>(`/admin/clients/${selected.id}/nrc-photo?side=${side}`);
+      setPhotoSide(side);
+      setPhotoUrl(res.data.url);
+    } catch (e) { setPhotoUrl(null); setError(apiError(e)); }
   }
 
   const columns: Array<Column<Row>> = [
@@ -119,6 +141,20 @@ export function AdminClientsPage() {
               </div>
               <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[10.5px]">
                 <div><dt className="text-ink-muted">NRC</dt><dd className="font-semibold">{selected.nrc ?? 'Not provided'}</dd></div>
+                <div><dt className="text-ink-muted">NRC photos</dt>
+                  <dd className="font-semibold">
+                    {selected.documents.length === 0 ? 'Not uploaded' : (
+                      <span className="flex flex-wrap gap-x-2">
+                        {selected.documents.map((d) => (
+                          <button key={d.id} onClick={() => void viewNrc(d.side)}
+                            className="font-bold text-brand-600 underline">
+                            {d.side} ({(d.size / 1024).toFixed(0)} KB)
+                          </button>
+                        ))}
+                      </span>
+                    )}
+                  </dd>
+                </div>
                 <div><dt className="text-ink-muted">Email</dt><dd className="truncate font-semibold">{selected.email ?? 'Not provided'}</dd></div>
                 <div><dt className="text-ink-muted">Date of birth</dt><dd className="font-semibold">{selected.dob ? new Date(selected.dob).toLocaleDateString() : 'Not provided'}</dd></div>
                 <div><dt className="text-ink-muted">Profile</dt><dd className="font-semibold">{selected.profileCompletedAt ? 'Completed' : 'Incomplete'}</dd></div>
@@ -181,6 +217,22 @@ export function AdminClientsPage() {
               modifications happen only through the lender relationship.
             </p>
           </aside>
+        </div>
+      )}
+
+      {/* NRC photo modal — same contract as the lender's client detail page */}
+      {selected && showPhoto(photoUrl) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0D1426]/50 p-6"
+          onClick={() => setPhotoUrl(null)}>
+          <div className="max-w-md rounded-card bg-white p-4 shadow-c3" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-2 flex items-center justify-between">
+              <b className="text-[13px] font-bold">NRC {photoSide} photo · {selected.name}</b>
+              <button onClick={() => setPhotoUrl(null)} className="text-[18px] leading-none text-ink-muted">✕</button>
+            </div>
+            <img src={photoUrl!} alt={`NRC ${photoSide}`}
+              className="max-h-[60vh] w-full rounded-[3px] border border-line object-contain" />
+            <p className="mt-2 text-[10px] text-ink-muted">This access was recorded in the audit log.</p>
+          </div>
         </div>
       )}
     </div>

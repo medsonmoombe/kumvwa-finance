@@ -10,7 +10,7 @@ and every file they display is a short-lived presigned URL from the same place.
 |---|---|---|
 | `boz_certificate` | console: registration + business verification | console: verification page, admin queue, admin tenant detail |
 | `tenant_logo` | console: Settings → App Branding | console branding preview, mobile app (loan cards, loan detail, invite screen) |
-| `nrc_photo` | mobile: profile stepper (front **and** back) | console client detail (`?side=front\|back`), mobile stepper photo viewer |
+| `nrc_photo` | mobile: profile stepper (front **and** back) | console client detail (`?side=front\|back`), admin borrowers drawer (`?side=front\|back`), mobile stepper photo viewer |
 | `kyc_document`, `other` | reserved — no caller yet | — |
 
 ## The flow
@@ -24,10 +24,22 @@ Every client does the same three steps; the API never proxies PII bytes.
 3. `POST /files/:fileId/confirm` → the API HEADs the object and stamps its real
    size + ETag. Until this succeeds the row is not a document.
 
-Retrieval is always a fresh presigned GET:
+Retrieval is always a fresh presigned GET. Lender registrations and
+resubmissions share the same pipeline — a resubmitted certificate is just a
+new upload whose row the tenant detail's `attachments` list then shows
+admin-side (current certificate in `bozFile`, earlier uploads in `attachments`).
+
+**Where each document is visible, by role:**
+
+| Role | BOZ certificate | NRC photos | Logos |
+|---|---|---|---|
+| Lender (owner/staff) | own, via `/verify` | their borrowers' | own, via Settings → App Branding |
+| Platform admin | every tenant (queue + tenant detail, incl. resubmission history) | every borrower (borrowers drawer) | every tenant |
+| Borrower | — | their own (stepper viewer) | — |
 
 - `GET /files/:id/download-url` — BOZ certificates, logos, admin review
 - `GET /clients/:id/nrc-photo?side=front|back` — lender views a borrower's NRC
+- `GET /admin/clients/:id/nrc-photo?side=front|back` — platform admin oversight
 - `GET /clients/me/nrc-photo/:side` — borrower views their own NRC
 
 **Presigned URLs live 900 seconds.** Viewers mint one when they open and never
@@ -98,7 +110,9 @@ Boot guard (`loadEnv` → `assertDeployableStorage`):
   `tenant_logo` are image-only). The ceiling is re-checked against the bytes that
   actually arrive, not just the declared size.
 - Console: additionally refuses > 5 MB for certificates and logos, client-side.
-- Every certificate/NRC read is audited (`pii.read` / `file.download_url`).
+- Every certificate/NRC read is audited (`pii.read` / `file.download_url`),
+  admin reads included — the audit log names the viewer's context
+  (`lender.nrc_viewer`, `admin.nrc_viewer`, `lender.client_detail`).
 
 ## Verify
 
