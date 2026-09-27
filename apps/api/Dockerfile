@@ -37,4 +37,4 @@ EXPOSE 8080
 # Default: migrate + start API.
 # Override dockerCommand in render.yaml to run the worker instead:
 #   node apps/worker/dist/main.js
-CMD ["sh", "-c", "pnpm --filter api exec prisma migrate deploy && node apps/api/dist/src/main.js"]
+CMD ["sh", "-c", "pnpm --filter api exec prisma migrate deploy && pnpm --filter api exec prisma db seed && node apps/api/dist/src/main.js"]

@@ -7,7 +7,7 @@ import {
   Field, FormGrid, FormSection, PageActionBar, Pill, type Column,
 } from '../../components/kit';
 import { api, apiError } from '../../lib/api';
-import { date, money } from '../../lib/format';
+import { date } from '../../lib/format';
 
 interface ClientDetail {
   id: string; name: string; nrc: string | null; phone: string; email: string | null;
