@@ -1,5 +1,5 @@
 {
-  "buildCommand": "pnpm --filter console build",
+  "buildCommand": "pnpm --filter @kumvwa/core build && pnpm --filter console exec vite build",
   "outputDirectory": "apps/console/dist",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": null,
