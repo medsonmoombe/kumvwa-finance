@@ -13,6 +13,7 @@ import { AuditService } from '../audit/audit.service';
 import { FilesService } from '../files/files.service';
 import { DEFAULT_PRIMARY_COLOR } from '../terms/terms.service';
 import { PasswordService } from '../../common/crypto/password.service';
+import { EmailService } from '../../common/email/email.service';
 import { normalizeZmPhone } from '../../common/utils/phone.util';
 import { Env, ENV } from '../../config/env';
 import type { CompleteInviteDto, CreateInviteDto } from './dto/invites.dto';
@@ -39,6 +40,7 @@ export class InvitesService {
     private readonly audit: AuditService,
     private readonly files: FilesService,
     private readonly passwords: PasswordService,
+    private readonly email: EmailService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -110,24 +112,22 @@ export class InvitesService {
       where: { id: tenantId },
       select: { name: true },
     });
+    const inviteSubject = `You're invited — ${tenant?.name ?? 'Kumvwa Finance'}`;
+    const inviteBody = [
+      `Hi ${dto.clientName},`,
+      '',
+      `${tenant?.name ?? 'A lender'} has invited you to join them on Kumvwa Finance.`,
+      '',
+      '1. Download the Kumvwa Finance app (Android).',
+      `2. Enter your invite code: ${code}`,
+      `   Or tap this link on your phone: kumvwa:///invite/${code}`,
+      '',
+      `This invite expires on ${invite.expiresAt.toDateString()}.`,
+    ].join('\n');
     await this.prisma.emailOutbox.create({
-      data: {
-        to: dto.email.toLowerCase(),
-        subject: `You're invited — ${tenant?.name ?? 'Kumvwa Finance'}`,
-        body: [
-          `Hi ${dto.clientName},`,
-          '',
-          `${tenant?.name ?? 'A lender'} has invited you to join them on Kumvwa Finance.`,
-          '',
-          '1. Download the Kumvwa Finance app (Android).',
-          `2. Enter your invite code: ${code}`,
-          `   Or tap this link on your phone: kumvwa:///invite/${code}`,
-          '',
-          `This invite expires on ${invite.expiresAt.toDateString()}.`,
-        ].join('\n'),
-        purpose: 'invite',
-      },
+      data: { to: dto.email.toLowerCase(), subject: inviteSubject, body: inviteBody, purpose: 'invite' },
     });
+    await this.email.send(dto.email.toLowerCase(), inviteSubject, inviteBody);
 
     // The raw code is returned exactly once — only its hash is stored.
     // `token` is kept as a legacy alias for existing console callers.
