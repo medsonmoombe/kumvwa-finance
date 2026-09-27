@@ -5,6 +5,8 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'package:kumvwa_finance/core/theme/app_colors.dart';
 import 'package:kumvwa_finance/core/theme/app_text.dart';
+import 'package:kumvwa_finance/core/utils/color_x.dart';
+import 'package:kumvwa_finance/core/utils/format.dart';
 import 'package:kumvwa_finance/core/utils/validators.dart';
 import 'package:kumvwa_finance/core/widgets/app_checkbox.dart';
 import 'package:kumvwa_finance/core/widgets/app_loader.dart';
@@ -272,6 +274,37 @@ class _AccountFormState extends ConsumerState<_AccountForm> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // The lender's mark, colour and tagline arrive with the
+                // public invite lookup — so the borrower sees who invited
+                // them before typing anything.
+                Row(
+                  children: [
+                    _LenderMark(invite: invite),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            invite.businessName,
+                            style: const TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.ink,
+                            ),
+                          ),
+                          if (invite.tagline != null &&
+                              invite.tagline!.trim().isNotEmpty)
+                            Text(
+                              invite.tagline!,
+                              style: AppText.subText.copyWith(fontSize: 11.5),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
                 Text(
                   'Create your account',
                   style: GoogleFonts.poppins(
@@ -377,4 +410,52 @@ class _AccountFormState extends ConsumerState<_AccountForm> {
       ),
     );
   }
+}
+
+// ---------- the inviting lender's mark (pre-login white-label) ----------
+
+/// The lender's uploaded logo (a presigned storage URL), or their initials on
+/// their brand colour when no logo is set — same contract as `LenderAvatar`,
+/// without needing the signed-in lender map.
+class _LenderMark extends StatelessWidget {
+  const _LenderMark({required this.invite});
+
+  final ClientInvite invite;
+
+  static const _size = 44.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = invite.primaryColor.toColor() ?? AppColors.blue600;
+    final logo = invite.logoUrl;
+
+    return Container(
+      width: _size,
+      height: _size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+      child: logo == null
+          ? _initials(_size)
+          : ClipOval(
+              child: Image.network(
+                logo,
+                width: _size,
+                height: _size,
+                fit: BoxFit.cover,
+                // A dead/expired presigned URL must degrade, never break the
+                // first screen a borrower ever sees.
+                errorBuilder: (_, _, _) => _initials(_size),
+              ),
+            ),
+    );
+  }
+
+  Widget _initials(double size) => Text(
+    Fmt.initials(invite.businessName),
+    style: TextStyle(
+      fontSize: size * 0.3,
+      fontWeight: FontWeight.w700,
+      color: Colors.white,
+    ),
+  );
 }

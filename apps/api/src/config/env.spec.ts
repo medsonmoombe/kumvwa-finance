@@ -43,4 +43,48 @@ describe('loadEnv', () => {
     });
     expect(env.CORS_ORIGINS).toEqual(['https://a.com', 'https://b.com']);
   });
+
+  // ── storage deploy guard ──
+  // Presigned URLs are handed to browsers and phones, so a loopback value is
+  // only ever discovered in production as "uploads don't work". Boot fails.
+
+  it('refuses a loopback API_PUBLIC_URL in prod', () => {
+    expect(() =>
+      loadEnv({
+        ...base,
+        NODE_ENV: 'prod',
+        API_PUBLIC_URL: 'http://localhost:8080/api/v1',
+      }),
+    ).toThrow(/API_PUBLIC_URL/);
+  });
+
+  it('refuses a loopback S3 endpoint when the S3 driver is on in prod', () => {
+    expect(() =>
+      loadEnv({
+        ...base,
+        NODE_ENV: 'prod',
+        STORAGE_DRIVER: 's3',
+        API_PUBLIC_URL: 'https://api.kumvwa.co.zm/api/v1',
+        S3_ENDPOINT: 'http://localhost:9000',
+      }),
+    ).toThrow(/S3_ENDPOINT/);
+  });
+
+  it('keeps dev loopback defaults working', () => {
+    const env = loadEnv(base);
+    expect(env.API_PUBLIC_URL).toBe('http://localhost:8080/api/v1');
+    expect(env.STORAGE_DRIVER).toBe('local');
+  });
+
+  it('accepts a fully public prod storage config', () => {
+    const env = loadEnv({
+      ...base,
+      NODE_ENV: 'prod',
+      STORAGE_DRIVER: 's3',
+      API_PUBLIC_URL: 'https://api.kumvwa.co.zm/api/v1',
+      S3_ENDPOINT: 'https://r2.cloudflarestorage.com',
+    });
+    expect(env.STORAGE_DRIVER).toBe('s3');
+    expect(env.API_PUBLIC_URL).toBe('https://api.kumvwa.co.zm/api/v1');
+  });
 });

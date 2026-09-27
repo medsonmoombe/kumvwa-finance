@@ -1,4 +1,12 @@
-import { IsIn, IsInt, Max, Min } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 
 export const FILE_KINDS = [
   'boz_certificate',
@@ -33,3 +41,22 @@ export class CreateUploadUrlDto {
   @Max(MAX_UPLOAD_BYTES, { message: 'File must be 10 MB or smaller' })
   size!: number;
 }
+
+export class LocalStorageParamDto {
+  @IsString()
+  @IsNotEmpty()
+  key!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  expires!: string;
+
+  @IsString()
+  @IsNotEmpty()
+  sig!: string;
+
+  @IsOptional()
+  @IsString()
+  mime?: string;
+}
+

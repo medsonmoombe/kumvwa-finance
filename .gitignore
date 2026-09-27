@@ -11,6 +11,11 @@ coverage/
 .localpg/
 .localpg13/
 
+# Local documents storage
+docs/*
+!docs/.gitkeep
+
+
 # Android signing — never commit these
 kumvwa_finance/android/key.properties
 kumvwa_finance/android/*.jks

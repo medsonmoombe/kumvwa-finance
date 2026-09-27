@@ -65,6 +65,15 @@ const envSchema = z.object({
   ROLLOVER_MAX: z.coerce.number().int().positive().default(2),
   FCM_SERVER_KEY: z.string().default(''),
 
+  /**
+   * Storage driver: 'local' stores files in the project `docs` folder and
+   * streams uploads/downloads directly via the API. 's3' uses MinIO/AWS/R2.
+   * Switching between storage backends only requires changing this variable.
+   */
+  STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
+  LOCAL_STORAGE_DIR: z.string().default('docs'),
+  API_PUBLIC_URL: z.string().default('http://localhost:8080/api/v1'),
+
   S3_ENDPOINT: z.string().default('http://localhost:9000'),
   S3_ACCESS_KEY: z.string().default('kumvwa-dev'),
   S3_SECRET_KEY: z.string().default('kumvwa-dev-secret'),
@@ -78,6 +87,41 @@ export type Env = z.infer<typeof envSchema>;
 
 export const ENV = Symbol('ENV');
 
+/** Any host a browser or a phone cannot reach, however well-formed it looks. */
+const LOOPBACK_URL = /^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])([:/]|$)/i;
+
+/**
+ * Deploy guard for storage. Both values below are *signed into the URLs handed
+ * to clients* — a loopback value parses fine, boots fine, and then fails every
+ * upload and every document view in production while the logs look healthy.
+ * So prod fails at boot instead. Dev keeps its defaults.
+ */
+export function assertDeployableStorage(env: Env): void {
+  if (env.NODE_ENV !== 'prod') return;
+
+  const problems: string[] = [];
+
+  if (LOOPBACK_URL.test(env.API_PUBLIC_URL)) {
+    problems.push(
+      `API_PUBLIC_URL="${env.API_PUBLIC_URL}" is a loopback address, so uploads and downloads would be signed for the API's own machine — no browser or phone can reach that. Set the public origin, e.g. https://api.example.com/api/v1`,
+    );
+  }
+  if (env.STORAGE_DRIVER === 's3' && LOOPBACK_URL.test(env.S3_ENDPOINT)) {
+    problems.push(
+      `S3_ENDPOINT="${env.S3_ENDPOINT}" is a loopback address while STORAGE_DRIVER=s3, so clients could not upload to or read from the bucket. Point it at your MinIO/S3/R2 endpoint.`,
+    );
+  }
+  // `STORAGE_DRIVER=local` in prod is NOT fatal — a host can mount a
+  // persistent volume — so StorageService logs the hazard loudly instead.
+  if (problems.length > 0) {
+    throw new Error(
+      `Storage is not deployable in prod:\n${problems
+        .map((p) => `  - ${p}`)
+        .join('\n')}`,
+    );
+  }
+}
+
 /** Fails fast at boot on any missing/weak config. Pure → unit-testable. */
 export function loadEnv(
   raw: Record<string, string | undefined> = process.env,
@@ -89,5 +133,6 @@ export function loadEnv(
       .join('\n');
     throw new Error(`Invalid environment configuration:\n${issues}`);
   }
+  assertDeployableStorage(parsed.data);
   return parsed.data;
 }

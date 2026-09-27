@@ -1,103 +1,71 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import {
-  CreateBucketCommand,
-  GetObjectCommand,
-  HeadBucketCommand,
-  HeadObjectCommand,
-  PutObjectCommand,
-  S3Client,
-} from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 import { ENV, type Env } from '../../config/env';
+import {
+  LocalStorageDriver,
+  PRESIGN_TTL_SEC,
+} from './storage/local-storage.driver';
+import { S3StorageDriver } from './storage/s3-storage.driver';
+import type { StorageDriver, StoredObject } from './storage/storage.interface';
 
-/** Presigned URLs are short-lived: long enough to upload a scan, short enough that a leaked URL is useless. */
-export const PRESIGN_TTL_SEC = 900;
-
-export interface StoredObject {
-  size: number;
-  etag: string;
-}
+export { PRESIGN_TTL_SEC };
+export type { StoredObject };
 
 /**
- * S3-compatible storage (MinIO in dev, real S3/R2 in prod). Documents are
- * BOZ certificates — PII — so the API never proxies bytes: it only mints
- * short-lived presigned URLs and lets the client talk to storage directly.
+ * Storage provider coordinator.
+ * Configured via `STORAGE_DRIVER` env variable:
+ * - 'local' (default): saves/retrieves docs in project `./docs` folder via API streaming
+ * - 's3': uses MinIO in dev or real S3/Cloudflare R2 in prod
+ *
+ * Switching between storage systems requires only changing `STORAGE_DRIVER`.
  */
 @Injectable()
 export class StorageService implements OnModuleInit {
   private readonly logger = new Logger(StorageService.name);
-  private readonly client: S3Client;
-  private readonly bucket: string;
+  private readonly driver: StorageDriver;
+  private readonly localDriver?: LocalStorageDriver;
 
   constructor(@Inject(ENV) private readonly env: Env) {
-    this.bucket = env.S3_BUCKET;
-    this.client = new S3Client({
-      endpoint: env.S3_ENDPOINT,
-      // MinIO ignores region, but SigV4 requires one to sign the request.
-      region: 'us-east-1',
-      // MinIO serves path-style; virtual-host style needs wildcard DNS.
-      forcePathStyle: true,
-      credentials: {
-        accessKeyId: env.S3_ACCESS_KEY,
-        secretAccessKey: env.S3_SECRET_KEY,
-      },
-    });
-  }
-
-  /** Dev convenience: make `docker compose up` alone sufficient to upload. */
-  async onModuleInit(): Promise<void> {
-    try {
-      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
-    } catch {
-      try {
-        await this.client.send(
-          new CreateBucketCommand({ Bucket: this.bucket }),
-        );
-        this.logger.log(`Created storage bucket "${this.bucket}"`);
-      } catch (err) {
-        // Prod buckets are provisioned by infra, not the app — never fatal.
-        this.logger.warn(
-          { err },
-          `Storage bucket "${this.bucket}" is not reachable yet`,
+    if (env.STORAGE_DRIVER === 'local') {
+      this.localDriver = new LocalStorageDriver(env);
+      this.driver = this.localDriver;
+      this.logger.log('Storage service initialized with local disk driver');
+      if (env.NODE_ENV === 'prod') {
+        // Louder than a warn on purpose: this is the config that silently eats
+        // BOZ certificates, logos and NRC photos on an ephemeral filesystem.
+        this.logger.error(
+          `STORAGE_DRIVER=local in prod writes documents to "${env.LOCAL_STORAGE_DIR}" on this instance. ` +
+            'Without a persistent volume every upload is lost on the next deploy — set STORAGE_DRIVER=s3.',
         );
       }
+    } else {
+      this.driver = new S3StorageDriver(env);
+      this.logger.log('Storage service initialized with S3/MinIO driver');
     }
   }
 
-  async presignPut(key: string, mime: string): Promise<string> {
-    return getSignedUrl(
-      this.client,
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        ContentType: mime,
-      }),
-      { expiresIn: PRESIGN_TTL_SEC },
-    );
+  async onModuleInit(): Promise<void> {
+    await this.driver.init();
   }
 
-  async presignGet(key: string): Promise<string> {
-    return getSignedUrl(
-      this.client,
-      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
-      { expiresIn: PRESIGN_TTL_SEC },
-    );
+  presignPut(key: string, mime: string): Promise<string> {
+    return this.driver.presignPut(key, mime);
   }
 
-  /** HEAD the object so `confirm` can reject an upload that never landed. */
-  async head(key: string): Promise<StoredObject | null> {
-    try {
-      const res = await this.client.send(
-        new HeadObjectCommand({ Bucket: this.bucket, Key: key }),
-      );
-      return {
-        size: res.ContentLength ?? 0,
-        // ETag arrives quoted ("abc") — store it bare so it's comparable.
-        etag: (res.ETag ?? '').replaceAll('"', ''),
-      };
-    } catch {
-      return null; // missing object is an expected outcome, not an error
-    }
+  presignGet(key: string, mime?: string): Promise<string> {
+    return this.driver.presignGet(key, mime);
+  }
+
+  head(key: string): Promise<StoredObject | null> {
+    return this.driver.head(key);
+  }
+
+  isLocal(): boolean {
+    return Boolean(this.localDriver);
+  }
+
+  getLocalDriver(): LocalStorageDriver | undefined {
+    return this.localDriver;
   }
 }
+

@@ -12,6 +12,13 @@ import { FilesService } from '../files/files.service';
 import { minorToKwacha } from '@kumvwa/core';
 import type { UpdateProfileDto } from './dto/clients.dto';
 
+/** Which face of the NRC a viewer asked for. Anything else means 'front'. */
+export type NrcSide = 'front' | 'back';
+
+export function parseNrcSide(value?: string): NrcSide {
+  return value === 'back' ? 'back' : 'front';
+}
+
 export function clientProfileStatus(client: {
   firstName: string;
   lastName: string;
@@ -431,21 +438,59 @@ export class ClientsService {
     };
   }
 
-  async getNrcPhotoUrl(tenantId: string, actorId: string, clientId: string) {
+  /**
+   * Lender view of a borrower's NRC. BOTH faces are retrievable — the front
+   * alone cannot verify an identity match, and either may be missing (the
+   * photos are optional), so each side 404s on its own. Reading someone
+   * else's ID is a PII read → audited.
+   */
+  async getNrcPhotoUrl(
+    tenantId: string,
+    actorId: string,
+    clientId: string,
+    side: NrcSide = 'front',
+  ) {
     const link = await this.prisma.clientLenderLink.findUnique({
       where: { clientId_tenantId: { clientId, tenantId } },
-      include: { client: { select: { nrcPhotoFileId: true } } },
+      include: {
+        client: { select: { nrcPhotoFileId: true, nrcBackPhotoFileId: true } },
+      },
     });
-    if (!link?.client.nrcPhotoFileId) throw new NotFoundException('No NRC photo on file');
+    const fileId =
+      side === 'back'
+        ? link?.client.nrcBackPhotoFileId
+        : link?.client.nrcPhotoFileId;
+    if (!fileId) throw new NotFoundException(`No NRC ${side} photo on file`);
 
-    const file = await this.prisma.file.findUnique({ where: { id: link.client.nrcPhotoFileId } });
+    const file = await this.prisma.file.findUnique({ where: { id: fileId } });
     if (!file) throw new NotFoundException('File missing');
 
     await this.audit.record({
       actorId, action: 'pii.read', entity: 'Client', entityId: clientId,
-      tenantId, diff: { field: 'nrcPhoto', context: 'lender.nrc_viewer' },
+      tenantId, diff: { field: 'nrcPhoto', side, context: 'lender.nrc_viewer' },
     });
-    return { url: await this.files.presignGet(file.storageKey) };
+    return { url: await this.files.presignGet(file.storageKey, file.mime) };
+  }
+
+  /**
+   * The borrower's OWN NRC photo — the only stored object a client may ever
+   * read back. The profile IS the authorisation, so this needs no tenant
+   * scope and can never reach a document somebody else uploaded. No audit
+   * entry: it is their own ID, read by them.
+   */
+  async ownNrcPhotoUrl(clientId: string, side: NrcSide = 'front') {
+    const c = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      select: { nrcPhotoFileId: true, nrcBackPhotoFileId: true },
+    });
+    const fileId =
+      side === 'back' ? c?.nrcBackPhotoFileId : c?.nrcPhotoFileId;
+    if (!fileId) throw new NotFoundException(`No NRC ${side} photo on file`);
+
+    const file = await this.prisma.file.findUnique({ where: { id: fileId } });
+    if (!file) throw new NotFoundException('File missing');
+
+    return { url: await this.files.presignGet(file.storageKey, file.mime) };
   }
 
   /**

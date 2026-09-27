@@ -15,6 +15,7 @@ interface ClientDetail {
   employmentStatus: string | null; incomeBand: string | null; incomeSource: string | null;
   kinName: string | null; kinPhone: string | null;
   nrcPhotoFileId: string | null;
+  nrcBackPhotoFileId: string | null;
   lendersCount: number; joinedAt: string;
   loans: Array<{ id: string; loanRef: string; status: string; createdAt: string; principal: string; outstanding: string }>;
   repayments: Array<{ id: string; loanId: string; loanRef: string; amount: string; method: string; reference: string | null; recordedAt: string }>;
@@ -48,6 +49,8 @@ export function ClientDetailPage() {
   const [c, setC] = useState<ClientDetail | null>(null);
   const [error, setError] = useState('');
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  // Which face is open in the viewer — the certificate check needs both.
+  const [photoSide, setPhotoSide] = useState<'front' | 'back'>('front');
   const [showPhoto, setShowPhoto] = useState(false);
   const [overrideLimit, setOverrideLimit] = useState('');
   const [overrideReason, setOverrideReason] = useState('');
@@ -61,9 +64,12 @@ export function ClientDetailPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function viewPhoto() {
+  // A presigned URL is minted per open, never cached: the URL the page loaded
+  // ten minutes ago is already stale, and each read is its own audit entry.
+  async function viewPhoto(side: 'front' | 'back') {
     try {
-      const res = await api.get<{ url: string }>(`/clients/${id}/nrc-photo`);
+      const res = await api.get<{ url: string }>(`/clients/${id}/nrc-photo?side=${side}`);
+      setPhotoSide(side);
       setPhotoUrl(res.data.url);
       setShowPhoto(true);
     } catch (e) { setError(apiError(e)); }
@@ -131,7 +137,8 @@ export function ClientDetailPage() {
         title={c.name}
         sub={`${c.lendersCount} lender${c.lendersCount === 1 ? '' : 's'} on platform · joined ${date(c.joinedAt)}`}
         actions={<>
-          {c.nrcPhotoFileId && <Pill onClick={viewPhoto}>View NRC Photo</Pill>}
+          {c.nrcPhotoFileId && <Pill onClick={() => void viewPhoto('front')}>View NRC Front</Pill>}
+          {c.nrcBackPhotoFileId && <Pill tone="ghost" onClick={() => void viewPhoto('back')}>View NRC Back</Pill>}
           {c.limitOverride && <Badge color="amber">Override active</Badge>}
         </>}
       />
@@ -164,11 +171,20 @@ export function ClientDetailPage() {
             <Field label="Next of kin phone">
               {c.kinPhone ? <span className="tabular-nums">{c.kinPhone}</span> : '—'}
             </Field>
-            <Field label="NRC photo on file">
-              {c.nrcPhotoFileId ? (
-                <button onClick={viewPhoto} className="text-[11.5px] font-bold text-brand-600 underline">
-                  View (access is audited)
-                </button>
+            <Field label="NRC photos on file">
+              {c.nrcPhotoFileId || c.nrcBackPhotoFileId ? (
+                <span className="flex flex-wrap gap-x-3 gap-y-1">
+                  {c.nrcPhotoFileId && (
+                    <button onClick={() => void viewPhoto('front')} className="text-[11.5px] font-bold text-brand-600 underline">
+                      Front (access is audited)
+                    </button>
+                  )}
+                  {c.nrcBackPhotoFileId && (
+                    <button onClick={() => void viewPhoto('back')} className="text-[11.5px] font-bold text-brand-600 underline">
+                      Back (access is audited)
+                    </button>
+                  )}
+                </span>
               ) : 'Not uploaded'}
             </Field>
           </FormGrid>
@@ -267,7 +283,7 @@ export function ClientDetailPage() {
           onClick={() => setShowPhoto(false)}>
           <div className="max-w-md rounded-card bg-white p-4 shadow-c3" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 flex items-center justify-between">
-              <b className="text-[13px] font-bold">NRC photo · {c.name}</b>
+              <b className="text-[13px] font-bold">NRC {photoSide} photo · {c.name}</b>
               <button onClick={() => setShowPhoto(false)} className="text-[18px] leading-none text-ink-muted">✕</button>
             </div>
             <img src={photoUrl} alt="NRC" className="max-h-[60vh] w-full rounded-[3px] border border-line object-contain" />

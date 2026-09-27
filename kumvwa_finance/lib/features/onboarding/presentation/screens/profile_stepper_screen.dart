@@ -190,6 +190,18 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
     }
   }
 
+  /// Shows the borrower the face already on file. The presigned URL is minted
+  /// on open (it lives 15 minutes), so the viewer never shows an expired image.
+  void _viewNrc({required bool isBack}) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => _NrcPhotoDialog(
+        title: isBack ? 'NRC back' : 'NRC front',
+        side: isBack ? 'back' : 'front',
+      ),
+    );
+  }
+
   Future<void> _submit() async {
     setState(() { _submitting = true; _error = null; });
 
@@ -387,6 +399,7 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
                         fileId: _nrcPhotoFileId,
                         fileName: _nrcPhotoName,
                         busy: _uploadingNrc,
+                        onView: () => _viewNrc(isBack: false),
                         onTap: _uploadingNrc
                             ? null
                             : () => _pickAndUploadNrc(isBack: false),
@@ -400,6 +413,7 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
                         fileId: _nrcBackFileId,
                         fileName: _nrcBackName,
                         busy: _uploadingNrc,
+                        onView: () => _viewNrc(isBack: true),
                         onTap: _uploadingNrc
                             ? null
                             : () => _pickAndUploadNrc(isBack: true),
@@ -548,6 +562,7 @@ class _NrcUploadTile extends StatelessWidget {
     required this.fileName,
     required this.busy,
     required this.onTap,
+    required this.onView,
   });
 
   /// Side-specific card glyph (front shows the photo, back the stripe).
@@ -557,6 +572,9 @@ class _NrcUploadTile extends StatelessWidget {
   final String? fileName;
   final bool busy;
   final VoidCallback? onTap;
+
+  /// Opens the stored photo — only rendered once a face is on file.
+  final VoidCallback onView;
 
   @override
   Widget build(BuildContext context) {
@@ -639,10 +657,156 @@ class _NrcUploadTile extends StatelessWidget {
                 'Tap to replace',
                 style: TextStyle(fontSize: 10, color: AppColors.muted),
               ),
+              const SizedBox(height: 6),
+              // Its own tap target inside the tile: the inner gesture wins, so
+              // viewing never triggers a re-pick.
+              GestureDetector(
+                onTap: busy ? null : onView,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  child: Text(
+                    'View photo',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.blue600,
+                      decoration: TextDecoration.underline,
+                      decorationColor: AppColors.blue600,
+                    ),
+                  ),
+                ),
+              ),
             ],
           ],
         ),
       ),
     );
   }
+}
+
+/// Full-screen view of an NRC face the borrower already uploaded. The URL is
+/// fetched on open — presigned links expire in 15 minutes, so caching one in
+/// the stepper would show a broken image on the next visit.
+class _NrcPhotoDialog extends ConsumerStatefulWidget {
+  const _NrcPhotoDialog({required this.title, required this.side});
+
+  final String title;
+  final String side;
+
+  @override
+  ConsumerState<_NrcPhotoDialog> createState() => _NrcPhotoDialogState();
+}
+
+class _NrcPhotoDialogState extends ConsumerState<_NrcPhotoDialog> {
+  Future<String>? _url;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  void _load() {
+    setState(() {
+      _url = ref.read(clientsRepositoryProvider).nrcPhotoUrl(side: widget.side);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 8, 14, 14),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.ink,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            FutureBuilder<String>(
+              future: _url,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 40),
+                    child: Center(
+                      child: SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2.4),
+                      ),
+                    ),
+                  );
+                }
+
+                final url = snapshot.data;
+                if (snapshot.hasError || url == null || url.isEmpty) {
+                  return _failure();
+                }
+
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.network(
+                    url,
+                    height: 320,
+                    fit: BoxFit.contain,
+                    loadingBuilder: (context, child, progress) => progress == null
+                        ? child
+                        : const SizedBox(
+                            height: 320,
+                            child: Center(
+                              child: SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(strokeWidth: 2.4),
+                              ),
+                            ),
+                          ),
+                    errorBuilder: (_, _, _) => _failure(),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Only you and your lender can open this photo.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 10.5, color: AppColors.muted),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _failure() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 28),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          'Could not open the photo.',
+          style: TextStyle(fontSize: 12.5, color: AppColors.muted),
+        ),
+        TextButton(onPressed: _load, child: const Text('Try again')),
+      ],
+    ),
+  );
 }

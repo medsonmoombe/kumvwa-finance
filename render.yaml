@@ -57,6 +57,14 @@ services:
         sync: false
       - key: SMTP_FROM
         sync: false
+      # Prod MUST use the S3 driver: a Render web service has no persistent
+      # disk, and the 'local' driver defaults to writing ./docs on the
+      # instance AND to minting presigned URLs from API_PUBLIC_URL (which
+      # defaults to http://localhost:8080 — unreachable for real clients).
+      - key: STORAGE_DRIVER
+        value: s3
+      - key: API_PUBLIC_URL
+        value: https://kumvwa-api.onrender.com/api/v1
       - key: S3_ENDPOINT
         sync: false
       - key: S3_ACCESS_KEY

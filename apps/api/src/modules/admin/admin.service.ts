@@ -10,6 +10,8 @@ import { minorToKwacha } from '@kumvwa/core';
 import { NrcCryptoService } from '../../common/crypto/nrc-crypto.service';
 import { PrismaService } from '../../infra/prisma.module';
 import { AuditService } from '../audit/audit.service';
+import type { NrcSide } from '../clients/clients.service';
+import { FilesService } from '../files/files.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import type { ReviewVerificationDto } from './dto/admin.dto';
 
@@ -50,6 +52,7 @@ export class AdminService {
     private readonly audit: AuditService,
     private readonly notify: NotificationsService,
     private readonly nrc: NrcCryptoService,
+    private readonly files: FilesService,
   ) {}
 
   /** Newest first. Pending tenants surface through the default sort anyway. */
@@ -602,11 +605,81 @@ export class AdminService {
         linkedAt: l.createdAt,
       })),
       accountStatus: client.user?.status ?? 'no_account',
+      // NRC faces are stored tenant-less, so they appear in no lender's
+      // attachment list — this drawer is where an admin sees them.
+      documents: await this.clientDocuments(client),
       loans: outstanding,
     };
   }
 
   // ─────────────── platform-wide console user oversight ───────────────
+
+  /**
+   * Every stored document a borrower owns, newest uploads last, front face
+   * first. Kept tiny on purpose: the admin view needs to know WHAT exists and
+   * its size, not to inline the bytes.
+   */
+  private async clientDocuments(client: {
+    nrcPhotoFileId: string | null;
+    nrcBackPhotoFileId: string | null;
+  }) {
+    const ids = [client.nrcPhotoFileId, client.nrcBackPhotoFileId].filter(
+      (id): id is string => id !== null,
+    );
+    if (ids.length === 0) return [];
+
+    const rows = await this.prisma.file.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        kind: true,
+        mime: true,
+        size: true,
+        createdAt: true,
+      },
+    });
+
+    return rows
+      .map((row) => ({
+        ...row,
+        side: (row.id === client.nrcPhotoFileId ? 'front' : 'back') as NrcSide,
+      }))
+      .sort((a, b) => (a.side === b.side ? 0 : a.side === 'front' ? -1 : 1));
+  }
+
+  /**
+   * Platform-admin view of a borrower's NRC photo. An admin has no lender
+   * link, so this is scoped by the client id alone (role-gated at the
+   * controller) and audited as a PII read — same contract as ownerIdentity.
+   */
+  async clientNrcPhotoUrl(
+    clientId: string,
+    actorId: string,
+    side: NrcSide = 'front',
+  ) {
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      select: { id: true, nrcPhotoFileId: true, nrcBackPhotoFileId: true },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    const fileId =
+      side === 'back' ? client.nrcBackPhotoFileId : client.nrcPhotoFileId;
+    if (!fileId) throw new NotFoundException(`No NRC ${side} photo on file`);
+
+    const file = await this.prisma.file.findUnique({ where: { id: fileId } });
+    if (!file) throw new NotFoundException('File missing');
+
+    await this.audit.record({
+      actorId,
+      action: 'pii.read',
+      entity: 'Client',
+      entityId: clientId,
+      diff: { field: 'nrcPhoto', side, context: 'admin.nrc_viewer' },
+    });
+
+    return { url: await this.files.presignGet(file.storageKey, file.mime) };
+  }
 
   async listUsers() {
     const rows = await this.prisma.user.findMany({

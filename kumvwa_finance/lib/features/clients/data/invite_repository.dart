@@ -134,6 +134,11 @@ class ApiInviteRepository implements InviteRepository {
         phone: data['phone'] as String? ?? '',
         phoneMasked: data['phoneMasked'] as String?,
         link: data['link'] as String?,
+        // Pre-login white-label — the API already resolves the logo through
+        // the storage service; the screen would otherwise ignore it.
+        primaryColor: data['primaryColor'] as String? ?? '#1A4FBF',
+        logoUrl: data['logoUrl'] as String?,
+        tagline: data['tagline'] as String?,
       );
     } on DioException catch (e) {
       throw InviteException(_friendly(ApiException.fromDio(e)));

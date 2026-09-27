@@ -1,10 +1,12 @@
 import {
   asAudit,
+  asFiles,
   asNotify,
   asNrc,
   asPrisma,
   auditMock,
   callData,
+  filesMock,
   notifyMock,
   nrcMock,
 } from '../../testing/mocks';
@@ -42,19 +44,24 @@ function setup(
       findMany: jest.fn().mockResolvedValue([]),
     },
     user: { findFirst: jest.fn().mockResolvedValue({ id: 'owner1' }) },
+    // Used by the borrower-document specs; harmless elsewhere.
+    client: { findUnique: jest.fn().mockResolvedValue(null) },
+    file: { findUnique: jest.fn().mockResolvedValue(null) },
   };
   const audit = auditMock();
   const notify = notifyMock();
   const nrc = nrcMock();
+  const files = filesMock();
 
   const service = new AdminService(
     asPrisma(prisma),
     asAudit(audit),
     asNotify(notify),
     asNrc(nrc),
+    asFiles(files),
   );
 
-  return { service, prisma, audit, notify, nrc };
+  return { service, prisma, audit, notify, nrc, files };
 }
 
 describe('AdminService.review', () => {
@@ -243,5 +250,79 @@ describe('AdminService.ownerIdentity', () => {
 
     expect(res.ownerNrc).toBeNull();
     expect(nrc.decrypt).not.toHaveBeenCalled();
+  });
+});
+
+describe('AdminService.clientNrcPhotoUrl', () => {
+  function withClient(
+    overrides: { client?: Record<string, unknown> | null; file?: Record<string, unknown> | null } = {},
+  ) {
+    const ctx = setup();
+    ctx.prisma.client = {
+      findUnique: jest.fn().mockResolvedValue(
+        overrides.client === undefined
+          ? {
+              id: 'c1',
+              nrcPhotoFileId: 'f-front',
+              nrcBackPhotoFileId: 'f-back',
+            }
+          : overrides.client,
+      ),
+    };
+    ctx.prisma.file = {
+      findUnique: jest.fn().mockResolvedValue(
+        overrides.file === undefined
+          ? { id: 'f-front', storageKey: 'clients/nrc_photo/aa', mime: 'image/jpeg' }
+          : overrides.file,
+      ),
+    };
+    return ctx;
+  }
+
+  it('presigns the front face and audits the PII read', async () => {
+    const { service, files, audit } = withClient();
+
+    const res = await service.clientNrcPhotoUrl('c1', 'admin1', 'front');
+
+    expect(files.presignGet).toHaveBeenCalledWith('clients/nrc_photo/aa', 'image/jpeg');
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'pii.read',
+        entityId: 'c1',
+        diff: expect.objectContaining({ side: 'front', context: 'admin.nrc_viewer' }),
+      }),
+    );
+  });
+
+  it('presigns the back face when asked for it', async () => {
+    const { service, files, prisma } = withClient();
+    (prisma.file.findUnique as jest.Mock).mockResolvedValue({
+      id: 'f-back',
+      storageKey: 'clients/nrc_photo/bb',
+      mime: 'image/png',
+    });
+
+    const res = await service.clientNrcPhotoUrl('c1', 'admin1', 'back');
+
+    expect(files.presignGet).toHaveBeenCalledWith('clients/nrc_photo/bb', 'image/png');
+  });
+
+  it('404s per face — a missing back photo is not a missing client', async () => {
+    const { service, files } = withClient({
+      client: { id: 'c1', nrcPhotoFileId: 'f-front', nrcBackPhotoFileId: null },
+    });
+
+    await expect(
+      service.clientNrcPhotoUrl('c1', 'admin1', 'back'),
+    ).rejects.toThrow(/No NRC back photo on file/);
+    expect(files.presignGet).not.toHaveBeenCalled();
+  });
+
+  it('404s on an unknown client', async () => {
+    const { service } = withClient({ client: null });
+
+    await expect(
+      service.clientNrcPhotoUrl('nope', 'admin1', 'front'),
+    ).rejects.toThrow(/Client not found/);
   });
 });

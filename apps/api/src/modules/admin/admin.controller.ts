@@ -15,6 +15,7 @@ import type { TokenClaims } from '../../common/crypto/token.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/guards/roles.decorator';
 import { AuditService } from '../audit/audit.service';
+import { parseNrcSide } from '../clients/clients.service';
 import { AdminService } from './admin.service';
 import {
   ReviewVerificationDto,
@@ -157,6 +158,19 @@ export class AdminClientsController {
   @Get()
   list(@Query('q') q?: string) {
     return this.admin.listClients(q);
+  }
+
+  /**
+   * A borrower's NRC photo for oversight. `?side=front|back` — each face is
+   * presigned, and audited, separately. Literal route before `:id`.
+   */
+  @Get(':id/nrc-photo')
+  nrcPhoto(
+    @CurrentUser() u: TokenClaims,
+    @Param('id') id: string,
+    @Query('side') side?: string,
+  ) {
+    return this.admin.clientNrcPhotoUrl(id, u.sub, parseNrcSide(side));
   }
 
   // Literal route first: `:id` must not shadow the list above.

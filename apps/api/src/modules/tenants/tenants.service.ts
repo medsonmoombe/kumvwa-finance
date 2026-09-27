@@ -248,7 +248,7 @@ export class TenantsService {
       tagline: t.tagline,
       primaryColor: t.primaryColor ?? DEFAULT_PRIMARY_COLOR,
       logoUrl: t.logoFile
-        ? await this.files.presignGet(t.logoFile.storageKey)
+        ? await this.files.presignGet(t.logoFile.storageKey, t.logoFile.mime)
         : null,
       terms: t.terms[0]
         ? { version: t.terms[0].version, body: t.terms[0].body }
@@ -278,7 +278,7 @@ export class TenantsService {
       tagline: t.tagline,
       primaryColor: t.primaryColor ?? DEFAULT_PRIMARY_COLOR, // Kumvwa default
       logoUrl: t.logoFile
-        ? await this.files.presignGet(t.logoFile.storageKey)
+        ? await this.files.presignGet(t.logoFile.storageKey, t.logoFile.mime)
         : null,
       terms: t.terms[0]
         ? { version: t.terms[0].version, body: t.terms[0].body }

@@ -207,7 +207,7 @@ export class TermsService implements OnModuleInit {
           primaryColor: l.tenant.primaryColor ?? DEFAULT_PRIMARY_COLOR,
           tagline: l.tenant.tagline,
           logoUrl: l.tenant.logoFile
-            ? await this.files.presignGet(l.tenant.logoFile.storageKey)
+            ? await this.files.presignGet(l.tenant.logoFile.storageKey, l.tenant.logoFile.mime)
             : null,
           termsVersion: terms?.version ?? null,
           termsAccepted: accepted,

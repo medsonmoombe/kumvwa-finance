@@ -174,7 +174,7 @@ export class InvitesService {
       primaryColor: invite.tenant.primaryColor ?? DEFAULT_PRIMARY_COLOR,
       tagline: invite.tenant.tagline,
       logoUrl: invite.tenant.logoFile
-        ? await this.files.presignGet(invite.tenant.logoFile.storageKey)
+        ? await this.files.presignGet(invite.tenant.logoFile.storageKey, invite.tenant.logoFile.mime)
         : null,
       // The invited person still needs the app before they can redeem the
       // code in-app, so the public lookup surfaces the download link too.

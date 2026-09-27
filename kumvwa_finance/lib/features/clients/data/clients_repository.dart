@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:kumvwa_finance/core/config/env.dart';
 import 'package:kumvwa_finance/core/network/api_client.dart';
+import 'package:kumvwa_finance/core/network/api_exception.dart';
 import 'package:kumvwa_finance/core/network/api_parse.dart';
 import 'package:kumvwa_finance/features/profile/domain/client_profile.dart';
 
@@ -11,6 +12,12 @@ import 'package:kumvwa_finance/features/profile/domain/client_profile.dart';
 abstract class ClientsRepository {
   /// The borrower's own profile + KYC completeness.
   Future<ClientProfile> getMe();
+
+  /// A presigned URL for one face (`front`/`back`) of the borrower's OWN
+  /// uploaded NRC, so the app can show them what is on file. Minted per call
+  /// and short-lived by design — fetch it when the viewer opens, never cache
+  /// it. Throws [ApiException] when that face was never uploaded.
+  Future<String> nrcPhotoUrl({required String side});
 
   /// Post-login KYC wizard target. Returns the refreshed profile.
   Future<ClientProfile> updateProfile({
@@ -29,6 +36,16 @@ class ApiClientsRepository implements ClientsRepository {
   Future<ClientProfile> getMe() async {
     final res = await _client.getA('/clients/me');
     return clientProfileFromJson(res.data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<String> nrcPhotoUrl({required String side}) async {
+    final res = await _client.getA('/clients/me/nrc-photo/$side');
+    final url = (res.data as Map<String, dynamic>)['url'] as String?;
+    if (url == null || url.isEmpty) {
+      throw const ApiException('The photo could not be opened. Try again.');
+    }
+    return url;
   }
 
   @override
@@ -117,6 +134,14 @@ class MockSelfClientsRepository implements ClientsRepository {
   Future<ClientProfile> getMe() async {
     await Future<void>.delayed(const Duration(milliseconds: 300));
     return _complete;
+  }
+
+  /// The mock profile has no uploaded photos, so the viewer's "View" link is
+  /// never rendered in mock mode — nothing to serve.
+  @override
+  Future<String> nrcPhotoUrl({required String side}) async {
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    throw const ApiException('NRC photos are only available against the API.');
   }
 
   @override

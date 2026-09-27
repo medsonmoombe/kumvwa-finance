@@ -26,8 +26,8 @@ export class FilesService {
   ) {}
 
   /** Presigned GET for a stored object — branding everywhere reuses this. */
-  presignGet(storageKey: string): Promise<string> {
-    return this.storage.presignGet(storageKey);
+  presignGet(storageKey: string, mime?: string): Promise<string> {
+    return this.storage.presignGet(storageKey, mime);
   }
 
   /**
@@ -145,7 +145,7 @@ export class FilesService {
       throw new NotFoundException('File not found');
     }
 
-    const downloadUrl = await this.storage.presignGet(file.storageKey);
+    const downloadUrl = await this.storage.presignGet(file.storageKey, file.mime);
 
     await this.audit.record({
       actorId: claims.sub,

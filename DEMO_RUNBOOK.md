@@ -25,6 +25,10 @@ release APK pointing at the hosted API.
    - `CORS_ORIGINS=https://<console-url>`
    - `APP_BASE_URL` = console URL
    - `OTP_DEV_MODE=true` for the demo (codes fixed `123456`)
+   - `STORAGE_DRIVER=s3`, `API_PUBLIC_URL=https://<api-domain>/api/v1` and the
+     `S3_*` credentials — plus a bucket CORS rule. See **`STORAGE.md`**: get
+     this wrong and every certificate, logo and NRC upload fails in prod while
+     the API looks perfectly healthy.
 6. Generate a Railway **domain** for `api` → that's your `API_BASE_URL`
    (https — no cleartext needed on the phone).
 7. Seed the platform admin once, locally:

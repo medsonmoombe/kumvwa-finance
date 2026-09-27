@@ -8,6 +8,9 @@ class ClientInvite {
     required this.phone,
     this.phoneMasked,
     this.link,
+    this.primaryColor = '#1A4FBF',
+    this.logoUrl,
+    this.tagline,
     this.completed = false,
   });
 
@@ -24,6 +27,15 @@ class ClientInvite {
   /// App download page — paired with [code] so the share card carries both
   /// "go get the app" and "redeem this in-app".
   final String? link;
+
+  /// The inviting lender's white-label, straight off the public invite lookup:
+  /// the colour their surfaces tint to, the tagline under their name, and a
+  /// short-lived presigned URL for their uploaded logo. Null [logoUrl] means
+  /// the invite screen falls back to their initials on [primaryColor].
+  final String primaryColor;
+  final String? logoUrl;
+  final String? tagline;
+
   bool completed;
 }
 
