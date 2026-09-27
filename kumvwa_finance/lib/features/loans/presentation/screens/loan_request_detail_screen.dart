@@ -49,7 +49,7 @@ class _LoanRequestDetailScreenState
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Approved — loan ${loan.id} created for ${r.clientName}',
+                'Approved. Loan ${loan.id} created for ${r.clientName}',
               ),
             ),
           );
@@ -64,7 +64,7 @@ class _LoanRequestDetailScreenState
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                'Request declined — ${r.clientName} will see your feedback',
+                'Request declined. ${r.clientName} will see your feedback',
               ),
             ),
           );
@@ -136,8 +136,9 @@ class _LoanRequestDetailScreenState
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialog) => AlertDialog(
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+          ),
           title: const Text('Interest rate'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -185,7 +186,7 @@ class _LoanRequestDetailScreenState
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Decline — feedback'),
+        title: const Text('Decline: feedback'),
         content: TextField(
           controller: ctrl,
           autofocus: true,
@@ -254,8 +255,11 @@ class _LoanRequestDetailScreenState
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.error_outline,
-                      size: 40, color: AppColors.muted),
+                  const Icon(
+                    Icons.error_outline,
+                    size: 40,
+                    color: AppColors.muted,
+                  ),
                   const SizedBox(height: 12),
                   const Text(
                     'Could not load this request',
@@ -270,7 +274,9 @@ class _LoanRequestDetailScreenState
                     _friendlyError(err),
                     textAlign: TextAlign.center,
                     style: const TextStyle(
-                        fontSize: 12, color: AppColors.muted),
+                      fontSize: 12,
+                      color: AppColors.muted,
+                    ),
                   ),
                   const SizedBox(height: 14),
                   OutlinedButton.icon(
@@ -290,8 +296,7 @@ class _LoanRequestDetailScreenState
               // Lender-only review controls. When a borrower opens their own
               // application they can read it — the decision belongs to the lender.
               if (r.status == LoanRequestStatus.pending &&
-                  ref.watch(authControllerProvider).session?.role ==
-                      'business')
+                  ref.watch(authControllerProvider).session?.role == 'business')
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
                   child: Row(
@@ -338,8 +343,8 @@ String _friendlyError(Object err) {
   final message = err is ApiException
       ? err.message
       : err is DioException
-          ? err.message
-          : null;
+      ? err.message
+      : null;
   if (message == null || message.isEmpty) return 'Please try again.';
   if (message.toLowerCase().contains('not found')) {
     return 'This request no longer exists.';
@@ -357,15 +362,19 @@ class _Content extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final allLoans = ref.watch(loansProvider).valueOrNull ?? const <Loan>[];
-    final clientLoans =
-        allLoans.where((l) => l.clientId == request.clientId).toList();
+    final clientLoans = allLoans
+        .where((l) => l.clientId == request.clientId)
+        .toList();
 
-    final active =
-        clientLoans.where((l) => l.status == LoanStatus.active).length;
-    final overdue =
-        clientLoans.where((l) => l.status == LoanStatus.overdue).length;
-    final cleared =
-        clientLoans.where((l) => l.status == LoanStatus.cleared).length;
+    final active = clientLoans
+        .where((l) => l.status == LoanStatus.active)
+        .length;
+    final overdue = clientLoans
+        .where((l) => l.status == LoanStatus.overdue)
+        .length;
+    final cleared = clientLoans
+        .where((l) => l.status == LoanStatus.cleared)
+        .length;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
@@ -393,12 +402,18 @@ class _Content extends ConsumerWidget {
                     ),
                   ),
                   switch (request.status) {
-                    LoanRequestStatus.pending =>
-                      const AppBadge('Pending', variant: BadgeVariant.amber),
-                    LoanRequestStatus.approved =>
-                      const AppBadge('Approved', variant: BadgeVariant.green),
-                    LoanRequestStatus.rejected =>
-                      const AppBadge('Declined', variant: BadgeVariant.red),
+                    LoanRequestStatus.pending => const AppBadge(
+                      'Pending',
+                      variant: BadgeVariant.amber,
+                    ),
+                    LoanRequestStatus.approved => const AppBadge(
+                      'Approved',
+                      variant: BadgeVariant.green,
+                    ),
+                    LoanRequestStatus.rejected => const AppBadge(
+                      'Declined',
+                      variant: BadgeVariant.red,
+                    ),
                   },
                 ],
               ),
@@ -406,8 +421,7 @@ class _Content extends ConsumerWidget {
               Text(
                 '${request.termInstallments} monthly installments · '
                 'requested ${Fmt.date(request.requestedAt)}',
-                style: const TextStyle(
-                    fontSize: 11.5, color: AppColors.muted),
+                style: const TextStyle(fontSize: 11.5, color: AppColors.muted),
               ),
               const SizedBox(height: 12),
               const Text(
@@ -505,18 +519,27 @@ class _Content extends ConsumerWidget {
               Row(
                 children: [
                   Expanded(
-                    child: _stat('$active', 'Active',
-                        active > 0 ? AppColors.green700 : AppColors.muted),
+                    child: _stat(
+                      '$active',
+                      'Active',
+                      active > 0 ? AppColors.green700 : AppColors.muted,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: _stat('$overdue', 'Overdue',
-                        overdue > 0 ? AppColors.red : AppColors.muted),
+                    child: _stat(
+                      '$overdue',
+                      'Overdue',
+                      overdue > 0 ? AppColors.red : AppColors.muted,
+                    ),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: _stat('$cleared', 'Cleared',
-                        cleared > 0 ? AppColors.blue600 : AppColors.muted),
+                    child: _stat(
+                      '$cleared',
+                      'Cleared',
+                      cleared > 0 ? AppColors.blue600 : AppColors.muted,
+                    ),
                   ),
                 ],
               ),
@@ -535,9 +558,10 @@ class _Content extends ConsumerWidget {
         children: [
           SizedBox(
             width: 70,
-            child: Text(label,
-                style: const TextStyle(
-                    fontSize: 12, color: AppColors.muted)),
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: AppColors.muted),
+            ),
           ),
           Expanded(
             child: Text(
@@ -571,9 +595,10 @@ class _Content extends ConsumerWidget {
               color: color,
             ),
           ),
-          Text(label,
-              style:
-                  const TextStyle(fontSize: 10, color: AppColors.muted)),
+          Text(
+            label,
+            style: const TextStyle(fontSize: 10, color: AppColors.muted),
+          ),
         ],
       ),
     );

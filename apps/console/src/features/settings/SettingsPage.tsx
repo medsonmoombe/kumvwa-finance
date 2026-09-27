@@ -1,217 +1,141 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { FiCheck, FiFileText, FiInfo, FiLock, FiShield, FiUploadCloud } from 'react-icons/fi';
 
-import {
-  Badge,
-  Card,
-  CenteredSpinner,
-  ErrorBox,
-  PageHead,
-  Spinner,
-} from '../../components/ui';
+import { ErrorBox, inputCls, labelCls } from '../../components/ui';
+import { PageActionBar, Pill } from '../../components/kit';
 import { api, apiError } from '../../lib/api';
-import { money } from '../../lib/format';
+import { useAuth } from '../../lib/auth';
+import { BrandingTab } from './BrandingTab';
+import { PolicyTab } from './PolicyTab';
+import { TermsTab } from './TermsTab';
+import { SecurityTab } from './SecurityTab';
 
-interface Product {
-  id: string;
-  name: string;
-  ratePct: number;
-  minAmount: string;
-  maxAmount: string;
-  minAmountMinor: string;
-  maxAmountMinor: string;
-  minTerm: number;
-  maxTerm: number;
-  active: boolean;
-}
+type Tab = 'business' | 'branding' | 'terms' | 'policy' | 'security';
 
 export function SettingsPage() {
-  const [items, setItems] = useState<Product[] | null>(null);
+  const { tenant, refreshSession } = useAuth();
+  const [tab, setTab] = useState<Tab>('business');
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [creating, setCreating] = useState(false);
+  const [ok, setOk] = useState('');
 
-  const load = useCallback(() => {
-    api
-      .get<{ items: Product[] }>('/loan-products')
-      .then((r) => setItems(r.data.items))
-      .catch(() => setError('Could not load loan products'));
-  }, []);
+  const [form, setForm] = useState({
+    email: '', address: '', tpin: '', contactPerson: '', tagline: '',
+  });
 
   useEffect(() => {
-    load();
-  }, [load]);
+    api.get('/tenants/me/branding')
+      .then((r: { data: { email?: string | null; address?: string | null; tpin?: string | null; contactPerson?: string | null; tagline?: string | null } }) => {
+        setForm({
+          email: r.data.email ?? '',
+          address: r.data.address ?? '',
+          tpin: r.data.tpin ?? '',
+          contactPerson: r.data.contactPerson ?? '',
+          tagline: r.data.tagline ?? '',
+        });
+      })
+      .catch(() => {});
+  }, []);
 
-  return (
-    <div className="mx-auto max-w-3xl">
-      <PageHead
-        title="Settings"
-        sub="Loan products define the rate and amount guard-rails for approvals"
-        action={
-          <button
-            onClick={() => setCreating(!creating)}
-            className="rounded-btn bg-brand-600 px-4 py-2.5 text-[12.5px] font-bold text-white shadow-c1 hover:bg-brand-900"
-          >
-            {creating ? 'Cancel' : '+ New Product'}
-          </button>
-        }
-      />
+  if (!tenant) return null;
 
-      {error && <ErrorBox message={error} />}
-
-      {creating && (
-        <ProductForm
-          onDone={() => {
-            setCreating(false);
-            load();
-          }}
-        />
-      )}
-
-      {!items ? (
-        <CenteredSpinner />
-      ) : items.length === 0 ? (
-        <Card className="p-8 text-center text-[12.5px] text-ink-muted">
-          No loan products yet — create your first one.
-        </Card>
-      ) : (
-        <div className="space-y-2.5">
-          {items.map((p) => (
-            <Card key={p.id} className="flex items-center gap-4 p-4">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 font-display text-[15px] font-extrabold text-brand-600">
-                {p.ratePct}%
-              </div>
-              <div className="min-w-0 flex-1">
-                <b className="block text-[13px]">{p.name}</b>
-                <span className="text-[11.5px] tabular-nums text-ink-muted">
-                  {money(p.minAmountMinor)} – {money(p.maxAmountMinor)} ·{' '}
-                  {p.minTerm}–{p.maxTerm} months
-                </span>
-              </div>
-              <Badge color={p.active ? 'green' : 'grey'} dot>
-                {p.active ? 'Active' : 'Inactive'}
-              </Badge>
-            </Card>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ProductForm({ onDone }: { onDone: () => void }) {
-  const [name, setName] = useState('');
-  const [ratePct, setRatePct] = useState(15);
-  const [minAmount, setMinAmount] = useState('500');
-  const [maxAmount, setMaxAmount] = useState('10000');
-  const [minTerm, setMinTerm] = useState(1);
-  const [maxTerm, setMaxTerm] = useState(6);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-
-  async function submit() {
-    setBusy(true);
-    setError('');
+  async function saveBusiness() {
+    setSaving(true); setError(''); setOk('');
     try {
-      await api.post('/loan-products', {
-        name,
-        rateBps: Math.round(ratePct * 100),
-        minAmount: Number(minAmount),
-        maxAmount: Number(maxAmount),
-        minTerm,
-        maxTerm,
-      });
-      onDone();
+      await api.patch('/tenants/me/branding', form);
+      await refreshSession();
+      setOk('Business details saved');
     } catch (e) {
       setError(apiError(e));
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   }
 
-  const input =
-    'w-full rounded-input border-[1.5px] border-line bg-white px-3.5 py-2.5 text-[13.5px] outline-none focus:border-brand-500';
-  const label = 'mb-1 block text-[11.5px] font-semibold text-ink';
-
   return (
-    <Card className="mb-4 p-4">
-      <div className="grid grid-cols-2 gap-3">
-        <div className="col-span-2">
-          <label className={label}>Product name</label>
-          <input
-            className={input}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Emergency Loan"
-          />
-        </div>
-        <div>
-          <label className={label}>Interest rate (% flat)</label>
-          <input
-            type="number"
-            className={input}
-            value={ratePct}
-            min={0}
-            max={100}
-            step={0.5}
-            onChange={(e) => setRatePct(Number(e.target.value))}
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className={label}>Min amount (K)</label>
-            <input
-              type="number"
-              className={input}
-              value={minAmount}
-              onChange={(e) => setMinAmount(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className={label}>Max amount (K)</label>
-            <input
-              type="number"
-              className={input}
-              value={maxAmount}
-              onChange={(e) => setMaxAmount(e.target.value)}
-            />
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <div>
-            <label className={label}>Min term (months)</label>
-            <input
-              type="number"
-              className={input}
-              value={minTerm}
-              min={1}
-              max={60}
-              onChange={(e) => setMinTerm(Number(e.target.value))}
-            />
-          </div>
-          <div>
-            <label className={label}>Max term (months)</label>
-            <input
-              type="number"
-              className={input}
-              value={maxTerm}
-              min={1}
-              max={60}
-              onChange={(e) => setMaxTerm(Number(e.target.value))}
-            />
-          </div>
-        </div>
+    <div>
+      <PageActionBar
+        title="Settings"
+        sub={`${tenant.name} · branding, terms and business details`}
+      />
+
+      <div className="mb-4 flex gap-0 border-b border-line">
+        {([
+          ['business', 'Business', <FiInfo key="a" size={12} />],
+          ['branding', 'App Branding', <FiUploadCloud key="b" size={12} />],
+          ['terms', 'Lending Terms', <FiFileText key="c" size={12} />],
+          ['policy', 'Lending Rules', <FiShield key="d" size={12} />],
+          ['security', 'Security', <FiLock key="e" size={12} />],
+        ] as Array<[Tab, string, React.ReactNode]>).map(([id, lbl, icon]) => (
+          <button key={id} onClick={() => { setTab(id); setOk(''); setError(''); }}
+            className={`-mb-px flex items-center gap-1.5 border-b-2 px-4 pb-2.5 pt-1 text-[11.5px] font-bold transition-colors ${
+              tab === id ? 'border-brand-500 text-brand-600' : 'border-transparent text-ink-muted hover:text-ink'
+            }`}>
+            {icon} {lbl}
+          </button>
+        ))}
       </div>
-      {error && (
-        <div className="mt-3">
-          <ErrorBox message={error} />
+
+      {ok && (
+        <div className="mb-4 flex items-center gap-2 rounded-[3px] border border-emerald-200 bg-accent-50 px-3.5 py-2.5 text-[12.5px] font-semibold text-accent-700">
+          <FiCheck /> {ok}
         </div>
       )}
-      <button
-        disabled={busy || !name.trim()}
-        onClick={submit}
-        className="mt-3 flex h-[46px] w-full items-center justify-center rounded-btn bg-brand-600 font-bold text-white hover:bg-brand-900 disabled:opacity-40"
-      >
-        {busy ? <Spinner className="border-white" /> : 'Create Product'}
-      </button>
-    </Card>
+      {error && <div className="mb-4"><ErrorBox message={error} /></div>}
+
+      {tab === 'business' && (
+        <div className="overflow-hidden rounded-card border border-line bg-white">
+          <div className="band"><span className="t">Business Details</span></div>
+          <div className="p-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className={labelCls}>Business email</label>
+                <input className={inputCls} value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  placeholder="info@yourbusiness.zm" />
+              </div>
+              <div>
+                <label className={labelCls}>Contact person</label>
+                <input className={inputCls} value={form.contactPerson}
+                  onChange={(e) => setForm({ ...form, contactPerson: e.target.value })}
+                  placeholder="Full name" />
+              </div>
+              <div>
+                <label className={labelCls}>Business address</label>
+                <input className={inputCls} value={form.address}
+                  onChange={(e) => setForm({ ...form, address: e.target.value })}
+                  placeholder="Plot, street, city" />
+              </div>
+              <div>
+                <label className={labelCls}>TPIN (optional)</label>
+                <input className={inputCls} value={form.tpin}
+                  onChange={(e) => setForm({ ...form, tpin: e.target.value })}
+                  placeholder="Tax number" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className={labelCls}>Tagline (shows under your name in the client app)</label>
+                <input className={inputCls} value={form.tagline}
+                  onChange={(e) => setForm({ ...form, tagline: e.target.value })}
+                  placeholder="e.g. Community lending, done right" />
+              </div>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <Pill onClick={saveBusiness} disabled={saving}>
+                {saving ? 'Saving…' : 'Save Business Details'}
+              </Pill>
+            </div>
+            <p className="mt-3 text-[11px] text-ink-muted">
+              Your email is the address we use for platform notifications.
+              Client-facing communication is sent from Kumvwa on your behalf.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {tab === 'branding' && <BrandingTab onFlash={setOk} onError={setError} />}
+      {tab === 'terms' && <TermsTab onFlash={setOk} />}
+      {tab === 'policy' && <PolicyTab onFlash={setOk} onError={setError} />}
+      {tab === 'security' && <SecurityTab onFlash={setOk} onError={setError} />}
+    </div>
   );
 }

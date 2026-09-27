@@ -32,8 +32,7 @@ class MockAuthRepository implements AuthRepository {
   final TokenStore _tokenStore;
 
   /// Demo accounts, shown on the login screen while in mock mode.
-  static const _accounts =
-      <String, ({String password, UserSession session})>{
+  static const _accounts = <String, ({String password, UserSession session})>{
     '0971234567': (
       password: 'kumvwa123',
       session: UserSession(
@@ -140,7 +139,11 @@ class ApiAuthRepository implements AuthRepository {
       await tokenStore.saveSession(session);
       return session;
     } catch (e) {
-      if (e is DioException && e.response?.statusCode == 401) return null;
+      if (e is DioException &&
+          e.response?.statusCode == 401 &&
+          client.lastRefreshWasAuthRejected) {
+        return null;
+      }
       // Offline / server down — keep the cached session rather than
       // force-logging-out someone who can't reach us.
       return tokenStore.readSession();
@@ -153,10 +156,10 @@ class ApiAuthRepository implements AuthRepository {
     required String password,
   }) async {
     try {
-      final res = await client.postPublic('/auth/login', data: {
-        'phone': toE164(phone.trim()),
-        'password': password,
-      });
+      final res = await client.postPublic(
+        '/auth/login',
+        data: {'phone': toE164(phone.trim()), 'password': password},
+      );
       return await client.adoptSession(res.data as Map<String, dynamic>);
     } on DioException catch (e) {
       if (e.response?.statusCode == 401) {
@@ -171,10 +174,7 @@ class ApiAuthRepository implements AuthRepository {
     try {
       final refresh = client.refreshToken;
       if (refresh != null) {
-        await client.postA(
-          '/auth/logout',
-          data: {'refreshToken': refresh},
-        );
+        await client.postA('/auth/logout', data: {'refreshToken': refresh});
       }
     } catch (_) {
       // Server unreachable — local sign-out is still the honest outcome.

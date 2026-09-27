@@ -41,4 +41,55 @@ export class AuditService {
       this.logger.error({ err: e, entry }, 'AUDIT WRITE FAILED');
     }
   }
+
+  list(tenantId?: string, take = 100) {
+    return this.prisma.auditLog.findMany({
+      where: tenantId ? { tenantId } : undefined,
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Math.max(take, 1), 200),
+      select: {
+        id: true,
+        actorId: true,
+        action: true,
+        entity: true,
+        entityId: true,
+        tenantId: true,
+        diff: true,
+        ip: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  /** C4: the platform admin viewer — action prefix / entity / tenant filters. */
+  listFiltered(filters: {
+    action?: string;
+    entity?: string;
+    tenantId?: string;
+    take?: number;
+  }) {
+    const action = filters.action;
+    return this.prisma.auditLog.findMany({
+      where: {
+        ...(action
+          ? { action: { startsWith: action } }
+          : {}),
+        ...(filters.entity ? { entity: filters.entity } : {}),
+        ...(filters.tenantId ? { tenantId: filters.tenantId } : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(Math.max(filters.take ?? 100, 1), 200),
+      select: {
+        id: true,
+        actorId: true,
+        action: true,
+        entity: true,
+        entityId: true,
+        tenantId: true,
+        diff: true,
+        ip: true,
+        createdAt: true,
+      },
+    });
+  }
 }

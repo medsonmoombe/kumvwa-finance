@@ -4,9 +4,15 @@ import type { INestApplication } from '@nestjs/common';
 import { ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { PrismaClient } from '@prisma/client';
+import {
+  addMonthsUtc,
+  businessDate as zambiaDate,
+} from '@kumvwa/core';
 import request from 'supertest';
 
 import { AppModule } from '../src/app.module';
+
+const isoDate = (d: Date) => d.toISOString().slice(0, 10);
 
 type TestServer = Parameters<typeof request>[0];
 
@@ -86,6 +92,48 @@ describe('Loan requests lifecycle (e2e)', () => {
       where: { id: tenantBId },
       data: { status: 'active' },
     });
+
+    // M5: products default to 'bullet' — this suite asserts the amortizing
+    // schedule (2 installments), so tenant A gets an explicit installment
+    // product; approve() picks the tenant's first active product.
+    await request(server())
+      .post('/api/v1/loan-products')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({
+        name: 'Amortizing (e2e)',
+        rateBps: 1500,
+        minAmount: 50,
+        maxAmount: 5000,
+        minTerm: 1,
+        maxTerm: 12,
+        frequency: 'monthly',
+        repaymentStructure: 'installments',
+      })
+      .expect(201);
+
+    // Default M5 policy caps a fresh client at 1 month — this suite issues a
+    // 2-month installment loan, so tenant A publishes a ladder whose baseline
+    // tier allows term 2 (limit stays 1000: the reject-above-limit test relies
+    // on 5000 > 1000).
+    await request(server())
+      .put('/api/v1/tenants/me/credit-policy')
+      .set('Authorization', `Bearer ${tokenA}`)
+      .send({
+        tiers: [
+          {
+            clearedFrom: 0,
+            label: 'First-time borrower',
+            limitKwacha: 1000,
+            maxTermMonths: 3,
+          },
+          { clearedFrom: 1, label: 'Building trust', limitKwacha: 2500, maxTermMonths: 2 },
+          { clearedFrom: 2, label: 'Proven borrower', limitKwacha: 5000, maxTermMonths: 3 },
+          { clearedFrom: 4, label: 'Trusted client', limitKwacha: 10000, maxTermMonths: 6 },
+          { clearedFrom: 7, label: 'VIP', limitKwacha: 20000, maxTermMonths: 12 },
+        ],
+        rules: { maxActiveLoans: 1, blockIfOverdue: true, cooldownDaysAfterDefault: 90 },
+      })
+      .expect(200);
 
     for (const [i, token] of [tokenA, tokenB].entries()) {
       const invite = await request(server())
@@ -233,6 +281,28 @@ describe('Loan requests lifecycle (e2e)', () => {
     expect(items).toHaveLength(1);
     expect(items[0]!.totalDueMinor).toBe('92000'); // 800 + 15% = K920
     expect(items[0]!.installments).toHaveLength(2);
+
+    // The 2-month term is counted from the day the money was released: the
+    // first payment falls one month after disbursement and the second one
+    // month after that. Anchoring to a fixed day-of-month used to shorten a
+    // term by up to a month, so this is pinned explicitly.
+    const loan = await prisma.loan.findUniqueOrThrow({
+      where: { id: loanId },
+    });
+    const drawnDown = zambiaDate(loan.disbursedAt!);
+    expect(drawnDown).not.toBeNull();
+    const dueDates = (
+      await prisma.installment.findMany({
+        where: { loanId },
+        orderBy: { seq: 'asc' },
+      })
+    ).map((i) => isoDate(i.dueDate));
+    expect(dueDates).toEqual([
+      isoDate(addMonthsUtc(drawnDown, 1)),
+      isoDate(addMonthsUtc(drawnDown, 2)),
+    ]);
+    // Never a due date earlier than the drawdown itself.
+    for (const d of dueDates) expect(d > isoDate(drawnDown)).toBe(true);
 
     const detail = await request(server())
       .get(`/api/v1/loan-requests/${requestId}`)

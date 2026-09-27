@@ -113,8 +113,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.error_outline,
-                            size: 18, color: AppColors.red),
+                        const Icon(
+                          Icons.error_outline,
+                          size: 18,
+                          color: AppColors.red,
+                        ),
                         const SizedBox(width: 9),
                         Expanded(
                           child: Text(
@@ -169,13 +172,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     child: Text(
                       Env.useMocks
-                          ? 'Dev build — mock credentials\n'
-                              'Lender: 0971234567 · kumvwa123\n'
-                              'Client: 0971112233 · kumvwa123'
+                          ? 'Dev build: mock credentials\n'
+                                'Lender: 0971234567 · kumvwa123\n'
+                                'Client: 0971112233 · kumvwa123'
                           // Live mode: accounts come from real invites, so
                           // no credentials are printed here.
                           : 'Connected to Kumvwa API\n'
-                              '${Env.apiBaseUrl}',
+                                '${Env.apiBaseUrl}',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 11,

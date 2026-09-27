@@ -26,10 +26,15 @@ abstract class LoanRequestsRepository {
     required String purpose,
   });
 
-  /// Maximum requestable amount for a client, derived from their risk
-  /// profile. In the real system this is computed server-side from bureau
-  /// scores + internal repayment history — the app only displays it.
-  Future<double> creditLimit(String clientId);
+  /// Credit allowance for one lender (M5 ladder). In the real system this is
+  /// computed server-side from the tenant's published credit policy — the app
+  /// only displays it. `lenderId` null falls back to the client's first linked
+  /// lender.
+  Future<CreditLimit> creditLimit(String clientId, {String? lenderId});
+
+  /// The lender's first active product (rate/fee/max term) for the live apply
+  /// breakdown. Null when the lender exposes no active product.
+  Future<ProductTerms?> productTerms(String lenderId);
 
   /// Approves the request and creates the actual loan.
   Future<Loan> approve(String requestId, {required double interestRatePct});
@@ -60,51 +65,51 @@ class MockLoanRequestsRepository implements LoanRequestsRepository {
   }
 
   List<LoanRequest> _seed() => [
-        LoanRequest(
-          id: 'REQ-1002',
-          clientId: 'clt_001',
-          clientName: 'Mwansa Bwalya',
-          nrc: '245711/63/1',
-          phone: '0971112233',
-          lenderId: 'biz_001',
-          lenderName: 'Chilenje Community SACCO',
-          amount: 4000,
-          termInstallments: 3,
-          purpose: 'Restock shop inventory ahead of the festive season',
-          requestedAt: DateTime.now().subtract(const Duration(hours: 5)),
-        ),
-        LoanRequest(
-          id: 'REQ-1005',
-          clientId: 'clt_004',
-          clientName: 'Grace Lungu',
-          nrc: '102938/45/2',
-          phone: '0972233445',
-          lenderId: 'biz_001',
-          lenderName: 'Chilenje Community SACCO',
-          amount: 2000,
-          termInstallments: 2,
-          purpose: 'Emergency medical expenses for my mother',
-          requestedAt: DateTime.now().subtract(const Duration(hours: 26)),
-        ),
-        LoanRequest(
-          id: 'REQ-0998',
-          clientId: 'clt_001',
-          clientName: 'Mwansa Bwalya',
-          nrc: '245711/63/1',
-          phone: '0971112233',
-          lenderId: 'biz_002',
-          lenderName: 'Zamuka Savings & Credit',
-          amount: 6000,
-          termInstallments: 4,
-          purpose: 'School fees for two children',
-          requestedAt: DateTime.now().subtract(const Duration(days: 6)),
-          status: LoanRequestStatus.rejected,
-          feedback:
-              'We can only lend up to K 5,000 to first-time borrowers. '
-              'Reapply for a lower amount.',
-          reviewedAt: DateTime.now().subtract(const Duration(days: 5)),
-        ),
-      ];
+    LoanRequest(
+      id: 'REQ-1002',
+      clientId: 'clt_001',
+      clientName: 'Mwansa Bwalya',
+      nrc: '245711/63/1',
+      phone: '0971112233',
+      lenderId: 'biz_001',
+      lenderName: 'Chilenje Community SACCO',
+      amount: 4000,
+      termInstallments: 3,
+      purpose: 'Restock shop inventory ahead of the festive season',
+      requestedAt: DateTime.now().subtract(const Duration(hours: 5)),
+    ),
+    LoanRequest(
+      id: 'REQ-1005',
+      clientId: 'clt_004',
+      clientName: 'Grace Lungu',
+      nrc: '102938/45/2',
+      phone: '0972233445',
+      lenderId: 'biz_001',
+      lenderName: 'Chilenje Community SACCO',
+      amount: 2000,
+      termInstallments: 2,
+      purpose: 'Emergency medical expenses for my mother',
+      requestedAt: DateTime.now().subtract(const Duration(hours: 26)),
+    ),
+    LoanRequest(
+      id: 'REQ-0998',
+      clientId: 'clt_001',
+      clientName: 'Mwansa Bwalya',
+      nrc: '245711/63/1',
+      phone: '0971112233',
+      lenderId: 'biz_002',
+      lenderName: 'Zamuka Savings & Credit',
+      amount: 6000,
+      termInstallments: 4,
+      purpose: 'School fees for two children',
+      requestedAt: DateTime.now().subtract(const Duration(days: 6)),
+      status: LoanRequestStatus.rejected,
+      feedback:
+          'We can only lend up to K 5,000 to first-time borrowers. '
+          'Reapply for a lower amount.',
+      reviewedAt: DateTime.now().subtract(const Duration(days: 5)),
+    ),
+  ];
 
   @override
   Future<List<LoanRequest>> loadByLender(String lenderId) async {
@@ -136,7 +141,8 @@ class MockLoanRequestsRepository implements LoanRequestsRepository {
 
   @override
   Future<List<({String id, String name})>> linkedLenders(
-      String clientId) async {
+    String clientId,
+  ) async {
     await Future<void>.delayed(const Duration(milliseconds: 300));
     if (clientId == 'clt_001') {
       return const [
@@ -162,8 +168,8 @@ class MockLoanRequestsRepository implements LoanRequestsRepository {
       id: 'REQ-$_seq',
       clientId: clientId,
       clientName: clientName,
-      nrc: _nrcByClient[clientId] ?? '—',
-      phone: '—',
+      nrc: _nrcByClient[clientId] ?? '-',
+      phone: '-',
       lenderId: lenderId,
       lenderName: lenderName,
       amount: amount,
@@ -177,7 +183,7 @@ class MockLoanRequestsRepository implements LoanRequestsRepository {
   }
 
   @override
-  Future<double> creditLimit(String clientId) async {
+  Future<CreditLimit> creditLimit(String clientId, {String? lenderId}) async {
     await Future<void>.delayed(const Duration(milliseconds: 400));
     final loans = await mockLoansRepository.loansForClient(clientId);
     int? score;
@@ -185,14 +191,82 @@ class MockLoanRequestsRepository implements LoanRequestsRepository {
       final s = l.risk?.score;
       if (s != null && (score == null || s > score)) score = s;
     }
+    // Same ladder shape as the API (`resolveCreditLimit`): a kwacha limit
+    // with a human tier label. Mock keeps the pre-M5 score bands for old
+    // demo loans; the labels mirror the platform default ladder, and each
+    // rung advertises the NEXT one the way the API's `nextTier` does.
     return switch (score) {
-      null => 1000, // no credit history yet
-      >= 750 => 15000,
-      >= 700 => 10000,
-      >= 600 => 5000,
-      >= 550 => 3000,
-      _ => 1500,
+      null => const CreditLimit(
+        limitKwacha: 1000,
+        tier: 'First-time borrower',
+        maxTermMonths: 1,
+        nextTier: CreditNextTier(
+          label: 'Building trust',
+          limitKwacha: 2500,
+          clearedNeeded: 1,
+          clearedRemaining: 1,
+        ),
+      ),
+      >= 750 => const CreditLimit(
+        limitKwacha: 15000,
+        tier: 'VIP',
+        maxTermMonths: 12,
+        nextTier: null, // top rung — nothing left to unlock
+      ),
+      >= 700 => const CreditLimit(
+        limitKwacha: 10000,
+        tier: 'Trusted client',
+        maxTermMonths: 6,
+        nextTier: CreditNextTier(
+          label: 'VIP',
+          limitKwacha: 15000,
+          clearedNeeded: 7,
+          clearedRemaining: 3,
+        ),
+      ),
+      >= 600 => const CreditLimit(
+        limitKwacha: 5000,
+        tier: 'Proven borrower',
+        maxTermMonths: 3,
+        nextTier: CreditNextTier(
+          label: 'Trusted client',
+          limitKwacha: 10000,
+          clearedNeeded: 4,
+          clearedRemaining: 2,
+        ),
+      ),
+      >= 550 => const CreditLimit(
+        limitKwacha: 3000,
+        tier: 'Building trust',
+        maxTermMonths: 2,
+        nextTier: CreditNextTier(
+          label: 'Proven borrower',
+          limitKwacha: 5000,
+          clearedNeeded: 2,
+          clearedRemaining: 1,
+        ),
+      ),
+      _ => const CreditLimit(
+        limitKwacha: 0,
+        tier: 'blocked',
+        maxTermMonths: 0,
+        blockedReason: 'You have an overdue loan. Clear it to apply again',
+      ),
     };
+  }
+
+  @override
+  Future<ProductTerms?> productTerms(String lenderId) async {
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+    // Mock lenders all advertise the same "Proven borrower" rate; real terms
+    // come from the lender's first active product via public-info.
+    return const ProductTerms(
+      ratePct: 15,
+      feePct: 0,
+      maxTermMonths: 12,
+      frequency: 'monthly',
+      repaymentStructure: 'bullet',
+    );
   }
 
   @override
@@ -229,6 +303,7 @@ class MockLoanRequestsRepository implements LoanRequestsRepository {
       requestedAt: r.requestedAt,
       status: LoanRequestStatus.approved,
       reviewedAt: DateTime.now(),
+      loanId: loan.id,
     );
     return loan;
   }
@@ -303,10 +378,8 @@ class ApiLoanRequestsRepository implements LoanRequestsRepository {
     return raw
         .whereType<Map<String, dynamic>>()
         .map(
-          (l) => (
-            id: l['id'] as String? ?? '',
-            name: l['name'] as String? ?? '',
-          ),
+          (l) =>
+              (id: l['id'] as String? ?? '', name: l['name'] as String? ?? ''),
         )
         .toList();
   }
@@ -321,12 +394,15 @@ class ApiLoanRequestsRepository implements LoanRequestsRepository {
     required int termInstallments,
     required String purpose,
   }) async {
-    final res = await _client.postA(_path, data: {
-      'lenderId': lenderId,
-      'amount': amount,
-      'termCount': termInstallments,
-      'purpose': purpose.trim(),
-    });
+    final res = await _client.postA(
+      _path,
+      data: {
+        'lenderId': lenderId,
+        'amount': amount,
+        'termCount': termInstallments,
+        'purpose': purpose.trim(),
+      },
+    );
     final data = res.data as Map<String, dynamic>;
     return LoanRequest(
       id: data['id'] as String? ?? '',
@@ -337,20 +413,57 @@ class ApiLoanRequestsRepository implements LoanRequestsRepository {
       lenderId: lenderId,
       lenderName: data['lenderName'] as String? ?? lenderName,
       amount: (data['amount'] as num?)?.toDouble() ?? amount,
-      termInstallments: (data['termCount'] as num?)?.toInt() ??
-          termInstallments,
+      termInstallments:
+          (data['termCount'] as num?)?.toInt() ?? termInstallments,
       purpose: purpose.trim(),
       requestedAt: DateTime.now(),
     );
   }
 
   @override
-  Future<double> creditLimit(String clientId) async {
-    // Server-computed (internal score + history), same figure the request
-    // flow enforces — the banner can't disagree with a submit rejection.
-    final res = await _client.getA('/credit-limit');
+  Future<CreditLimit> creditLimit(String clientId, {String? lenderId}) async {
+    // Server-computed from the tenant's published credit policy (M5) — the
+    // banner can't disagree with a submit rejection. Scoped per lender.
+    final res = await _client.getA(
+      lenderId == null
+          ? '/credit-limit'
+          : '/credit-limit?lenderId=$lenderId',
+    );
     final data = res.data as Map<String, dynamic>;
-    return ((data['limitKwacha'] as num?) ?? 0).toDouble();
+    final nextRaw = data['nextTier'] as Map<String, dynamic>?;
+    return CreditLimit(
+      limitKwacha: ((data['limitKwacha'] as num?) ?? 0).toDouble(),
+      tier: data['tier'] as String? ?? '',
+      maxTermMonths: (data['maxTermMonths'] as num?)?.toInt() ?? 12,
+      blockedReason: data['blockedReason'] as String?,
+      policyVersion: (data['policyVersion'] as num?)?.toInt() ?? 0,
+      nextTier: nextRaw == null
+          ? null
+          : CreditNextTier(
+              label: nextRaw['label'] as String? ?? '',
+              limitKwacha: ((nextRaw['limitKwacha'] as num?) ?? 0).toDouble(),
+              clearedNeeded: (nextRaw['clearedNeeded'] as num?)?.toInt() ?? 0,
+              clearedRemaining:
+                  (nextRaw['clearedRemaining'] as num?)?.toInt() ?? 0,
+            ),
+    );
+  }
+
+  @override
+  Future<ProductTerms?> productTerms(String lenderId) async {
+    // Public projection (no bearer needed) ships the lender's first active
+    // product so the live breakdown shows the real rate before applying.
+    final res = await _client.getPublic('/tenants/$lenderId/public-info');
+    final data = res.data as Map<String, dynamic>;
+    final p = data['product'] as Map<String, dynamic>?;
+    if (p == null) return null;
+    return ProductTerms(
+      ratePct: ((p['ratePct'] as num?) ?? 0).toDouble(),
+      feePct: ((p['feePct'] as num?) ?? 0).toDouble(),
+      maxTermMonths: (p['maxTermMonths'] as num?)?.toInt() ?? 1,
+      frequency: p['frequency'] as String? ?? 'monthly',
+      repaymentStructure: p['repaymentStructure'] as String? ?? 'bullet',
+    );
   }
 
   @override
@@ -388,10 +501,7 @@ class ApiLoanRequestsRepository implements LoanRequestsRepository {
   List<LoanRequest> _items(dynamic data) {
     final raw = (data as Map<String, dynamic>)['items'];
     if (raw is! List) return const [];
-    return raw
-        .whereType<Map<String, dynamic>>()
-        .map(_item)
-        .toList();
+    return raw.whereType<Map<String, dynamic>>().map(_item).toList();
   }
 
   LoanRequest _item(Map<String, dynamic> item) => LoanRequest(
@@ -409,6 +519,7 @@ class ApiLoanRequestsRepository implements LoanRequestsRepository {
     status: toLoanRequestStatus(item['status'] as String?),
     feedback: item['feedback'] as String?,
     reviewedAt: isoDate(item['reviewedAt']),
+    loanId: item['loanId'] as String?,
   );
 }
 
@@ -422,31 +533,32 @@ final loanRequestsRepositoryProvider = Provider<LoanRequestsRepository>(
       : ApiLoanRequestsRepository(ref.watch(apiClientProvider)),
 );
 
-final loanRequestsByLenderProvider =
-    FutureProvider.autoDispose.family<List<LoanRequest>, String>(
-  (ref, lenderId) =>
-      ref.watch(loanRequestsRepositoryProvider).loadByLender(lenderId),
+final loanRequestsByLenderProvider = FutureProvider.autoDispose
+    .family<List<LoanRequest>, String>(
+      (ref, lenderId) =>
+          ref.watch(loanRequestsRepositoryProvider).loadByLender(lenderId),
+    );
+
+final loanRequestsByClientProvider = FutureProvider.autoDispose
+    .family<List<LoanRequest>, String>(
+      (ref, clientId) =>
+          ref.watch(loanRequestsRepositoryProvider).loadByClient(clientId),
+    );
+
+final creditLimitProvider =
+    FutureProvider.autoDispose.family<CreditLimit, ({String clientId, String? lenderId})>(
+  (ref, key) => ref
+      .watch(loanRequestsRepositoryProvider)
+      .creditLimit(key.clientId, lenderId: key.lenderId),
 );
 
-final loanRequestsByClientProvider =
-    FutureProvider.autoDispose.family<List<LoanRequest>, String>(
-  (ref, clientId) =>
-      ref.watch(loanRequestsRepositoryProvider).loadByClient(clientId),
-);
+final loanRequestByIdProvider = FutureProvider.autoDispose
+    .family<LoanRequest, String>(
+      (ref, id) => ref.watch(loanRequestsRepositoryProvider).getById(id),
+    );
 
-final creditLimitProvider = FutureProvider.autoDispose.family<double, String>(
-  (ref, clientId) =>
-      ref.watch(loanRequestsRepositoryProvider).creditLimit(clientId),
-);
-
-final loanRequestByIdProvider =
-    FutureProvider.autoDispose.family<LoanRequest, String>(
-  (ref, id) => ref.watch(loanRequestsRepositoryProvider).getById(id),
-);
-
-final linkedLendersProvider =
-    FutureProvider.autoDispose
-        .family<List<({String id, String name})>, String>(
-  (ref, clientId) =>
-      ref.watch(loanRequestsRepositoryProvider).linkedLenders(clientId),
-);
+final linkedLendersProvider = FutureProvider.autoDispose
+    .family<List<({String id, String name})>, String>(
+      (ref, clientId) =>
+          ref.watch(loanRequestsRepositoryProvider).linkedLenders(clientId),
+    );

@@ -15,6 +15,7 @@ import type { TokenClaims } from '../../common/crypto/token.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/guards/public.decorator';
 import { Roles } from '../../common/guards/roles.decorator';
+import { RequirePermissions } from '../../common/guards/permissions.decorator';
 import { textToPdf } from './pdf.util';
 import { TermsService, type AcceptScope } from './terms.service';
 
@@ -132,6 +133,7 @@ export class TenantTermsController {
   }
 
   @Roles('tenant_owner')
+  @RequirePermissions('terms.manage')
   @Post(':tenantId/terms')
   async publish(
     @CurrentUser() u: TokenClaims,

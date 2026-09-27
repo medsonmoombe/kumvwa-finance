@@ -51,10 +51,27 @@ export class InvitesService {
     // in limbo, or worse, silently link somebody to a lender they don't want.
     const existingUser = await this.prisma.user.findUnique({
       where: { phone },
-      select: { id: true },
+      select: { id: true, clientId: true },
     });
     if (existingUser) {
-      throw new ConflictException('This phone number is already registered');
+      // A client already IN this lender's book (or a lender/staff account)
+      // can't be re-invited. But a client of ANOTHER lender is the dedupe-
+      // link case: complete() links them to this lender without a 2nd account.
+      if (!existingUser.clientId) {
+        throw new ConflictException('This phone number is already registered');
+      }
+      const linked = await this.prisma.clientLenderLink.findUnique({
+        where: {
+          clientId_tenantId: {
+            clientId: existingUser.clientId,
+            tenantId,
+          },
+        },
+        select: { id: true },
+      });
+      if (linked) {
+        throw new ConflictException('This phone number is already registered');
+      }
     }
     const duplicate = await this.prisma.invite.findFirst({
       where: { tenantId, phone, status: 'pending' },

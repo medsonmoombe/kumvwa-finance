@@ -207,8 +207,8 @@ export function CenteredSpinner({ className = 'h-7 w-7' }: { className?: string 
 
 export function ErrorBox({ message }: { message: string }) {
   return (
-    <div className="flex items-center gap-2.5 rounded-xl border border-red-200 bg-danger-50 px-3.5 py-2.5 text-[12.5px] text-danger-500">
-      <FiAlertTriangle size={14} className="shrink-0" /> {message}
+    <div className="flex items-center gap-2.5 rounded-[3px] border border-red-200 bg-danger-50 px-3.5 py-2.5 text-[12px] text-danger-500">
+      <FiAlertTriangle size={13} className="shrink-0" /> {message}
     </div>
   );
 }
@@ -256,9 +256,9 @@ export function PageHead({
 }
 
 export const inputCls =
-  'w-full rounded-input border border-line bg-white px-3.5 py-2.5 text-[13.5px] text-ink outline-none placeholder:text-gray-400 focus:border-brand-500 focus:shadow-[0_0_0_3px_rgba(46,99,230,0.1)]';
+  'w-full rounded-[3px] border-[1.5px] border-line bg-white px-3.5 py-2 text-[13px] text-ink outline-none placeholder:text-gray-400 focus:border-brand-500 focus:shadow-[0_0_0_2px_rgba(26,79,191,0.10)] transition-shadow';
 
-export const labelCls = 'mb-1.5 block text-[12.5px] font-semibold text-ink';
+export const labelCls = 'mb-1 block text-[11px] font-semibold text-ink-2';
 
 /** Status → badge mapping used across tables. */
 export function StatusBadge({ status }: { status: string }) {

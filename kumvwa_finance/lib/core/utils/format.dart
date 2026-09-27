@@ -15,6 +15,24 @@ class Fmt {
   /// DateTime → '12 Aug 2025'
   static String date(DateTime d) => DateFormat('d MMM yyyy').format(d);
 
+  /// '+260971234567' or '0971234567' → '+260 97 ••• 4567'.
+  ///
+  /// Keeps the country code and the last four digits (the parts a client
+  /// recognises on their own line) and hides the middle, so the number is
+  /// safe to show in a receipt, screenshot or lender conversation.
+  /// Unparseable input degrades to a fully masked placeholder.
+  static String maskPhone(String raw) {
+    final digits = raw.replaceAll(RegExp(r'[^0-9]'), '');
+    final national = digits.startsWith('260')
+        ? digits.substring(3)
+        : digits.startsWith('0')
+        ? digits.substring(1)
+        : digits;
+    if (national.length < 7) return '••• ••••';
+    return '+260 ${national.substring(0, 2)} ••• '
+        '${national.substring(national.length - 4)}';
+  }
+
   /// 'Mwansa Bwalya' → 'MB'
   static String initials(String name) {
     final parts = name

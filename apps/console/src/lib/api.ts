@@ -10,6 +10,7 @@ const API_URL =
  */
 let accessToken: string | null = null;
 const REFRESH_KEY = 'kx_refresh';
+const DEVICE_KEY = 'kx_trusted_device';
 
 export function setTokens(access: string | null, refresh: string | null): void {
   accessToken = access;
@@ -23,6 +24,15 @@ export function refreshToken(): string | null {
 
 export function hasRefresh(): boolean {
   return refreshToken() !== null;
+}
+
+export function deviceToken(): string | null {
+  return localStorage.getItem(DEVICE_KEY);
+}
+
+export function setDeviceToken(token: string | null): void {
+  if (token) localStorage.setItem(DEVICE_KEY, token);
+  else localStorage.removeItem(DEVICE_KEY);
 }
 
 export const api = axios.create({
@@ -41,15 +51,29 @@ async function doRefresh(): Promise<string | null> {
   const r = refreshToken();
   if (!r) return null;
   try {
-    const res = await axios.post(`${API_URL}/auth/refresh`, {
-      refreshToken: r,
-    });
+    const res = await axios.post(
+      `${API_URL}/auth/refresh`,
+      { refreshToken: r },
+    );
     setTokens(res.data.accessToken as string, res.data.refreshToken as string);
     return res.data.accessToken as string;
   } catch {
     setTokens(null, null);
     return null;
   }
+}
+
+/**
+ * Refresh-token rotation is single-use. React StrictMode intentionally runs
+ * mount effects twice in development, so both the boot sequence and 401
+ * interceptor must share this one promise or the second request would look
+ * like token reuse and revoke the session family.
+ */
+function refreshAccess(): Promise<string | null> {
+  refreshing ??= doRefresh().finally(() => {
+    refreshing = null;
+  });
+  return refreshing;
 }
 
 api.interceptors.response.use(
@@ -69,10 +93,7 @@ api.interceptors.response.use(
       !isAuthRoute
     ) {
       original._retried = true;
-      refreshing ??= doRefresh().finally(() => {
-        refreshing = null;
-      });
-      const token = await refreshing;
+      const token = await refreshAccess();
       if (token) {
         original.headers.Authorization = `Bearer ${token}`;
         return api(original);
@@ -86,7 +107,7 @@ api.interceptors.response.use(
 /** Restores the session after a page reload. */
 export async function bootRefresh(): Promise<boolean> {
   if (!hasRefresh()) return false;
-  return (await doRefresh()) !== null;
+  return (await refreshAccess()) !== null;
 }
 
 /** Nest returns `message` as a string, or an array from ValidationPipe. */

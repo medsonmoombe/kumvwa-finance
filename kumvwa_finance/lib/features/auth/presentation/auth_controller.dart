@@ -95,7 +95,7 @@ class AuthController extends Notifier<AuthState> {
           ? const AuthState.unauthenticated()
           : AuthState.authenticated(session);
     } catch (e) {
-      debugPrint('Session restore failed — continuing as logged out: $e');
+      debugPrint('Session restore failed, continuing as logged out: $e');
       state = const AuthState.unauthenticated();
     }
   }
@@ -111,7 +111,10 @@ class AuthController extends Notifier<AuthState> {
       state = state.copyWith(isSubmitting: false, errorMessage: e.message);
     } on ApiException catch (e) {
       state = state.copyWith(isSubmitting: false, errorMessage: e.message);
-    } catch (_) {
+    } catch (e, s) {
+      // Keep the toast generic, but log the actual fault so a failing attempt
+      // is diagnosable from the run console instead of guessing from the UI.
+      debugPrint('Login failed (unhandled): $e\n$s');
       state = state.copyWith(
         isSubmitting: false,
         errorMessage: 'Something went wrong. Please try again.',

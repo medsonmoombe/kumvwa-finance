@@ -1,4 +1,4 @@
-import {
+﻿import {
   asAudit,
   asNotify,
   asPrisma,
@@ -76,6 +76,7 @@ function setup(
     asPrisma(prisma),
     asAudit(audit),
     asNotify(notify),
+    { ROLLOVER_MAX: 2 } as never, // env
   );
 
   return { service, prisma, tx, audit, notify };
@@ -83,14 +84,13 @@ function setup(
 
 const dto = { amount: 100, method: 'cash' as const };
 
-describe('LoansService.recordRepayment — idempotency', () => {
+describe('LoansService.recordRepayment â€” idempotency', () => {
   it('replays a repeated Idempotency-Key instead of double-crediting', async () => {
     const { service, prisma, tx } = setup({
       existing: { id: 'rep1', loanId: 'L1' },
     });
 
-    const res = await service.recordRepayment(
-      't1',
+    const res = await service.recordRepayment({ tenantId: 't1' },
       'u1',
       'L1',
       dto,
@@ -109,14 +109,14 @@ describe('LoansService.recordRepayment — idempotency', () => {
     });
 
     await expect(
-      service.recordRepayment('t1', 'u1', 'L1', dto, 'key-1'),
+      service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', dto, 'key-1'),
     ).rejects.toThrow(/reused for another loan/);
   });
 
   it('mints a key when the header is absent, so retries still dedupe', async () => {
     const { service, tx } = setup();
 
-    await service.recordRepayment('t1', 'u1', 'L1', dto);
+    await service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', dto);
 
     const data = callData(tx.repayment.create);
     expect(typeof data['idempotencyKey']).toBe('string');
@@ -124,11 +124,11 @@ describe('LoansService.recordRepayment — idempotency', () => {
   });
 });
 
-describe('LoansService.recordRepayment — allocation', () => {
+describe('LoansService.recordRepayment â€” allocation', () => {
   it('settles the oldest installment first', async () => {
     const { service, tx } = setup();
 
-    await service.recordRepayment('t1', 'u1', 'L1', dto, 'k1');
+    await service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', dto, 'k1');
 
     expect(
       callArg<{ where: { id: string } }>(tx.installment.update)?.where,
@@ -142,8 +142,7 @@ describe('LoansService.recordRepayment — allocation', () => {
   it('spreads a partial payment and leaves the status alone', async () => {
     const { service, tx } = setup();
 
-    await service.recordRepayment(
-      't1',
+    await service.recordRepayment({ tenantId: 't1' },
       'u1',
       'L1',
       { amount: 150, method: 'cash' },
@@ -162,7 +161,7 @@ describe('LoansService.recordRepayment — allocation', () => {
   it('advances the loan without clearing it', async () => {
     const { service, tx } = setup();
 
-    await service.recordRepayment('t1', 'u1', 'L1', dto, 'k1');
+    await service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', dto, 'k1');
 
     const data = callData(tx.loan.update);
     expect(data['paidAmount']).toBe(10_000n);
@@ -177,7 +176,7 @@ describe('LoansService.recordRepayment — allocation', () => {
       ],
     });
 
-    await service.recordRepayment('t1', 'u1', 'L1', dto, 'k1');
+    await service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', dto, 'k1');
 
     const data = callData(tx.loan.update);
     expect(data['status']).toBe('cleared');
@@ -187,18 +186,18 @@ describe('LoansService.recordRepayment — allocation', () => {
   it('locks the loan row before reading it', async () => {
     const { service, tx } = setup();
 
-    await service.recordRepayment('t1', 'u1', 'L1', dto, 'k1');
+    await service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', dto, 'k1');
 
     expect(tx.$queryRaw).toHaveBeenCalled();
   });
 });
 
-describe('LoansService.recordRepayment — guards', () => {
+describe('LoansService.recordRepayment â€” guards', () => {
   it('refuses a payment above the outstanding balance', async () => {
     const { service, tx } = setup();
 
     await expect(
-      service.recordRepayment('t1', 'u1', 'L1', { amount: 400, method: 'cash' }, 'k1'),
+      service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', { amount: 400, method: 'cash' }, 'k1'),
     ).rejects.toThrow(/exceeds the outstanding balance/);
     expect(tx.repayment.create).not.toHaveBeenCalled();
   });
@@ -206,10 +205,63 @@ describe('LoansService.recordRepayment — guards', () => {
   it('refuses a loan that is already fully repaid', async () => {
     const { service } = setup({
       loan: { ...defaultLoan, paidAmount: 30_000n },
+      installments: defaultInstallments.map((i) => ({
+        ...i,
+        paidAmount: i.amount,
+        status: 'paid' as const,
+      })),
     });
 
     await expect(
-      service.recordRepayment('t1', 'u1', 'L1', dto, 'k1'),
+      service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', dto, 'k1'),
+    ).rejects.toThrow(/already fully repaid/);
+  });
+
+  it('does not clear a loan whose last installment still owes a penalty', async () => {
+    const { service, tx } = setup({
+      loan: { ...defaultLoan, paidAmount: 20_000n },
+      installments: [
+        { id: 'i1', seq: 1, amount: 10_000n, paidAmount: 10_000n, status: 'paid' },
+        { id: 'i2', seq: 2, amount: 10_000n, paidAmount: 10_000n, status: 'paid' },
+        {
+          id: 'i3',
+          seq: 3,
+          amount: 10_000n,
+          paidAmount: 0n,
+          status: 'overdue',
+          penaltyMinor: 5_000n,
+        },
+      ],
+    });
+
+    // K100 covers the installment's nominal amount but not its K50 penalty,
+    // so the loan must stay open for the residual.
+    await service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', dto, 'k1');
+
+    const data = callData(tx.loan.update);
+    expect(data['paidAmount']).toBe(30_000n);
+    expect(data['status']).not.toBe('cleared');
+  });
+
+  it('refuses payment only when every installment (incl. penalty) is settled', async () => {
+    const { service } = setup({
+      loan: { ...defaultLoan, paidAmount: 30_000n },
+      installments: [
+        { id: 'i1', seq: 1, amount: 10_000n, paidAmount: 10_000n, status: 'paid' },
+        { id: 'i2', seq: 2, amount: 10_000n, paidAmount: 10_000n, status: 'paid' },
+        {
+          id: 'i3',
+          seq: 3,
+          amount: 10_000n,
+          paidAmount: 15_000n,
+          status: 'overdue',
+          penaltyMinor: 5_000n,
+        },
+      ],
+    });
+
+    await expect(
+      service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', dto, 'k1'),
     ).rejects.toThrow(/already fully repaid/);
   });
 
@@ -217,7 +269,7 @@ describe('LoansService.recordRepayment — guards', () => {
     const { service, prisma } = setup();
 
     await expect(
-      service.recordRepayment('t1', 'u1', 'L1', { amount: 0, method: 'cash' }, 'k1'),
+      service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', { amount: 0, method: 'cash' }, 'k1'),
     ).rejects.toThrow(/greater than zero/);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
@@ -228,16 +280,16 @@ describe('LoansService.recordRepayment — guards', () => {
     });
 
     await expect(
-      service.recordRepayment('t1', 'u1', 'L1', dto, 'k1'),
+      service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', dto, 'k1'),
     ).rejects.toThrow(/not found/i);
   });
 });
 
-describe('LoansService.recordRepayment — receipt & side effects', () => {
+describe('LoansService.recordRepayment â€” receipt & side effects', () => {
   it('returns the receipt with the remaining outstanding balance', async () => {
     const { service } = setup();
 
-    const res = await service.recordRepayment('t1', 'u1', 'L1', dto, 'k1');
+    const res = await service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', dto, 'k1');
 
     expect(res.replayed).toBe(false);
     expect(res.amountMinor).toBe('10000');
@@ -248,7 +300,7 @@ describe('LoansService.recordRepayment — receipt & side effects', () => {
   it('notifies the client and writes an audit entry', async () => {
     const { service, notify, audit } = setup();
 
-    await service.recordRepayment('t1', 'u1', 'L1', dto, 'k1');
+    await service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', dto, 'k1');
 
     expect(notify.create).toHaveBeenCalledWith(
       'u1',
@@ -266,7 +318,7 @@ describe('LoansService.recordRepayment — receipt & side effects', () => {
     const { service, prisma, notify } = setup();
     prisma.user.findFirst.mockResolvedValue(null);
 
-    await service.recordRepayment('t1', 'u1', 'L1', dto, 'k1');
+    await service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', dto, 'k1');
 
     expect(notify.create).not.toHaveBeenCalled();
   });

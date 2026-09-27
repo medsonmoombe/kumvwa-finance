@@ -8,18 +8,20 @@ void main() {
 
   setUp(() => repo = MockInviteRepository());
 
-  test('createInvite returns a short code and echoes the client details',
-      () async {
-    final invite = await repo.createInvite(
-      clientName: '  Mwansa Bwalya  ',
-      phone: ' 0971234567 ',
-    );
+  test(
+    'createInvite returns a short code and echoes the client details',
+    () async {
+      final invite = await repo.createInvite(
+        clientName: '  Mwansa Bwalya  ',
+        phone: ' 0971234567 ',
+      );
 
-    expect(invite.code, 'KMV-1000');
-    expect(invite.clientName, 'Mwansa Bwalya'); // trimmed
-    expect(invite.phone, '0971234567');
-    expect(invite.completed, isFalse);
-  });
+      expect(invite.code, 'KMV-1000');
+      expect(invite.clientName, 'Mwansa Bwalya'); // trimmed
+      expect(invite.phone, '0971234567');
+      expect(invite.completed, isFalse);
+    },
+  );
 
   test('codes increment across invites', () async {
     final first = await repo.createInvite(clientName: 'A', phone: '0971111111');

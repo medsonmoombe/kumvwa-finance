@@ -1,6 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import type { LoanStatus } from '@prisma/client';
-import { minorToKwacha } from '@kumvwa/core';
+import {
+  businessDate,
+  businessMonthBounds,
+  businessMonthLabels,
+  daysBetween,
+  minorToKwacha,
+  startOfBusinessMonth,
+  startOfBusinessMonthsAgo,
+  startOfNextBusinessMonth,
+} from '@kumvwa/core';
 
 import { PrismaService } from '../../infra/prisma.module';
 
@@ -16,13 +25,13 @@ export class ReportsService {
 
   /** Portfolio snapshot. Sums are computed in SQL, not by looping rows. */
   async summary(tenantId: string) {
-    const now = new Date();
-    const monthStart = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
-    );
-    const monthEnd = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1),
-    );
+    // Two different "this month", because the columns are two different kinds:
+    // `dueDate` is a DATE (a Zambian civil date) while `Repayment.createdAt` is
+    // a naive-UTC instant. Both must resolve to the same Zambian calendar
+    // month, so each gets the bounds helper that matches its column type.
+    const { first: dueFrom, next: dueTo } = businessMonthBounds();
+    const collectedFrom = startOfBusinessMonth();
+    const collectedTo = startOfNextBusinessMonth();
 
     const [grouped, clientsCount, recent, dueThisMonth, collectedThisMonth] =
       await Promise.all([
@@ -43,13 +52,13 @@ export class ReportsService {
         this.prisma.installment.aggregate({
           where: {
             status: { not: 'paid' },
-            dueDate: { gte: monthStart, lt: monthEnd },
+            dueDate: { gte: dueFrom, lt: dueTo },
             loan: { tenantId },
           },
           _sum: { amount: true },
         }),
         this.prisma.repayment.aggregate({
-          where: { tenantId, createdAt: { gte: monthStart, lt: monthEnd } },
+          where: { tenantId, createdAt: { gte: collectedFrom, lt: collectedTo } },
           _sum: { amount: true },
         }),
       ]);
@@ -105,31 +114,29 @@ export class ReportsService {
    * Disbursed vs collected per month for the last 6 months. Buckets are
    * produced by Postgres (`date_trunc`) and merged onto a full month
    * skeleton, so months with no activity come back as explicit zeros.
+   *
+   * The buckets are ZAMBIAN months. `createdAt` is a naive-UTC instant, so the
+   * SQL shifts it into Lusaka time before truncating; without that shift a
+   * loan disbursed at 23:00 Lusaka time would land in the following month's
+   * column.
    */
   async monthly(tenantId: string) {
     const now = new Date();
-    const since = new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 5, 1),
-    );
-
-    const months: string[] = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(
-        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1),
-      );
-      months.push(d.toISOString().slice(0, 7));
-    }
+    const since = startOfBusinessMonthsAgo(5, now);
+    const months = businessMonthLabels(6, now);
 
     const [disbursedRows, collectedRows] = await Promise.all([
       this.prisma.$queryRaw<MonthRow[]>`
-        SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS month,
+        SELECT to_char(date_trunc('month', "createdAt" AT TIME ZONE 'UTC'
+                                        AT TIME ZONE 'Africa/Lusaka'), 'YYYY-MM') AS month,
                COALESCE(SUM("principal"), 0)::bigint AS total
         FROM "Loan"
         WHERE "tenantId" = ${tenantId} AND "createdAt" >= ${since}
         GROUP BY 1
       `,
       this.prisma.$queryRaw<MonthRow[]>`
-        SELECT to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS month,
+        SELECT to_char(date_trunc('month', "createdAt" AT TIME ZONE 'UTC'
+                                        AT TIME ZONE 'Africa/Lusaka'), 'YYYY-MM') AS month,
                COALESCE(SUM("amount"), 0)::bigint AS total
         FROM "Repayment"
         WHERE "tenantId" = ${tenantId} AND "createdAt" >= ${since}
@@ -176,5 +183,107 @@ export class ReportsService {
     ];
 
     return rows.join('\n');
+  }
+
+  /** PAR ageing for one lender. */
+  async par(tenantId: string) {
+    return this.computePar(tenantId);
+  }
+
+  /** PAR ageing across every lender (the admin view). */
+  async platformPar() {
+    return this.computePar(undefined);
+  }
+
+  async platformMonthly() {
+    const now = new Date();
+    const since = startOfBusinessMonthsAgo(5, now);
+    const months = businessMonthLabels(6, now);
+
+    const [disbursedRows, collectedRows] = await Promise.all([
+      this.prisma.$queryRaw<MonthRow[]>`
+        SELECT to_char(date_trunc('month', "createdAt" AT TIME ZONE 'UTC'
+                                        AT TIME ZONE 'Africa/Lusaka'), 'YYYY-MM') AS month,
+               COALESCE(SUM("principal"), 0)::bigint AS total
+        FROM "Loan" WHERE "createdAt" >= ${since} GROUP BY 1
+      `,
+      this.prisma.$queryRaw<MonthRow[]>`
+        SELECT to_char(date_trunc('month', "createdAt" AT TIME ZONE 'UTC'
+                                        AT TIME ZONE 'Africa/Lusaka'), 'YYYY-MM') AS month,
+               COALESCE(SUM("amount"), 0)::bigint AS total
+        FROM "Repayment" WHERE "createdAt" >= ${since} GROUP BY 1
+      `,
+    ]);
+
+    const disbursed = new Map(disbursedRows.map((r) => [r.month, r.total]));
+    const collected = new Map(collectedRows.map((r) => [r.month, r.total]));
+    return months.map((month) => ({
+      month,
+      disbursedMinor: (disbursed.get(month) ?? 0n).toString(),
+      collectedMinor: (collected.get(month) ?? 0n).toString(),
+    }));
+  }
+
+  /**
+   * Portfolio at risk. A loan is aged by its MOST-late unpaid installment and
+   * its whole remaining balance follows that bucket, because a lender cannot
+   * recover part of a loan that is 60 days late on part of it.
+   *
+   * PAR-30 deliberately starts at 31 days: 1-30 days late is normal servicing
+   * lag, not a loan at risk.
+   */
+  private async computePar(tenantId: string | undefined) {
+    const loans = await this.prisma.loan.findMany({
+      where: {
+        ...(tenantId ? { tenantId } : {}),
+        status: { in: ['active', 'overdue'] },
+      },
+      select: {
+        totalDue: true,
+        paidAmount: true,
+        installments: { select: { dueDate: true, amount: true, paidAmount: true } },
+      },
+    });
+    const today = businessDate();
+
+    const buckets = { current: 0n, d1_30: 0n, d31_60: 0n, d61_90: 0n, d90p: 0n };
+    let totalOutstanding = 0n;
+
+    for (const l of loans) {
+      const outstanding = l.totalDue - l.paidAmount;
+      if (outstanding <= 0n) continue;
+      totalOutstanding += outstanding;
+
+      const daysLate = Math.max(
+        0,
+        ...l.installments
+          .filter((i) => i.paidAmount < i.amount)
+          .map((i) => daysBetween(i.dueDate, today)),
+      );
+
+      if (daysLate === 0) buckets.current += outstanding;
+      else if (daysLate <= 30) buckets.d1_30 += outstanding;
+      else if (daysLate <= 60) buckets.d31_60 += outstanding;
+      else if (daysLate <= 90) buckets.d61_90 += outstanding;
+      else buckets.d90p += outstanding;
+    }
+
+    const par30Minor = buckets.d31_60 + buckets.d61_90 + buckets.d90p;
+
+    return {
+      buckets: {
+        current: buckets.current.toString(),
+        d1_30: buckets.d1_30.toString(),
+        d31_60: buckets.d31_60.toString(),
+        d61_90: buckets.d61_90.toString(),
+        d90p: buckets.d90p.toString(),
+      },
+      totalOutstandingMinor: totalOutstanding.toString(),
+      par30Minor: par30Minor.toString(),
+      par30Pct:
+        totalOutstanding > 0n
+          ? Number((par30Minor * 10000n) / totalOutstanding) / 100
+          : 0,
+    };
   }
 }

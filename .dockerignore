@@ -1,0 +1,24 @@
+# Keep the build context small AND deterministic: the images must never
+# inherit a developer's .env (in-container config comes from compose env vars)
+# or a stale host-built dist/ or node_modules.
+**/node_modules
+**/dist
+**/build
+**/.dart_tool
+**/.gradle
+.git
+.kilo
+.localpg
+.localpg13
+*.log
+
+# Secrets/config — .env.example is kept so the image documents its env surface.
+**/.env
+**/.env.*
+!**/.env.example
+
+# Not needed by any image build.
+kumvwa_finance
+assets
+docker-compose*.yml
+*.md

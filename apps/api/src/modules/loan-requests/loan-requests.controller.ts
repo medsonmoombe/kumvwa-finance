@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/guards/roles.decorator';
+import { RequirePermissions } from '../../common/guards/permissions.decorator';
 import type { TokenClaims } from '../../common/crypto/token.service';
 
 import { LoanRequestsService } from './loan-requests.service';
@@ -27,11 +28,13 @@ export class LenderLoanRequestsController {
   constructor(private readonly requests: LoanRequestsService) {}
 
   @Get('inbox')
+  @RequirePermissions('loans.read')
   inbox(@CurrentUser() u: TokenClaims, @Query('status') status?: string) {
     return this.requests.list(u, status);
   }
 
   @Post(':id/approve')
+  @RequirePermissions('loans.approve')
   approve(
     @CurrentUser() u: TokenClaims,
     @Param('id') id: string,
@@ -41,6 +44,7 @@ export class LenderLoanRequestsController {
   }
 
   @Post(':id/reject')
+  @RequirePermissions('loans.reject')
   reject(
     @CurrentUser() u: TokenClaims,
     @Param('id') id: string,

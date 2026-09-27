@@ -128,6 +128,8 @@ export class TenantsService {
         bozSubmittedAt: new Date(),
         status: 'pending_verification',
         verificationNote: null, // clear any previous rejection reason
+        verificationReviewedAt: null,
+        verificationReviewedBy: null,
         ownerNrcEncrypted: this.nrc.encrypt(dto.ownerNrc.trim()),
       },
       select: TENANT_SELECT,
@@ -217,15 +219,55 @@ export class TenantsService {
    * Public: powers the invite flow + first-login branding. Terms body is
    * included so the client sees the lender's terms before signing in.
    */
+  /**
+   * Authenticated branding view for the console settings screen: the public
+   * projection PLUS the private business-info fields the owner may edit.
+   * (The public endpoint deliberately omits email/tpin/contact.)
+   */
+  async privateBranding(tenantId: string) {
+    const t = await this.prisma.tenant.findFirst({
+      // A lender becomes discoverable to borrowers only after approval.
+      where: { id: tenantId, status: 'active' },
+      include: {
+        logoFile: true,
+        terms: { orderBy: { version: 'desc' }, take: 1 },
+      },
+    });
+    if (!t) throw new NotFoundException('Tenant not found');
+    return {
+      name: t.name,
+      email: t.email,
+      address: t.address,
+      tpin: t.tpin,
+      contactPerson: t.contactPerson,
+      tagline: t.tagline,
+      primaryColor: t.primaryColor ?? DEFAULT_PRIMARY_COLOR,
+      logoUrl: t.logoFile
+        ? await this.files.presignGet(t.logoFile.storageKey)
+        : null,
+      terms: t.terms[0]
+        ? { version: t.terms[0].version, body: t.terms[0].body }
+        : null,
+    };
+  }
+
   async publicInfo(tenantId: string) {
     const t = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
       include: {
         logoFile: true,
         terms: { orderBy: { version: 'desc' }, take: 1 },
+        // First active product so the client's apply screen can show the
+        // lender's real rate/fee/term in the live breakdown before applying.
+        products: {
+          where: { active: true },
+          orderBy: { createdAt: 'asc' },
+          take: 1,
+        },
       },
     });
     if (!t) throw new NotFoundException('Business not found');
+    const p = t.products[0];
     return {
       name: t.name,
       tagline: t.tagline,
@@ -235,6 +277,17 @@ export class TenantsService {
         : null,
       terms: t.terms[0]
         ? { version: t.terms[0].version, body: t.terms[0].body }
+        : null,
+      product: p
+        ? {
+            id: p.id,
+            name: p.name,
+            ratePct: p.rateBps / 100,
+            feePct: p.originationFeeBps / 100,
+            maxTermMonths: p.maxTerm,
+            frequency: p.frequency,
+            repaymentStructure: p.repaymentStructure,
+          }
         : null,
     };
   }

@@ -7,20 +7,26 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { createHmac, randomBytes, randomInt } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import type { Request } from 'express';
 import type Redis from 'ioredis';
 import type { User } from '@prisma/client';
+import { ALL_PERMISSIONS, SYSTEM_ROLES } from '@kumvwa/core';
 
 import { ENV, type Env } from '../../config/env';
 import { PrismaService } from '../../infra/prisma.module';
 import { REDIS } from '../../infra/redis.module';
 import { PasswordService } from '../../common/crypto/password.service';
 import { TokenService } from '../../common/crypto/token.service';
+import { EmailService } from '../../common/email/email.service';
 import { AuditService } from '../audit/audit.service';
+import { PlatformService } from '../admin/platform.service';
 import { TermsService } from '../terms/terms.service';
 import { normalizeZmPhone } from '../../common/utils/phone.util';
 import {
   ChangePasswordDto,
+  ConsoleLoginDto,
+  ConsoleVerifyDto,
   ForgotPasswordDto,
   LoginDto,
   OtpRequestDto,
@@ -49,6 +55,8 @@ export class AuthService {
     private readonly tokens: TokenService,
     private readonly audit: AuditService,
     private readonly terms: TermsService,
+    private readonly platform: PlatformService,
+    private readonly email: EmailService,
     @Inject(ENV) private readonly env: Env,
     @Inject(REDIS) private readonly redis: Redis,
   ) {}
@@ -95,6 +103,23 @@ export class AuthService {
         sentAt: this.env.SMS_PROVIDER === 'none' ? new Date() : null,
       },
     });
+
+    // Console 2FA is email-native. The legacy phone OTP flow also emails a
+    // code whenever an address is known: supplied at registration or already
+    // attached to the account for password recovery.
+    const suppliedEmail = dto.email?.trim().toLowerCase();
+    const account = suppliedEmail
+      ? null
+      : await this.prisma.user.findUnique({
+          where: { phone },
+          select: { email: true },
+        });
+    const email = suppliedEmail ?? account?.email;
+    if (email) {
+      const body = `Your verification code is ${code}. It expires in ${this.env.OTP_TTL_MIN} minutes. If you did not request it, you can ignore this email.`;
+      await this.prisma.emailOutbox.create({ data: { to: email, subject: 'Kumvwa verification code', body, purpose: 'otp' } });
+      await this.email.send(email, 'Kumvwa verification code', body);
+    }
 
     this.logger.log(`OTP for ${phone}: ${code}`); // dev visibility only
 
@@ -193,11 +218,20 @@ export class AuthService {
       const user = await tx.user.create({
         data: {
           phone,
+          email: dto.email?.trim().toLowerCase(),
           passwordHash,
           displayName: dto.businessName,
           role: 'tenant_owner',
           tenantId: tenant.id,
         },
+      });
+      await tx.role.createMany({
+        data: SYSTEM_ROLES.map((role) => ({
+          tenantId: tenant.id,
+          name: role.name,
+          isSystem: true,
+          permissions: role.permissions,
+        })),
       });
       return { tenant, user };
     });
@@ -266,6 +300,104 @@ export class AuthService {
     };
   }
 
+  async consoleLogin(
+    dto: ConsoleLoginDto,
+    req: Request,
+    deviceToken?: string,
+  ) {
+    const email = dto.email.trim().toLowerCase();
+    await this.assertNotLocked(`email:${email}`);
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    const valid =
+      user &&
+      user.status === 'active' &&
+      user.role !== 'client' &&
+      (await this.passwords.verify(user.passwordHash, dto.password));
+    if (!valid) {
+      if (!user) await this.passwords.hash(dto.password);
+      await this.registerFailure(`email:${email}`);
+      await this.audit.record({
+        action: 'auth.console.login_failed',
+        entity: 'User',
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+      });
+      throw new UnauthorizedException('Invalid email or password');
+    }
+    await this.registerFailure(`email:${email}`, true);
+
+    if (await this.trustedDeviceOk(user.id, deviceToken)) {
+      await this.audit.record({
+        actorId: user.id,
+        action: 'auth.console.login_trusted_device',
+        entity: 'User',
+        entityId: user.id,
+        tenantId: user.tenantId ?? undefined,
+        ip: req.ip,
+      });
+      return this.issueConsoleTokens(user, req);
+    }
+    if (!user.twoFactorEnabled) return this.issueConsoleTokens(user, req);
+
+    const code = this.env.OTP_DEV_MODE
+      ? this.env.OTP_DEV_CODE
+      : randomInt(0, 1_000_000).toString().padStart(6, '0');
+    await this.prisma.otpCode.updateMany({
+      where: { userId: user.id, purpose: 'console_2fa', status: 'pending' },
+      data: { status: 'expired' },
+    });
+    await this.prisma.otpCode.create({
+      data: {
+        phone: user.phone,
+        userId: user.id,
+        purpose: 'console_2fa',
+        codeHash: await this.passwords.hash(code),
+        expiresAt: new Date(Date.now() + this.env.CONSOLE_2FA_TTL_MIN * 60_000),
+      },
+    });
+    const body2fa = `Your sign-in code is ${code}. It expires in ${this.env.CONSOLE_2FA_TTL_MIN} minutes.`;
+    await this.prisma.emailOutbox.create({ data: { to: email, subject: 'Kumvwa Console sign-in code', body: body2fa, purpose: 'otp' } });
+    await this.email.send(email, 'Kumvwa Console sign-in code', body2fa);
+    return {
+      stage: '2fa' as const,
+      preToken: await this.tokens.signPre2fa(user.id, randomBytes(16).toString('hex')),
+      expiresInMin: this.env.CONSOLE_2FA_TTL_MIN,
+      ...(this.env.OTP_DEV_MODE ? { devCode: code } : {}),
+    };
+  }
+
+  async consoleVerify2fa(dto: ConsoleVerifyDto, req: Request) {
+    const claims = await this.tokens.verify(dto.preToken, 'pre2fa');
+    const user = await this.prisma.user.findUnique({ where: { id: claims.sub } });
+    if (!user || user.status !== 'active') throw new UnauthorizedException();
+    const row = await this.prisma.otpCode.findFirst({
+      where: { userId: user.id, purpose: 'console_2fa', status: 'pending' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!row || row.expiresAt < new Date()) {
+      throw new UnauthorizedException('Code expired - start again');
+    }
+    if (!(await this.passwords.verify(row.codeHash, dto.code))) {
+      const attempts = row.attempts + 1;
+      await this.prisma.otpCode.update({
+        where: { id: row.id },
+        data: { attempts, ...(attempts >= this.env.OTP_MAX_ATTEMPTS ? { status: 'expired' } : {}) },
+      });
+      await this.audit.record({ actorId: user.id, action: 'auth.console.2fa_failed', entity: 'User', entityId: user.id, ip: req.ip });
+      throw new UnauthorizedException('Incorrect code');
+    }
+    await this.prisma.otpCode.update({ where: { id: row.id }, data: { status: 'consumed', consumedAt: new Date() } });
+    let deviceToken: string | undefined;
+    if (dto.rememberDevice) {
+      deviceToken = randomBytes(32).toString('base64url');
+      await this.prisma.trustedDevice.create({
+        data: { userId: user.id, tokenHash: this.deviceHash(deviceToken), label: req.headers['user-agent']?.slice(0, 120), expiresAt: new Date(Date.now() + this.env.TRUSTED_DEVICE_DAYS * 86_400_000) },
+      });
+    }
+    await this.audit.record({ actorId: user.id, action: 'auth.console.2fa_success', entity: 'User', entityId: user.id, tenantId: user.tenantId ?? undefined, ip: req.ip });
+    return { ...(await this.issueConsoleTokens(user, req)), deviceToken };
+  }
+
   // ─────────────── Password recovery (OTP-gated) ───────────────
 
   /**
@@ -275,21 +407,94 @@ export class AuthService {
    * step simply fails later for a non-existent account.
    */
   async forgotPassword(dto: ForgotPasswordDto) {
+    if (dto.email) {
+      const email = dto.email.trim().toLowerCase();
+      const user = await this.prisma.user.findFirst({ where: { email } });
+      if (!user) {
+        return { sent: true };
+      }
+      const code = this.env.OTP_DEV_MODE
+        ? this.env.OTP_DEV_CODE
+        : randomInt(0, 1_000_000).toString().padStart(6, '0');
+
+      await this.prisma.otpCode.updateMany({
+        where: { userId: user.id, purpose: 'password_reset', status: 'pending' },
+        data: { status: 'expired' },
+      });
+
+      await this.prisma.otpCode.create({
+        data: {
+          phone: user.phone,
+          userId: user.id,
+          purpose: 'password_reset',
+          codeHash: await this.passwords.hash(code),
+          expiresAt: new Date(Date.now() + this.env.OTP_TTL_MIN * 60_000),
+        },
+      });
+
+      const bodyReset = `Your password reset code is ${code}. It expires in ${this.env.OTP_TTL_MIN} minutes.`;
+      await this.prisma.emailOutbox.create({ data: { to: email, subject: 'Kumvwa password reset code', body: bodyReset, purpose: 'otp' } });
+      await this.email.send(email, 'Kumvwa password reset code', bodyReset);
+
+      return {
+        sent: true,
+        ...(this.env.OTP_DEV_MODE ? { devCode: code } : {}),
+      };
+    }
+
+    if (!dto.phone) {
+      throw new BadRequestException('Email or phone is required');
+    }
     return this.requestOtp({ phone: dto.phone, purpose: 'password_reset' });
   }
 
-  /** Set a new password after OTP proof-of-phone, then kill every session. */
+  /** Set a new password after proof-of-identity (email code or phone OTP), then kill every session. */
   async resetPassword(dto: ResetPasswordDto, req: Request) {
-    const phone = this.mustPhone(dto.phone);
-    const claims = await this.tokens.verify(dto.otpToken, 'otp');
-    if (claims.purpose !== 'password_reset' || claims.phone !== phone) {
-      throw new UnauthorizedException('Phone verification required');
-    }
+    let user: User | null = null;
+    let lockoutPhone: string | null = null;
 
-    const user = await this.prisma.user.findUnique({ where: { phone } });
-    // Ownership of the phone is already proven via the OTP by this point,
-    // so it's safe (and helpful) to say the account does not exist.
-    if (!user) throw new BadRequestException('No account for this phone');
+    if (dto.email) {
+      const email = dto.email.trim().toLowerCase();
+      user = await this.prisma.user.findFirst({ where: { email } });
+      if (!user) throw new BadRequestException('No account found for this email');
+
+      if (!dto.code) throw new BadRequestException('Verification code is required');
+
+      const row = await this.prisma.otpCode.findFirst({
+        where: { userId: user.id, purpose: 'password_reset', status: 'pending' },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (!row || row.expiresAt < new Date()) {
+        throw new BadRequestException('Code expired or invalid — request a new one');
+      }
+
+      const ok = await this.passwords.verify(row.codeHash, dto.code);
+      if (!ok) {
+        throw new BadRequestException('Incorrect verification code');
+      }
+
+      await this.prisma.otpCode.update({
+        where: { id: row.id },
+        data: { status: 'consumed', consumedAt: new Date() },
+      });
+      lockoutPhone = user.phone;
+    } else if (dto.phone) {
+      const phone = this.mustPhone(dto.phone);
+      if (!dto.otpToken) {
+        throw new BadRequestException('OTP token required for phone reset');
+      }
+      const claims = await this.tokens.verify(dto.otpToken, 'otp');
+      if (claims.purpose !== 'password_reset' || claims.phone !== phone) {
+        throw new UnauthorizedException('Phone verification required');
+      }
+
+      user = await this.prisma.user.findUnique({ where: { phone } });
+      if (!user) throw new BadRequestException('No account for this phone');
+      lockoutPhone = phone;
+    } else {
+      throw new BadRequestException('Email or phone is required');
+    }
 
     const passwordHash = await this.passwords.hash(dto.newPassword);
 
@@ -305,7 +510,9 @@ export class AuthService {
       }),
     ]);
 
-    await this.registerFailure(phone, true); // clear the login lockout
+    if (lockoutPhone) {
+      await this.registerFailure(lockoutPhone, true); // clear the login lockout
+    }
     await this.audit.record({
       actorId: user.id,
       action: 'auth.password_reset',
@@ -413,7 +620,10 @@ export class AuthService {
 
     return {
       user: await this.sessionUser(user),
-      accessToken: await this.tokens.signAccessToken(user),
+      accessToken: await this.tokens.signAccessToken({
+        ...user,
+        permissions: await this.permissionsFor(user),
+      }),
       refreshToken: newRaw,
     };
   }
@@ -449,6 +659,47 @@ export class AuthService {
       },
     });
     return this.sessionUser(user);
+  }
+
+  async get2faStatus(userId: string) {
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: userId },
+      select: { twoFactorEnabled: true },
+    });
+    return { twoFactorEnabled: user.twoFactorEnabled };
+  }
+
+  async set2fa(userId: string, enabled: boolean) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { twoFactorEnabled: enabled },
+    });
+    return { twoFactorEnabled: enabled };
+  }
+
+  async devices(userId: string) {
+    return this.prisma.trustedDevice.findMany({
+      where: { userId, expiresAt: { gt: new Date() } },
+      select: { id: true, label: true, createdAt: true, expiresAt: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async revokeDevice(userId: string, deviceId: string, req: Request) {
+    const device = await this.prisma.trustedDevice.findFirst({
+      where: { id: deviceId, userId },
+    });
+    if (!device) throw new BadRequestException('Trusted device not found');
+    await this.prisma.trustedDevice.delete({ where: { id: device.id } });
+    await this.audit.record({
+      actorId: userId,
+      action: 'auth.console.trusted_device_revoked',
+      entity: 'TrustedDevice',
+      entityId: device.id,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
+    return { ok: true };
   }
 
   // ───────────────────────── helpers ─────────────────────────
@@ -546,6 +797,34 @@ export class AuthService {
       .digest('hex');
   }
 
+  private deviceHash(raw: string): string {
+    return createHash('sha256').update(raw).digest('hex');
+  }
+
+  private async trustedDeviceOk(userId: string, raw?: string): Promise<boolean> {
+    if (!raw) return false;
+    const device = await this.prisma.trustedDevice.findFirst({
+      where: { userId, tokenHash: this.deviceHash(raw), expiresAt: { gt: new Date() } },
+    });
+    return Boolean(device);
+  }
+
+  private async permissionsFor(user: Pick<User, 'role' | 'tenantId' | 'roleId'>): Promise<string[]> {
+    if (user.role === 'platform_admin' || user.role === 'tenant_owner') {
+      return ALL_PERMISSIONS;
+    }
+    if (user.role !== 'tenant_staff' || !user.tenantId || !user.roleId) return [];
+    const role = await this.prisma.role.findFirst({
+      where: { id: user.roleId, tenantId: user.tenantId },
+      select: { permissions: true },
+    });
+    return role?.permissions ?? [];
+  }
+
+  private async issueConsoleTokens(user: User, req: Request) {
+    return this.issueTokens(user, req);
+  }
+
   private async issueTokens(user: User, req: Request) {
     const sessionId = randomBytes(16).toString('hex');
     const jti = randomBytes(16).toString('hex');
@@ -564,7 +843,10 @@ export class AuthService {
     });
 
     return {
-      accessToken: await this.tokens.signAccessToken(user),
+      accessToken: await this.tokens.signAccessToken({
+        ...user,
+        permissions: await this.permissionsFor(user),
+      }),
       refreshToken,
     };
   }

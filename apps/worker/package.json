@@ -10,6 +10,7 @@
     "prisma:generate": "prisma generate --schema ../api/prisma/schema.prisma"
   },
   "dependencies": {
+    "@kumvwa/core": "workspace:^",
     "@prisma/client": "^6.19.3",
     "dotenv": "^16.4.0",
     "nodemailer": "^6.9.16"

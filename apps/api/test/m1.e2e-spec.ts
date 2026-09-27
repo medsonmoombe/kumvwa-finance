@@ -17,6 +17,7 @@ describe('M1: profiles, branding, terms, email (e2e)', () => {
   const password = 'S3cure-Passw0rd!';
   const lenderPhone = `0971${String(stamp).slice(-5)}1`;
   const clientPhone = `0972${String(stamp).slice(-5)}2`;
+  const lenderEmail = `info.m1.${stamp}@kumvwa.test`;
 
   let lenderToken = '';
   let clientToken = '';
@@ -90,7 +91,7 @@ describe('M1: profiles, branding, terms, email (e2e)', () => {
         businessType: 'sacco',
         otpToken: (v.body as { otpToken: string }).otpToken,
         acceptedTermsVersion: 1,
-        email: 'info@m1sacco.zm',
+        email: lenderEmail,
         address: 'Plot 7, Lusaka',
         contactPerson: 'Ms. Bwalya',
       })
@@ -117,7 +118,7 @@ describe('M1: profiles, branding, terms, email (e2e)', () => {
     const t = await prisma.tenant.findUniqueOrThrow({
       where: { id: tenantId },
     });
-    expect(t.email).toBe('info@m1sacco.zm');
+    expect(t.email).toBe(lenderEmail);
     expect(t.contactPerson).toBe('Ms. Bwalya');
   });
 
@@ -190,17 +191,106 @@ describe('M1: profiles, branding, terms, email (e2e)', () => {
       .send({ scope: 'platform_client' })
       .expect(201);
 
-    // profile stepper
+    // profile stepper: partial save must NOT complete the profile
+    const partial = await request(server())
+      .put('/api/v1/clients/me/profile')
+      .set('Authorization', `Bearer ${clientToken}`)
+      .send({ email: clientEmail, employmentStatus: 'self_employed' })
+      .expect(200);
+    expect(
+      (partial.body as { profileCompleted: boolean }).profileCompleted,
+    ).toBe(false);
+
+    // ...and the gate must report the very fields that are still missing, so
+    // the app binds the borrower to the stepper instead of waving them in.
+    const partialMe = await request(server())
+      .get('/api/v1/clients/me')
+      .set('Authorization', `Bearer ${clientToken}`)
+      .expect(200);
+    const partialRegistration = (
+      partialMe.body as {
+        registration: {
+          action: string;
+          missing: string[];
+          openLoanCount: number;
+        };
+      }
+    ).registration;
+    expect(partialRegistration.action).toBe('complete_registration');
+    expect(partialRegistration.missing).toEqual(
+      expect.arrayContaining([
+        'educationLevel',
+        'incomeBand',
+        'kinName',
+        'kinPhone',
+      ]),
+    );
+    expect(partialRegistration.missing).not.toContain('email');
+    expect(partialRegistration.missing).not.toContain('employmentStatus');
+    expect(partialRegistration.openLoanCount).toBe(0);
+
+    // profile stepper: still incomplete with kin details missing
+    const noKin = await request(server())
+      .put('/api/v1/clients/me/profile')
+      .set('Authorization', `Bearer ${clientToken}`)
+      .send({
+        email: clientEmail,
+        employmentStatus: 'self_employed',
+        educationLevel: 'degree',
+        incomeBand: 'b1001_3000',
+        incomeSource: 'Market stall at Soweto',
+      })
+      .expect(200);
+    expect((noKin.body as { profileCompleted: boolean }).profileCompleted).toBe(
+      false,
+    );
+
+    // NRC photos: both faces are optional, but each one that IS supplied must
+    // be a real uploaded nrc_photo file, and it round-trips on `me`.
+    const nrcUpload = await request(server())
+      .post('/api/v1/files/client/upload-url')
+      .set('Authorization', `Bearer ${clientToken}`)
+      .send({ kind: 'nrc_photo', mime: 'image/jpeg', size: 1024 })
+      .expect(201);
+    const nrcUp = nrcUpload.body as { fileId: string; uploadUrl: string };
+    await fetch(nrcUp.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'image/jpeg' },
+      body: Buffer.alloc(1024, 7),
+    });
+    await request(server())
+      .post(`/api/v1/files/client/${nrcUp.fileId}/confirm`)
+      .set('Authorization', `Bearer ${clientToken}`)
+      .expect(201);
+
+    // An unconfirmed file is not an upload — the back photo must be rejected.
+    const pendingUpload = await request(server())
+      .post('/api/v1/files/client/upload-url')
+      .set('Authorization', `Bearer ${clientToken}`)
+      .send({ kind: 'nrc_photo', mime: 'image/jpeg', size: 1024 })
+      .expect(201);
+    await request(server())
+      .put('/api/v1/clients/me/profile')
+      .set('Authorization', `Bearer ${clientToken}`)
+      .send({
+        email: clientEmail,
+        nrcBackPhotoFileId: (pendingUpload.body as { fileId: string }).fileId,
+      })
+      .expect(400);
+
+    // profile stepper: full required set completes the profile
     const prof = await request(server())
       .put('/api/v1/clients/me/profile')
       .set('Authorization', `Bearer ${clientToken}`)
       .send({
         email: clientEmail,
         employmentStatus: 'self_employed',
+        educationLevel: 'degree',
         incomeBand: 'b1001_3000',
         incomeSource: 'Market stall at Soweto',
         kinName: 'Jane Tester',
         kinPhone: '0965550001',
+        nrcPhotoFileId: nrcUp.fileId,
       })
       .expect(200);
     expect((prof.body as { profileCompleted: boolean }).profileCompleted).toBe(
@@ -214,9 +304,15 @@ describe('M1: profiles, branding, terms, email (e2e)', () => {
     const meBody = me.body as {
       employmentStatus: string;
       profileCompleted: boolean;
+      nrcPhotoFileId: string | null;
+      registration: { action: string; missing: string[] };
     };
     expect(meBody.employmentStatus).toBe('self_employed');
     expect(meBody.profileCompleted).toBe(true);
+    expect(meBody.nrcPhotoFileId).toBe(nrcUp.fileId);
+    // Nothing required is outstanding any more, so the gate stands down.
+    expect(meBody.registration.action).toBe('complete');
+    expect(meBody.registration.missing).toEqual([]);
   });
 
   it('lender publishes terms v1→v2; client sees latest, accepts, status flips', async () => {

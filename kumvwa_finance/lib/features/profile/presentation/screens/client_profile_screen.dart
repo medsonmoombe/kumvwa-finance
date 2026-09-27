@@ -67,12 +67,16 @@ class ClientProfileScreen extends ConsumerWidget {
                         Text(
                           session?.phone ?? '',
                           style: const TextStyle(
-                              fontSize: 11.5, color: AppColors.muted),
+                            fontSize: 11.5,
+                            color: AppColors.muted,
+                          ),
                         ),
                         const SizedBox(height: 6),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 9, vertical: 3),
+                            horizontal: 9,
+                            vertical: 3,
+                          ),
                           decoration: BoxDecoration(
                             color: AppColors.green50,
                             borderRadius: BorderRadius.circular(99),
@@ -93,12 +97,21 @@ class ClientProfileScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 11),
-            _tile(Icons.people_outline, 'My lenders',
-                () => _soon(context, 'My lenders')),
-            _tile(Icons.description_outlined, 'Terms of Service',
-                () => _soon(context, 'Terms of Service')),
-            _tile(Icons.privacy_tip_outlined, 'Privacy Policy',
-                () => _soon(context, 'Privacy Policy')),
+            _tile(
+              Icons.people_outline,
+              'My lenders',
+              () => _soon(context, 'My lenders'),
+            ),
+            _tile(
+              Icons.description_outlined,
+              'Terms of Service',
+              () => _soon(context, 'Terms of Service'),
+            ),
+            _tile(
+              Icons.privacy_tip_outlined,
+              'Privacy Policy',
+              () => _soon(context, 'Privacy Policy'),
+            ),
             const SizedBox(height: 11),
             Container(
               decoration: BoxDecoration(
@@ -108,7 +121,8 @@ class ClientProfileScreen extends ConsumerWidget {
               ),
               child: ListTile(
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 leading: const Icon(Icons.logout, color: AppColors.red),
                 title: const Text(
                   'Log Out',
@@ -123,7 +137,8 @@ class ClientProfileScreen extends ConsumerWidget {
                     context: context,
                     builder: (ctx) => AlertDialog(
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(18)),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
                       title: const Text('Log out?'),
                       actions: [
                         TextButton(
@@ -133,16 +148,15 @@ class ClientProfileScreen extends ConsumerWidget {
                         TextButton(
                           onPressed: () => Navigator.pop(ctx, true),
                           style: TextButton.styleFrom(
-                              foregroundColor: AppColors.red),
+                            foregroundColor: AppColors.red,
+                          ),
                           child: const Text('Log Out'),
                         ),
                       ],
                     ),
                   );
                   if (ok == true) {
-                    await ref
-                        .read(authControllerProvider.notifier)
-                        .logout();
+                    await ref.read(authControllerProvider.notifier).logout();
                   }
                 },
               ),
@@ -152,9 +166,8 @@ class ClientProfileScreen extends ConsumerWidget {
               child: FutureBuilder<PackageInfo>(
                 future: PackageInfo.fromPlatform(),
                 builder: (_, snap) => Text(
-                  'Kumvwa Finance · Version ${snap.data?.version ?? '—'}',
-                  style: const TextStyle(
-                      fontSize: 11, color: AppColors.muted),
+                  'Kumvwa Finance · Version ${snap.data?.version ?? '-'}',
+                  style: const TextStyle(fontSize: 11, color: AppColors.muted),
                 ),
               ),
             ),
@@ -173,22 +186,25 @@ class ClientProfileScreen extends ConsumerWidget {
         border: Border.all(color: AppColors.line),
       ),
       child: ListTile(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         leading: Icon(icon, size: 20, color: AppColors.ink2),
-        title: Text(label,
-            style: const TextStyle(
-                fontSize: 13.5, fontWeight: FontWeight.w600)),
-        trailing: const Icon(Icons.chevron_right,
-            size: 20, color: AppColors.muted),
+        title: Text(
+          label,
+          style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+        ),
+        trailing: const Icon(
+          Icons.chevron_right,
+          size: 20,
+          color: AppColors.muted,
+        ),
         onTap: onTap,
       ),
     );
   }
 
   void _soon(BuildContext context, String what) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$what — coming soon')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$what is coming soon')));
   }
 }

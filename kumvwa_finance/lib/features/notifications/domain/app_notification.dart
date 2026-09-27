@@ -21,6 +21,7 @@ class AppNotification {
     required this.time,
     required this.type,
     this.read = false,
+    this.data = const {},
   });
 
   final String id;
@@ -30,12 +31,17 @@ class AppNotification {
   final NotificationType type;
   final bool read;
 
+  /// Server-supplied deep-link payload, for example `{loanId: ...}` or
+  /// `{requestId: ...}`. It lets a notification open the exact event detail.
+  final Map<String, dynamic> data;
+
   AppNotification markRead() => AppNotification(
-        id: id,
-        title: title,
-        body: body,
-        time: time,
-        type: type,
-        read: true,
-      );
+    id: id,
+    title: title,
+    body: body,
+    time: time,
+    type: type,
+    read: true,
+    data: data,
+  );
 }

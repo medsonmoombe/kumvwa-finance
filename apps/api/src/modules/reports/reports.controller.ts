@@ -4,9 +4,11 @@ import type { Response } from 'express';
 import type { TokenClaims } from '../../common/crypto/token.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/guards/roles.decorator';
+import { RequirePermissions } from '../../common/guards/permissions.decorator';
 import { ReportsService } from './reports.service';
 
 @Roles('tenant_owner', 'tenant_staff')
+@RequirePermissions('reports.view')
 @Controller('reports')
 export class ReportsController {
   constructor(private readonly reports: ReportsService) {}
@@ -19,6 +21,12 @@ export class ReportsController {
   @Get('monthly')
   monthly(@CurrentUser() u: TokenClaims) {
     return this.reports.monthly(u.tenantId!);
+  }
+
+  /** Portfolio at Risk aging (Current / 1-30 / 31-60 / 61-90 / 90+). */
+  @Get('par')
+  par(@CurrentUser() u: TokenClaims) {
+    return this.reports.par(u.tenantId!);
   }
 
   /**

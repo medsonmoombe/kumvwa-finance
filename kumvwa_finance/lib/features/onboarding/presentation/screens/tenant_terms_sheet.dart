@@ -26,8 +26,9 @@ Future<void> showTenantTermsSheet(
     terms = (data['terms'] as Map<String, dynamic>?);
   } on ApiException catch (e) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.message)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     }
     return;
   }
@@ -73,15 +74,16 @@ class _Sheet extends ConsumerWidget {
     try {
       await ref
           .read(apiClientProvider)
-          .postA('/terms/accept', data: {
-        'scope': 'tenant',
-        'tenantId': lender.tenantId,
-      });
+          .postA(
+            '/terms/accept',
+            data: {'scope': 'tenant', 'tenantId': lender.tenantId},
+          );
       if (context.mounted) Navigator.pop(context);
     } on ApiException catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(e.message)));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(e.message)));
       }
     }
   }
@@ -103,11 +105,11 @@ class _Sheet extends ConsumerWidget {
             ),
           ),
           Text(
-            '${lender.name} — Lending Terms',
+            '${lender.name}: Lending Terms',
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
           ),
           Text(
-            'Version ${version ?? '—'}',
+            'Version ${version ?? '-'}',
             style: const TextStyle(fontSize: 11, color: AppColors.muted),
           ),
           const SizedBox(height: 6),

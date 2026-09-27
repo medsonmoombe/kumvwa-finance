@@ -3,10 +3,10 @@ enum LoanRequestStatus { pending, approved, rejected }
 
 extension LoanRequestStatusX on LoanRequestStatus {
   String get label => switch (this) {
-        LoanRequestStatus.pending => 'Pending',
-        LoanRequestStatus.approved => 'Approved',
-        LoanRequestStatus.rejected => 'Declined',
-      };
+    LoanRequestStatus.pending => 'Pending',
+    LoanRequestStatus.approved => 'Approved',
+    LoanRequestStatus.rejected => 'Declined',
+  };
 }
 
 /// A borrower-initiated loan application, sent to one lender.
@@ -27,6 +27,7 @@ class LoanRequest {
     this.status = LoanRequestStatus.pending,
     this.feedback,
     this.reviewedAt,
+    this.loanId,
   });
 
   final String id;
@@ -45,4 +46,9 @@ class LoanRequest {
   /// Lender's rejection feedback — always set when rejected.
   final String? feedback;
   final DateTime? reviewedAt;
+
+  /// The loan this request became once approved. A request's lifecycle ends at
+  /// approval — from then on the loan is the single source of truth, and this
+  /// is the only bridge back to it.
+  final String? loanId;
 }

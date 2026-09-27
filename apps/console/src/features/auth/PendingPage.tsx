@@ -15,7 +15,8 @@ export function PendingPage() {
   const [error, setError] = useState('');
   const poll = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
 
-  const submitted = tenant?.bozSubmittedAt != null;
+  const submitted = tenant?.status === 'pending_verification';
+  const rejected = tenant?.status === 'rejected';
 
   // Poll tenant status while waiting for admin review.
   useEffect(() => {
@@ -68,9 +69,15 @@ export function PendingPage() {
       <Card className="mt-6 p-6">
         {!submitted ? (
           <div className="space-y-4">
+            {rejected && tenant.verificationNote && (
+              <div className="rounded-xl border border-danger-500/25 bg-danger-50 p-3.5 text-[12.5px] text-danger-500">
+                <b>Changes requested by the reviewer:</b> {tenant.verificationNote}
+                <p className="mt-1 text-[11.5px]">Upload a corrected certificate and submit again for review.</p>
+              </div>
+            )}
             <p className="text-[13px] leading-relaxed text-ink-2">
-              Upload your <b>Bank of Zambia registration certificate</b> to
-              activate lending.
+              {rejected ? 'Replace the document and resubmit your' : 'Upload your'}{' '}
+              <b>Bank of Zambia registration certificate</b> to activate lending.
             </p>
             <label className="flex cursor-pointer flex-col items-center rounded-card border-[1.5px] border-dashed border-brand-100 bg-brand-50 px-4 py-8 text-center hover:border-brand-500">
               <FiUploadCloud size={26} className="text-brand-500" />
@@ -104,7 +111,7 @@ export function PendingPage() {
               onClick={upload}
               className="flex h-[50px] w-full items-center justify-center rounded-btn bg-brand-600 font-bold text-white shadow-c1 hover:bg-brand-900 disabled:opacity-40"
             >
-              {busy ? <Spinner className="border-white" /> : 'Submit for Verification'}
+              {busy ? <Spinner className="border-white" /> : rejected ? 'Resubmit for Review' : 'Submit for Verification'}
             </button>
           </div>
         ) : (

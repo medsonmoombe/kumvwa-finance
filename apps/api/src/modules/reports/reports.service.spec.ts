@@ -1,3 +1,5 @@
+import { businessDate, businessNow } from '@kumvwa/core';
+
 import { asPrisma } from '../../testing/mocks';
 import { ReportsService } from './reports.service';
 
@@ -112,9 +114,10 @@ describe('ReportsService.summary', () => {
 
 describe('ReportsService.monthly', () => {
   const monthKey = (back: number): string => {
-    const now = new Date();
+    // The ZAMBIAN month, matching the service's bucketing.
+    const z = businessNow();
     return new Date(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - back, 1),
+      Date.UTC(z.getUTCFullYear(), z.getUTCMonth() - back, 1),
     )
       .toISOString()
       .slice(0, 7);
@@ -197,5 +200,141 @@ describe('ReportsService.loansCsv', () => {
     );
     // Embedded quotes are doubled, per RFC 4180.
     expect(lines[2]).toContain('"Grace Lungu ""G"""');
+  });
+});
+
+describe('ReportsService.par', () => {
+  /** N days before the Zambian "today" (negative = days ahead), matching the service. */
+  const daysAgo = (n: number): Date => {
+    const z = businessDate();
+    return new Date(Date.UTC(z.getUTCFullYear(), z.getUTCMonth(), z.getUTCDate() - n));
+  };
+
+  function parSetup(loans: unknown[]) {
+    const prisma = { loan: { findMany: jest.fn().mockResolvedValue(loans) } };
+    return { service: new ReportsService(asPrisma(prisma)), prisma };
+  }
+
+  /** One loan whose single installment fell due `daysLate` days ago. */
+  function loan(daysLate: number, amount = 10_000n) {
+    return {
+      totalDue: amount,
+      paidAmount: 0n,
+      installments: [
+        { dueDate: daysAgo(daysLate), amount, paidAmount: 0n },
+      ],
+    };
+  }
+
+  it('leaves a loan that is not yet late in the current bucket', async () => {
+    const { service } = parSetup([loan(-10)]); // due in 10 days
+
+    const res = await service.par('t1');
+
+    expect(res.buckets.current).toBe('10000');
+    expect(res.buckets.d1_30).toBe('0');
+    expect(res.totalOutstandingMinor).toBe('10000');
+    expect(res.par30Minor).toBe('0');
+    expect(res.par30Pct).toBe(0);
+  });
+
+  it('keeps 1–30 days late out of PAR-30', async () => {
+    const { service } = parSetup([loan(15)]);
+
+    const res = await service.par('t1');
+
+    expect(res.buckets.d1_30).toBe('10000');
+    // PAR-30 deliberately starts at 31 days — 1–30 days is not "at risk" yet.
+    expect(res.par30Minor).toBe('0');
+    expect(res.par30Pct).toBe(0);
+  });
+
+  it('splits bucket edges at 30/31 days', async () => {
+    const thirty = await parSetup([loan(30)]).service.par('t1');
+    const thirtyOne = await parSetup([loan(31)]).service.par('t1');
+
+    expect(thirty.buckets.d1_30).toBe('10000');
+    expect(thirty.par30Pct).toBe(0);
+    expect(thirtyOne.buckets.d31_60).toBe('10000');
+    expect(thirtyOne.par30Pct).toBe(100);
+  });
+
+  it('ages into the 61–90 and 90+ buckets', async () => {
+    const sixty = await parSetup([loan(60)]).service.par('t1');
+    const ninety = await parSetup([loan(90)]).service.par('t1');
+    const ninetyOne = await parSetup([loan(91)]).service.par('t1');
+
+    expect(sixty.buckets.d31_60).toBe('10000');
+    expect(ninety.buckets.d61_90).toBe('10000');
+    expect(ninetyOne.buckets.d90p).toBe('10000');
+  });
+
+  it('buckets a loan by its MOST-late unpaid installment', async () => {
+    const { service } = parSetup([
+      {
+        totalDue: 30_000n,
+        paidAmount: 0n,
+        installments: [
+          { dueDate: daysAgo(75), amount: 10_000n, paidAmount: 0n },
+          { dueDate: daysAgo(5), amount: 10_000n, paidAmount: 0n },
+          { dueDate: daysAgo(-20), amount: 10_000n, paidAmount: 0n },
+        ],
+      },
+    ]);
+
+    const res = await service.par('t1');
+
+    // 75 days → 61–90, and the loan's WHOLE outstanding follows that bucket.
+    expect(res.buckets.d61_90).toBe('30000');
+    expect(res.buckets.d1_30).toBe('0');
+    expect(res.buckets.current).toBe('0');
+  });
+
+  it('ignores settled installments and fully repaid loans', async () => {
+    const { service } = parSetup([
+      {
+        totalDue: 20_000n,
+        paidAmount: 0n,
+        installments: [
+          // Paid 100 days ago would be 90+, but it is settled.
+          { dueDate: daysAgo(100), amount: 10_000n, paidAmount: 10_000n },
+          { dueDate: daysAgo(40), amount: 10_000n, paidAmount: 0n },
+        ],
+      },
+      { totalDue: 10_000n, paidAmount: 10_000n, installments: [] }, // cleared
+    ]);
+
+    const res = await service.par('t1');
+
+    expect(res.totalOutstandingMinor).toBe('20000');
+    expect(res.buckets.d31_60).toBe('20000');
+    expect(res.buckets.d90p).toBe('0');
+  });
+
+  it('states PAR-30 as a share of the whole outstanding book', async () => {
+    const { service } = parSetup([loan(-3), loan(45)]); // one current, one late
+
+    const res = await service.par('t1');
+
+    expect(res.totalOutstandingMinor).toBe('20000');
+    expect(res.par30Minor).toBe('10000');
+    expect(res.par30Pct).toBe(50);
+  });
+
+  it('returns a zero book without dividing by zero', async () => {
+    const { service } = parSetup([]);
+
+    const res = await service.par('t1');
+
+    expect(res.totalOutstandingMinor).toBe('0');
+    expect(res.par30Minor).toBe('0');
+    expect(res.par30Pct).toBe(0);
+    expect(res.buckets).toEqual({
+      current: '0',
+      d1_30: '0',
+      d31_60: '0',
+      d61_90: '0',
+      d90p: '0',
+    });
   });
 });

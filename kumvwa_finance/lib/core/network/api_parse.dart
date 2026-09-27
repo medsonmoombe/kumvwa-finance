@@ -1,5 +1,6 @@
 import 'package:kumvwa_finance/core/domain/loan_status.dart';
 import 'package:kumvwa_finance/core/domain/risk_level.dart';
+import 'package:kumvwa_finance/core/time/zambia_time.dart';
 import 'package:kumvwa_finance/features/loans/domain/loan.dart';
 import 'package:kumvwa_finance/features/loans/domain/loan_request.dart';
 import 'package:kumvwa_finance/features/notifications/domain/app_notification.dart';
@@ -41,11 +42,11 @@ DateTime? isoDate(dynamic value) {
 }
 
 LoanStatus toLoanStatus(String? value) => switch (value) {
-      'cleared' => LoanStatus.cleared,
-      'defaulted' => LoanStatus.overdue,
-      'active' => LoanStatus.active,
-      _ => LoanStatus.active,
-    };
+  'cleared' => LoanStatus.cleared,
+  'defaulted' => LoanStatus.overdue,
+  'active' => LoanStatus.active,
+  _ => LoanStatus.active,
+};
 
 InstallmentStatus toInstallmentStatus(String? value, DateTime? dueDate) {
   switch (value) {
@@ -54,11 +55,9 @@ InstallmentStatus toInstallmentStatus(String? value, DateTime? dueDate) {
     case 'overdue':
       return InstallmentStatus.overdue;
     case 'pending':
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      if (dueDate != null) {
-        final due = DateTime(dueDate.year, dueDate.month, dueDate.day);
-        if (due.isBefore(today)) return InstallmentStatus.overdue;
+      // Pending becomes overdue once the ZAMBIAN day is past the due date.
+      if (dueDate != null && dateOnly(dueDate).isBefore(zambiaToday())) {
+        return InstallmentStatus.overdue;
       }
       return InstallmentStatus.due;
     default:
@@ -67,35 +66,35 @@ InstallmentStatus toInstallmentStatus(String? value, DateTime? dueDate) {
 }
 
 RiskLevel toRiskLevel(String? value) => switch (value) {
-      'high' => RiskLevel.high,
-      'medium' => RiskLevel.medium,
-      _ => RiskLevel.low,
-    };
+  'high' => RiskLevel.high,
+  'medium' => RiskLevel.medium,
+  _ => RiskLevel.low,
+};
 
 LoanRequestStatus toLoanRequestStatus(String? value) => switch (value) {
-      'approved' => LoanRequestStatus.approved,
-      'rejected' => LoanRequestStatus.rejected,
-      _ => LoanRequestStatus.pending,
-    };
+  'approved' => LoanRequestStatus.approved,
+  'rejected' => LoanRequestStatus.rejected,
+  _ => LoanRequestStatus.pending,
+};
 
 NotificationType toNotificationType(String? value) => switch (value) {
-      'payment_received' => NotificationType.paymentReceived,
-      'loan_overdue' => NotificationType.loanOverdue,
-      'verification' => NotificationType.verification,
-      'client_activity' => NotificationType.clientActivity,
-      'loan_request' => NotificationType.loanRequest,
-      'request_approved' => NotificationType.requestApproved,
-      'request_rejected' => NotificationType.requestRejected,
-      'payment_due' => NotificationType.paymentDue,
-      _ => NotificationType.system,
-    };
+  'payment_received' => NotificationType.paymentReceived,
+  'loan_overdue' => NotificationType.loanOverdue,
+  'verification' => NotificationType.verification,
+  'client_activity' => NotificationType.clientActivity,
+  'loan_request' => NotificationType.loanRequest,
+  'request_approved' => NotificationType.requestApproved,
+  'request_rejected' => NotificationType.requestRejected,
+  'payment_due' => NotificationType.paymentDue,
+  _ => NotificationType.system,
+};
 
 /// API roles → the app's two shells ('business' | 'client').
 String toAppRole(String role) => switch (role) {
-      'tenant_owner' || 'tenant_staff' || 'platform_admin' => 'business',
-      'client' => 'client',
-      _ => role,
-    };
+  'tenant_owner' || 'tenant_staff' || 'platform_admin' => 'business',
+  'client' => 'client',
+  _ => role,
+};
 
 /// Short month label for report charts: `"2025-08"` → `"Aug"`.
 String monthShortLabel(String month) {
@@ -121,10 +120,7 @@ String monthShortLabel(String month) {
 ({double amount, DateTime? dueDate}) parseNextDue(
   dynamic amountMinor,
   dynamic dueDate,
-) => (
-  amount: minorToKwacha(amountMinor),
-  dueDate: isoDate(dueDate),
-);
+) => (amount: minorToKwacha(amountMinor), dueDate: isoDate(dueDate));
 
 double outstandingOf(Map<String, dynamic> json) {
   final direct = _optionalNum(json['outstanding']);

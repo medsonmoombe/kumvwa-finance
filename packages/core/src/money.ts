@@ -6,6 +6,18 @@
 
 const MINOR_PER_KWACHA = 100n;
 
+/** Minor unit of Kwacha (ngwee) — integer-only by platform money rule. */
+export type Ngwee = bigint;
+
+/** Basis points of an amount, half-up: bpsOf(80000n, 1500n) → 12000n. */
+export function bpsOf(amountMinor: Ngwee, bps: number): Ngwee {
+  if (!Number.isInteger(bps) || bps < 0) {
+    throw new Error('bps must be a non-negative integer');
+  }
+  const numerator = amountMinor * BigInt(bps);
+  return (numerator + 5000n) / 10000n;
+}
+
 /** 800 → 80000n  (rounds to the nearest ngwee, guards float drift) */
 export function kwachaToMinor(kwacha: number): bigint {
   if (!Number.isFinite(kwacha)) throw new Error('amount must be a finite number');

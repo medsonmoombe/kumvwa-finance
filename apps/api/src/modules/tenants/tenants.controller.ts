@@ -4,6 +4,8 @@ import type { TokenClaims } from '../../common/crypto/token.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/guards/public.decorator';
 import { Roles } from '../../common/guards/roles.decorator';
+import { RequirePermissions } from '../../common/guards/permissions.decorator';
+import { AllowUnverifiedTenant } from '../../common/guards/unverified-tenant.decorator';
 import { SubmitVerificationDto, UpdateBrandingDto } from './dto/tenants.dto';
 import { TenantsService } from './tenants.service';
 
@@ -13,11 +15,13 @@ export class TenantsController {
   constructor(private readonly tenants: TenantsService) {}
 
   @Get('me')
+  @AllowUnverifiedTenant()
   me(@CurrentUser() u: TokenClaims) {
     return this.tenants.me(u.tenantId!);
   }
 
   @Post('me/verification')
+  @AllowUnverifiedTenant()
   submitVerification(
     @CurrentUser() u: TokenClaims,
     @Body() dto: SubmitVerificationDto,
@@ -28,10 +32,13 @@ export class TenantsController {
   /** Branding/business info read — reuses the public projection. */
   @Get('me/branding')
   branding(@CurrentUser() u: TokenClaims) {
-    return this.tenants.publicInfo(u.tenantId!);
+    // Private view (business info included) — the public projection stays on
+    // the unauthenticated TenantPublicController route.
+    return this.tenants.privateBranding(u.tenantId!);
   }
 
   @Patch('me/branding')
+  @RequirePermissions('branding.manage')
   updateBranding(
     @CurrentUser() u: TokenClaims,
     @Body() dto: UpdateBrandingDto,

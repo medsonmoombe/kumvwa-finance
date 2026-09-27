@@ -7,11 +7,18 @@ export function money(minor: string | bigint | number): string {
   })}`;
 }
 
+/**
+ * A due date is a bare calendar day (Postgres `DATE`, so it arrives as
+ * `2026-10-27T00:00:00.000Z`), and `timeZone: 'UTC'` is what keeps it showing
+ * as the 27th. Without the pin, a lender in any negative-offset timezone reads
+ * it as the 26th.
+ */
 export function date(d: string | Date): string {
   return new Date(d).toLocaleDateString('en-GB', {
     day: 'numeric',
     month: 'short',
     year: 'numeric',
+    timeZone: 'UTC',
   });
 }
 

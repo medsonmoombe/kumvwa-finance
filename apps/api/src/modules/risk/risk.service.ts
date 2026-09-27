@@ -1,7 +1,10 @@
-import { Inject, Injectable } from '@nestjs/common';
+﻿import { Inject, Injectable } from '@nestjs/common';
 import {
   bandFromScore,
+  businessDate,
   creditLimitKwacha,
+  daysBetween,
+  endOfBusinessDay,
   internalScore,
 } from '@kumvwa/core';
 import type { RepaymentHistory } from '@kumvwa/core';
@@ -29,7 +32,7 @@ export class RiskService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const now = new Date();
+    const now = businessDate();
     let installmentsPaidOnTime = 0;
     let installmentsLate = 0;
     let daysOverdueWorst = 0;
@@ -39,13 +42,16 @@ export class RiskService {
       if (loan.status === 'cleared') loansCleared++;
       for (const inst of loan.installments) {
         if (inst.status === 'paid' && inst.paidAt) {
-          if (inst.paidAt <= endOfDayUtc(inst.dueDate)) installmentsPaidOnTime++;
-          else installmentsLate++;
+          // On time means settled by the end of the ZAMBIAN day it fell due -
+          // 22:00 UTC, not midnight UTC.
+          if (inst.paidAt <= endOfBusinessDay(inst.dueDate)) {
+            installmentsPaidOnTime++;
+          } else {
+            installmentsLate++;
+          }
         } else if (inst.status === 'overdue') {
           installmentsLate++;
-          const days = Math.floor(
-            (now.getTime() - inst.dueDate.getTime()) / 86_400_000,
-          );
+          const days = daysBetween(inst.dueDate, now);
           if (days > daysOverdueWorst) daysOverdueWorst = days;
         }
       }
@@ -73,14 +79,4 @@ export class RiskService {
       source: 'internal' as const,
     };
   }
-
-  async myCreditLimit(clientId: string) {
-    return this.computeProfile(clientId);
-  }
-}
-
-function endOfDayUtc(d: Date): Date {
-  return new Date(
-    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999),
-  );
 }

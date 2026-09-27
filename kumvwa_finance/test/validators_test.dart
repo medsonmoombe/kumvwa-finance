@@ -139,7 +139,10 @@ void main() {
     });
 
     test('collapses the caret to the end', () {
-      expect(run('245711631').selection, const TextSelection.collapsed(offset: 11));
+      expect(
+        run('245711631').selection,
+        const TextSelection.collapsed(offset: 11),
+      );
     });
 
     test('keeps partial input intact when deleting', () {

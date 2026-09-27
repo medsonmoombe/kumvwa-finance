@@ -41,9 +41,7 @@ class _AppLoaderState extends State<AppLoader>
           builder: (_, _) => SizedBox(
             width: widget.size,
             height: widget.size,
-            child: CustomPaint(
-              painter: _ArcPainter(progress: _ctrl.value),
-            ),
+            child: CustomPaint(painter: _ArcPainter(progress: _ctrl.value)),
           ),
         ),
         if (widget.message != null) ...[

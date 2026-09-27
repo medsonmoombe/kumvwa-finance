@@ -18,16 +18,13 @@ void main() {
     // The default provider now points at the live API; route the provider
     // tests through the mock to keep them hermetic.
     container = ProviderContainer(
-      overrides: [
-        loanRequestsRepositoryProvider.overrideWithValue(repo),
-      ],
+      overrides: [loanRequestsRepositoryProvider.overrideWithValue(repo)],
     );
     addTearDown(container.dispose);
   });
 
   group('seed data', () {
-    test('loads two pending and one rejected request for biz_001',
-        () async {
+    test('loads two pending and one rejected request for biz_001', () async {
       final requests = await repo.loadByLender('biz_001');
 
       expect(requests, hasLength(2));
@@ -52,11 +49,7 @@ void main() {
       final mine = await repo.loadByClient('clt_001');
 
       expect(mine.map((r) => r.id).toSet(), {'REQ-1002', 'REQ-0998'});
-      expect(
-        mine.first.requestedAt
-            .isAfter(mine.last.requestedAt),
-        isTrue,
-      );
+      expect(mine.first.requestedAt.isAfter(mine.last.requestedAt), isTrue);
     });
 
     test('getById throws for an unknown id', () async {
@@ -101,8 +94,7 @@ void main() {
   });
 
   group('approve', () {
-    test('creates a real active loan and marks the request approved',
-        () async {
+    test('creates a real active loan and marks the request approved', () async {
       final loan = await repo.approve('REQ-1002', interestRatePct: 15);
 
       expect(loan.status, LoanStatus.active);
@@ -116,15 +108,21 @@ void main() {
       final request = await repo.getById('REQ-1002');
       expect(request.status, LoanRequestStatus.approved);
       expect(request.reviewedAt, isNotNull);
+      // The request now points at the loan it became, so a tap can deep-link
+      // instead of dead-ending on an 'Approved' card.
+      expect(request.loanId, loan.id);
     });
 
-    test('the created loan is visible through the loans repository',
-        () async {
+    test('the created loan is visible through the loans repository', () async {
       final loan = await repo.approve('REQ-1002', interestRatePct: 12);
       final fromLoans = await mockLoansRepository.getById(loan.id);
 
       expect(fromLoans.id, loan.id);
-      expect(fromLoans.schedule, hasLength(3)); // REQ-1002 term
+      // New loans are born as bullet lumps (M5 platform default): one
+      // instalment for the whole obligation — the term is still carried
+      // through on the loan.
+      expect(fromLoans.termInstallments, 3); // REQ-1002 term
+      expect(fromLoans.schedule, hasLength(1));
     });
 
     test('rejects a second review of the same request', () async {

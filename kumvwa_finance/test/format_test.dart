@@ -48,4 +48,25 @@ void main() {
       expect(Fmt.initials(''), '?');
     });
   });
+
+  group('Fmt.maskPhone', () {
+    test('masks a local number', () {
+      expect(Fmt.maskPhone('0971234567'), '+260 97 ••• 4567');
+    });
+
+    test('masks an E.164 number the same way', () {
+      expect(Fmt.maskPhone('+260971234567'), '+260 97 ••• 4567');
+    });
+
+    test('never exposes the middle digits', () {
+      final masked = Fmt.maskPhone('0977654321');
+      expect(masked.contains('765'), isFalse);
+      expect(masked, '+260 97 ••• 4321');
+    });
+
+    test('degrades to a placeholder when the input is unusable', () {
+      expect(Fmt.maskPhone(''), '••• ••••');
+      expect(Fmt.maskPhone('123'), '••• ••••');
+    });
+  });
 }

@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 class Env {
   Env._();
 
-  static const appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'dev');
+  static const appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'prod');
 
   static const _baseUrlOverride = String.fromEnvironment('API_BASE_URL');
 
@@ -22,6 +22,9 @@ class Env {
   /// localhost directly; `API_BASE_URL` always wins when provided.
   static String get apiBaseUrl {
     if (_baseUrlOverride.isNotEmpty) return _baseUrlOverride;
+    // prod default — overridden at build time with
+    //   --dart-define=API_BASE_URL=https://kumvwa-api.onrender.com/api/v1
+    if (appEnv == 'prod') return 'https://kumvwa-api.onrender.com/api/v1';
     return defaultTargetPlatform == TargetPlatform.android
         ? 'http://10.0.2.2:8080/api/v1'
         : 'http://localhost:8080/api/v1';

@@ -47,9 +47,10 @@ void main() {
       final client = await repo.load(role: 'client');
 
       expect(
-        business.map((n) => n.id).toSet().intersection(
-              client.map((n) => n.id).toSet(),
-            ),
+        business
+            .map((n) => n.id)
+            .toSet()
+            .intersection(client.map((n) => n.id).toSet()),
         isEmpty,
       );
     });
@@ -66,16 +67,18 @@ void main() {
       expect(client.where((n) => !n.read), hasLength(2));
     });
 
-    test('load returns a copy — mutating it does not corrupt the store',
-        () async {
-      final repo = container.read(notificationsRepositoryProvider);
-      final items = await repo.load(role: 'business');
+    test(
+      'load returns a copy — mutating it does not corrupt the store',
+      () async {
+        final repo = container.read(notificationsRepositoryProvider);
+        final items = await repo.load(role: 'business');
 
-      items.clear();
+        items.clear();
 
-      final fresh = await repo.load(role: 'business');
-      expect(fresh, hasLength(4));
-    });
+        final fresh = await repo.load(role: 'business');
+        expect(fresh, hasLength(4));
+      },
+    );
   });
 
   group('notificationsProvider', () {

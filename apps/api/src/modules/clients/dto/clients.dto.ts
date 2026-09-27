@@ -40,6 +40,10 @@ export class UpdateProfileDto {
   employmentStatus?: string;
 
   @IsOptional()
+  @IsIn(['primary', 'junior_secondary', 'senior_secondary', 'certificate', 'diploma', 'degree', 'postgraduate', 'none'])
+  educationLevel?: string;
+
+  @IsOptional()
   @IsIn(['b0_1000', 'b1001_3000', 'b3001_6000', 'b6000_plus'])
   incomeBand?: string;
 
@@ -62,4 +66,8 @@ export class UpdateProfileDto {
   @IsOptional()
   @IsString()
   nrcPhotoFileId?: string;
+
+  @IsOptional()
+  @IsString()
+  nrcBackPhotoFileId?: string;
 }

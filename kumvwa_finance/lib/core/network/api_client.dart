@@ -43,8 +43,10 @@ class ApiClient {
     );
 
     _bare = Dio(base);
-    _dio = Dio(base)..interceptors.add(
-        InterceptorsWrapper(onRequest: _attachToken, onError: _onError));
+    _dio = Dio(base)
+      ..interceptors.add(
+        InterceptorsWrapper(onRequest: _attachToken, onError: _onError),
+      );
   }
 
   late final Dio _bare;
@@ -55,9 +57,11 @@ class ApiClient {
   String? _access;
   String? _refresh;
   Future<bool>? _refreshInFlight;
+  bool _lastRefreshWasAuthRejected = false;
 
   String? get accessToken => _access;
   String? get refreshToken => _refresh;
+  bool get lastRefreshWasAuthRejected => _lastRefreshWasAuthRejected;
 
   void _attachToken(RequestOptions options, RequestInterceptorHandler handler) {
     final access = _access;
@@ -73,7 +77,8 @@ class ApiClient {
   ) async {
     final status = error.response?.statusCode;
     final isAuthRoute = error.requestOptions.path.contains('/auth/');
-    final canRefresh = status == 401 &&
+    final canRefresh =
+        status == 401 &&
         !isAuthRoute &&
         _access != null &&
         _refresh != null &&
@@ -116,6 +121,7 @@ class ApiClient {
   Future<bool> _doRefresh() async {
     final refresh = _refresh;
     if (refresh == null) return false;
+    _lastRefreshWasAuthRejected = false;
     try {
       final res = await _bare.post<dynamic>(
         '/auth/refresh',
@@ -127,10 +133,20 @@ class ApiClient {
       setTokens(access, data['refreshToken'] as String?);
       await _persistSession(data);
       return true;
+    } on DioException catch (error) {
+      // Only an explicit auth rejection invalidates a persisted session.
+      // A timeout, offline connection, or 5xx during app startup must not
+      // throw a user out of the app merely because the network blinked.
+      final status = error.response?.statusCode;
+      if (status == 401 || status == 403) {
+        _lastRefreshWasAuthRejected = true;
+        clearTokens();
+        await tokenStore.clear();
+        onSessionExpired();
+      }
+      return false;
     } catch (_) {
-      clearTokens();
-      await tokenStore.clear();
-      onSessionExpired();
+      // Keep the stored session for transient non-HTTP failures too.
       return false;
     }
   }
@@ -202,18 +218,18 @@ class ApiClient {
 
   // ---- authenticated helpers (repos call these) ----
 
-  Future<Response<dynamic>> getA(
-    String path, {
-    Map<String, dynamic>? query,
-  }) =>
+  Future<Response<dynamic>> getA(String path, {Map<String, dynamic>? query}) =>
       _dio.get(path, queryParameters: query);
 
   Future<Response<dynamic>> postA(
     String path, {
     Object? data,
     Map<String, dynamic>? headers,
-  }) =>
-      _dio.post(path, data: data, options: Options(headers: headers));
+  }) => _dio.post(
+    path,
+    data: data,
+    options: Options(headers: headers),
+  );
 
   Future<Response<dynamic>> patchA(String path, {Object? data}) =>
       _dio.patch(path, data: data);

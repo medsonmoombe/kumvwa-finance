@@ -1,472 +1,206 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  FiArrowRight,
-  FiEye,
-  FiEyeOff,
-  FiTool,
-} from 'react-icons/fi';
+import { FiArrowRight, FiEye, FiEyeOff, FiMonitor } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 
-import { ErrorBox, Spinner } from '../../components/ui';
-import { api, apiError, setTokens } from '../../lib/api';
+import { AuthLayout, OtpInput } from '../../components/kit';
+import { ErrorBox } from '../../components/ui';
+import { apiError, deviceToken, setDeviceToken } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 
-type Mode = 'login' | 'register' | 'otp' | 'forgot' | 'reset';
+const inp =
+  'w-full h-8 rounded-[3px] border border-[#D9DDE3] px-2.5 text-[12.5px] text-ink outline-none transition-[border-color,box-shadow] placeholder:text-[#A6ADC0] focus:border-[#1A4FBF] focus:shadow-[0_0_0_2px_rgba(26,79,191,0.12)]';
+const lbl = 'mb-1 block text-[10.5px] font-semibold text-[#555]';
+const btn =
+  'flex w-full items-center justify-center gap-1.5 h-9 rounded-[3px] bg-[#1A4FBF] text-[11.5px] font-extrabold uppercase tracking-wide text-white transition-colors hover:bg-[#12378F] disabled:opacity-40';
+const sectionBand =
+  'flex items-center gap-2 -mx-[34px] px-[34px] pb-3 mb-4 border-b border-[#ECECEC]';
 
-function OtpInput({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const refs = useRef<(HTMLInputElement | null)[]>([]);
+type View = { k: 'login' } | { k: 'otp'; email: string; devCode: string };
+
+const BANNERS: Record<View['k'], { heading: React.ReactNode; sub: string; footerLabel: string; footerBody: string }> = {
+  login: {
+    heading: <>Run your entire<br />lending operation<br /><em className="not-italic text-[#7FE8AC]">from one desk.</em></>,
+    sub: "Clients, approvals, repayments and portfolio health. Built for Zambia's SACCOs, MFIs and licensed lenders.",
+    footerLabel: 'Secured by design',
+    footerBody: 'Two-factor sign-in · encrypted data · full audit trail',
+  },
+  otp: {
+    heading: <>Two factors.<br /><em className="not-italic text-[#7FE8AC]">Every sign-in.</em></>,
+    sub: 'A fresh code is emailed on every sign-in from a new device. Codes are single-use and expire in five minutes.',
+    footerLabel: 'Why this matters',
+    footerBody: 'Even a stolen password cannot open your loan book without your inbox.',
+  },
+};
+
+const FOOTERS: Record<View['k'], string> = {
+  login: 'Two-factor sign-in · all attempts logged',
+  otp: 'Codes are single-use',
+};
+
+export function AuthPage() {
+  const { loginStage1, loginStage2 } = useAuth();
+  const nav = useNavigate();
+
+  const [view, setView] = useState<View>({ k: 'login' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPw, setShowPw] = useState(false);
+  const [remember, setRemember] = useState(true);
+  const [otp, setOtp] = useState('');
+  const [hasTrustedDevice, setHasTrustedDevice] = useState(!!deviceToken());
+
+  const [resendIn, setResendIn] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    timerRef.current = setTimeout(() => setResendIn((s) => s - 1), 1000);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [resendIn]);
+
+  const countdown = `${Math.floor(resendIn / 60)}:${String(resendIn % 60).padStart(2, '0')}`;
+
+  async function doLogin() {
+    setBusy(true); setError('');
+    try {
+      const res = await loginStage1(email, password);
+      if (res.needs2fa) {
+        setResendIn(58);
+        setView({ k: 'otp', email, devCode: res.devCode ?? '' });
+      } else if (res.error) {
+        setError(res.error);
+      } else {
+        nav('/');
+      }
+    } catch (e) { setError(apiError(e)); }
+    finally { setBusy(false); }
+  }
+
+  async function doOtp() {
+    setBusy(true); setError('');
+    const result = await loginStage2(otp, remember);
+    setBusy(false);
+    if (result) { setError(result); return; }
+    nav('/');
+  }
+
+  async function resendOtp() {
+    setResendIn(58);
+    try { await loginStage1(email, password); } catch { /* silent */ }
+  }
+
   return (
-    <div className="my-4 flex gap-2.5">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <input
-          key={i}
-          ref={(el) => {
-            refs.current[i] = el;
-          }}
-          inputMode="numeric"
-          maxLength={1}
-          value={value[i] ?? ''}
-          className={`h-[50px] min-w-0 flex-1 rounded-xl border-[1.5px] bg-white text-center font-display text-[18px] font-bold text-ink outline-none ${
-            value[i]
-              ? 'border-brand-500 bg-brand-50 shadow-[0_0_0_3px_rgba(46,99,230,0.1)]'
-              : 'border-line'
-          }`}
-          onChange={(e) => {
-            const d = e.target.value.replace(/\D/g, '');
-            if (!d) return;
-            onChange(
-              (value.slice(0, i) + d + value.slice(i + 1)).slice(0, 6),
-            );
-            if (i < 5) refs.current[i + 1]?.focus();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Backspace' && !value[i] && i > 0) {
-              refs.current[i - 1]?.focus();
-            }
-          }}
-          onPaste={(e) => {
-            e.preventDefault();
-            const t = e.clipboardData
-              .getData('text')
-              .replace(/\D/g, '')
-              .slice(0, 6);
-            if (t) {
-              onChange(t);
-              refs.current[Math.min(t.length, 5)]?.focus();
-            }
-          }}
-        />
-      ))}
-    </div>
+    <AuthLayout banner={BANNERS[view.k]} footer={FOOTERS[view.k]}>
+      {error && <div className="mt-5 mb-0"><ErrorBox message={error} /></div>}
+
+      {/* ══ LOGIN ══ */}
+      {view.k === 'login' && (
+        <>
+          <h2 className="mt-5 font-display text-[20px] font-bold tracking-tight text-ink">Welcome back</h2>
+          <p className="mb-5 mt-1 text-[12px] text-[#888]">Sign in to the management console</p>
+
+          <div className={sectionBand}>
+            <span className="text-[12px] font-bold text-[#1A4FBF]">×</span>
+            <span className="text-[9.5px] font-extrabold uppercase tracking-[0.08em] text-[#333]">Credentials</span>
+          </div>
+
+          <div className="mb-3">
+            <label className={lbl}>Email address <em className="not-italic text-[#C62828]">*</em></label>
+            <input className={inp} type="email" value={email} autoComplete="username"
+              onChange={(e) => setEmail(e.target.value)} placeholder="you@yourbusiness.zm" />
+          </div>
+          <div className="mb-3">
+            <label className={lbl}>Password <em className="not-italic text-[#C62828]">*</em></label>
+            <div className="relative">
+              <input className={inp} type={showPw ? 'text' : 'password'} value={password}
+                autoComplete="current-password" onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" />
+              <button type="button" onClick={() => setShowPw(!showPw)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#888]">
+                {showPw ? <FiEyeOff size={14} /> : <FiEye size={14} />}
+              </button>
+            </div>
+          </div>
+          <div className="mb-4 flex items-center justify-between">
+            <Cbx checked={remember} onChange={setRemember} label="Remember device 30d" />
+            <button className="text-[11px] font-bold text-[#1A4FBF]" onClick={() => nav('/forgot-password')}>
+              Forgot password?
+            </button>
+          </div>
+          {hasTrustedDevice && (
+            <div className="mb-3 flex items-center justify-between rounded-[3px] border border-[#B9C6E8] bg-[#EDF3FE] px-3 py-2">
+              <div className="flex items-center gap-2 text-[11px] text-[#1A4FBF]">
+                <FiMonitor size={13} />
+                <span>Trusted device — 2FA will be skipped</span>
+              </div>
+              <button
+                className="text-[10.5px] font-bold text-[#C62828] hover:underline"
+                onClick={() => { setDeviceToken(null); setHasTrustedDevice(false); }}
+              >
+                Remove trust
+              </button>
+            </div>
+          )}
+          <button className={btn} disabled={busy || !email || !password} onClick={doLogin}>
+            Sign In <FiArrowRight size={13} />
+          </button>
+          <p className="mt-4 text-center text-[11.5px] text-[#888]">
+            New to Kumvwa?{' '}
+            <b className="cursor-pointer text-[#1A4FBF]" onClick={() => nav('/register')}>Register your business</b>
+          </p>
+        </>
+      )}
+
+      {/* ══ OTP ══ */}
+      {view.k === 'otp' && (
+        <>
+          <h2 className="mt-5 font-display text-[20px] font-bold tracking-tight text-ink">Verify it's you</h2>
+          <p className="mb-5 mt-1 text-[12px] text-[#888]">
+            Code sent to <b className="text-ink">{view.email}</b> · single use · 5 min expiry
+          </p>
+
+          <div className={sectionBand}>
+            <span className="text-[12px] font-bold text-[#1A4FBF]">×</span>
+            <span className="text-[9.5px] font-extrabold uppercase tracking-[0.08em] text-[#333]">Verification Code</span>
+          </div>
+
+          <OtpInput value={otp} onChange={setOtp} error={!!error} />
+          <div className="mb-3.5 flex items-center justify-between text-[10.5px]">
+            {resendIn > 0
+              ? <span className="font-bold text-[#1A4FBF]">Resend in {countdown}</span>
+              : <b className="cursor-pointer text-[#1A4FBF]" onClick={resendOtp}>Resend code</b>}
+            <b className="cursor-pointer text-[#1A4FBF]" onClick={() => { setView({ k: 'login' }); setError(''); }}>
+              Wrong email? Go back
+            </b>
+          </div>
+          <Cbx checked={remember} onChange={setRemember} label="Remember this device for 30 days" className="mb-4" />
+          <button className={btn} disabled={busy || otp.length < 6} onClick={doOtp}>
+            Verify and Sign In <FiArrowRight size={13} />
+          </button>
+          {view.devCode && <DevCode code={view.devCode} />}
+        </>
+      )}
+    </AuthLayout>
   );
 }
 
-export function AuthPage() {
-  const { login, refreshSession } = useAuth();
-  const nav = useNavigate();
-  const [mode, setMode] = useState<Mode>('login');
-  const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [showPw, setShowPw] = useState(false);
-  const [businessName, setBusinessName] = useState('');
-  const [businessType, setBusinessType] = useState('sacco');
-  const [devCode, setDevCode] = useState('');
-  const [otp, setOtp] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const [terms, setTerms] = useState<{ version: number; body: string } | null>(
-    null,
-  );
-  const [agreed, setAgreed] = useState(false);
-
-  // Registration is terms-gated: fetch the current platform terms to show
-  // and to send back as `acceptedTermsVersion`.
-  useEffect(() => {
-    if (mode === 'register') {
-      api
-        .get('/terms/platform')
-        .then((r) => setTerms(r.data as { version: number; body: string }))
-        .catch(() => undefined);
-    }
-  }, [mode]);
-
-  async function submit() {
-    setBusy(true);
-    setError('');
-    try {
-      if (mode === 'login') {
-        const err = await login(phone, password);
-        if (err === null) {
-          nav('/');
-          return;
-        }
-        setError(err);
-      } else if (mode === 'register') {
-        const res = await api.post('/auth/otp/request', {
-          phone,
-          purpose: 'registration',
-        });
-        setDevCode((res.data.devCode as string) ?? '');
-        setMode('otp');
-      } else if (mode === 'forgot') {
-        const res = await api.post('/auth/password/forgot', { phone });
-        setDevCode((res.data.devCode as string) ?? '');
-        setMode('reset');
-      } else if (mode === 'reset') {
-        if (password !== confirm) {
-          setError('Passwords do not match');
-          return;
-        }
-        const v = await api.post('/auth/otp/verify', {
-          phone,
-          purpose: 'password_reset',
-          code: otp,
-        });
-        await api.post('/auth/password/reset', {
-          phone,
-          otpToken: v.data.otpToken,
-          newPassword: password,
-        });
-        setOtp('');
-        setPassword('');
-        setConfirm('');
-        setDevCode('');
-        setNotice(
-          'Password updated. Log in with your new password — all other sessions were signed out.',
-        );
-        setMode('login');
-      } else {
-        const v = await api.post('/auth/otp/verify', {
-          phone,
-          purpose: 'registration',
-          code: otp,
-        });
-        const reg = await api.post('/auth/register/tenant', {
-          phone,
-          password,
-          businessName,
-          businessType,
-          otpToken: v.data.otpToken,
-          acceptedTermsVersion: terms?.version,
-        });
-        setTokens(reg.data.accessToken, reg.data.refreshToken);
-        await refreshSession();
-        nav('/verify');
-      }
-    } catch (e) {
-      setError(apiError(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const input =
-    'w-full rounded-input border-[1.5px] border-line bg-white px-4 py-3 text-[14px] text-ink outline-none placeholder:text-gray-400 focus:border-brand-500 focus:shadow-[0_0_0_3px_rgba(46,99,230,0.1)]';
-  const label = 'mb-1.5 block text-[12.5px] font-semibold text-ink';
-
-  const heading =
-    mode === 'login'
-      ? 'Welcome back'
-      : mode === 'register'
-        ? 'Register your business'
-        : mode === 'forgot'
-          ? 'Reset your password'
-          : mode === 'reset'
-            ? 'Choose a new password'
-            : 'Check your phone';
-  const sub =
-    mode === 'login'
-      ? 'Log in to the management console'
-      : mode === 'register'
-        ? 'BOZ-registered lenders only · Step 1 of 2'
-        : mode === 'forgot'
-          ? "Enter the phone registered to your account — we'll text you a code"
-          : mode === 'reset'
-            ? `Enter the 6-digit code sent to ${phone}`
-            : `We sent a 6-digit code to ${phone}`;
-
+function Cbx({ checked, onChange, label, className = '' }: {
+  checked: boolean; onChange: (v: boolean) => void; label: string; className?: string;
+}) {
   return (
-    <div className="flex min-h-screen">
-      {/* ── brand panel ── */}
-      <div className="relative hidden flex-[1.15] flex-col justify-between overflow-hidden bg-gradient-to-br from-brand-600 via-brand-900 to-[#071838] p-11 lg:flex">
-        <div className="pointer-events-none absolute -right-28 -top-32 h-[420px] w-[420px] rounded-full bg-[radial-gradient(circle,rgba(46,204,113,0.22),transparent_65%)]" />
-        <div className="pointer-events-none absolute -bottom-28 -left-20 h-[340px] w-[340px] rounded-full bg-[radial-gradient(circle,rgba(46,99,230,0.4),transparent_65%)]" />
-        <div className="relative z-10 flex h-[54px] w-[54px] items-center justify-center rounded-[17px] bg-gradient-to-br from-brand-500 to-accent-500 font-display text-[25px] font-extrabold text-white shadow-c3">
-          K
-        </div>
-        <div className="relative z-10">
-          <h3 className="font-display text-[25px] leading-[1.32] tracking-tight text-white">
-            {mode === 'login' ? (
-              <>
-                Run your entire
-                <br />
-                lending operation
-                <br />
-                <em className="not-italic text-[#7FE8AC]">from one desk.</em>
-              </>
-            ) : mode === 'register' || mode === 'otp' ? (
-              <>
-                Two steps to
-                <br />
-                <em className="not-italic text-[#7FE8AC]">get verified.</em>
-              </>
-            ) : (
-              <>
-                Back into
-                <br />
-                <em className="not-italic text-[#7FE8AC]">your account.</em>
-              </>
-            )}
-          </h3>
-          <p className="mt-4 max-w-[320px] text-[12.5px] leading-[1.7] text-[#A9BEE8]">
-            {mode === 'login' ? (
-              "Clients, invites, approvals, repayments and portfolio health — built for Zambia's SACCOs, MFIs and licensed lenders."
-            ) : mode === 'register' || mode === 'otp' ? (
-              'Confirm your phone, then upload your Bank of Zambia certificate. Most reviews complete within 1–2 business days.'
-            ) : (
-              'Confirm your phone, then choose a new password. Every active session will be signed out.'
-            )}
-          </p>
-        </div>
-      </div>
+    <label className={`flex cursor-pointer items-center gap-1.5 text-[11px] text-[#555] ${className}`}>
+      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="accent-[#1A4FBF]" />
+      {label}
+    </label>
+  );
+}
 
-      {/* ── form panel ── */}
-      <div className="flex flex-1 items-center justify-center bg-white p-8">
-        <div className="w-full max-w-[400px]">
-          <div className="mb-8 flex h-[46px] w-[46px] items-center justify-center rounded-[14px] bg-gradient-to-br from-brand-500 to-brand-900 font-display text-xl font-extrabold text-white lg:hidden">
-            K
-          </div>
-          <h2 className="font-display text-[23px] font-bold tracking-tight text-ink">
-            {heading}
-          </h2>
-          <p className="mb-6 mt-1.5 text-[12.5px] text-ink-muted">{sub}</p>
-
-          {(mode === 'otp' || mode === 'reset') && (
-            <div className="space-y-4">
-              <OtpInput value={otp} onChange={setOtp} />
-              {mode === 'reset' && (
-                <>
-                  <div>
-                    <label className={label}>New password</label>
-                    <input
-                      className={input}
-                      type="password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Minimum 8 characters"
-                    />
-                  </div>
-                  <div>
-                    <label className={label}>Confirm new password</label>
-                    <input
-                      className={input}
-                      type="password"
-                      value={confirm}
-                      onChange={(e) => setConfirm(e.target.value)}
-                      placeholder="Re-enter your new password"
-                    />
-                  </div>
-                </>
-              )}
-              <div className="flex items-center justify-between text-[11.5px]">
-                <span className="font-bold text-brand-600">
-                  Resend code in 0:42
-                </span>
-                <button
-                  className="font-bold text-brand-600"
-                  onClick={() =>
-                    setMode(mode === 'otp' ? 'register' : 'forgot')
-                  }
-                >
-                  Wrong number? Edit
-                </button>
-              </div>
-              {notice && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-[11px] text-emerald-700">
-                  {notice}
-                </div>
-              )}
-              {error && <ErrorBox message={error} />}
-              <button
-                disabled={
-                  busy ||
-                  otp.length < 6 ||
-                  (mode === 'reset' && (!password || !confirm))
-                }
-                onClick={submit}
-                className="flex h-[48px] w-full items-center justify-center gap-2 rounded-btn bg-brand-600 text-[14px] font-bold text-white shadow-c1 hover:bg-brand-900 disabled:opacity-40"
-              >
-                {busy ? (
-                  <Spinner className="border-white" />
-                ) : (
-                  <>
-                    {mode === 'otp' ? 'Verify &amp; Continue' : 'Reset Password'}{' '}
-                    <FiArrowRight size={15} />
-                  </>
-                )}
-              </button>
-              {devCode && (
-                <div className="flex items-center gap-2 rounded-xl border border-dashed border-brand-100 bg-brand-50 px-3.5 py-2.5 text-[11px] text-brand-600">
-                  <FiTool size={13} className="shrink-0" /> Dev mode — your code
-                  is <b>{devCode}</b> (SMS provider not yet connected)
-                </div>
-              )}
-            </div>
-          )}
-
-          {mode !== 'otp' && mode !== 'reset' && (
-            <div className="space-y-4">
-              {mode === 'register' && (
-                <>
-                  <div>
-                    <label className={label}>Business name</label>
-                    <input
-                      className={input}
-                      value={businessName}
-                      onChange={(e) => setBusinessName(e.target.value)}
-                      placeholder="Chilenje Community SACCO"
-                    />
-                  </div>
-                  <div>
-                    <label className={label}>Business type</label>
-                    <select
-                      className={input}
-                      value={businessType}
-                      onChange={(e) => setBusinessType(e.target.value)}
-                    >
-                      <option value="sacco">SACCO / Cooperative</option>
-                      <option value="mfi">Microfinance Institution</option>
-                      <option value="individual_lender">
-                        Individual Lender
-                      </option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                  {terms && (
-                    <div className="rounded-xl border border-line bg-surface p-3.5">
-                      <div className="max-h-28 overflow-y-auto whitespace-pre-wrap text-[11px] leading-relaxed text-ink-2">
-                        {terms.body}
-                      </div>
-                      <label className="mt-2.5 flex items-start gap-2 text-[11.5px] text-ink-2">
-                        <input
-                          type="checkbox"
-                          checked={agreed}
-                          onChange={(e) => setAgreed(e.target.checked)}
-                          className="mt-0.5 accent-brand-600"
-                        />
-                        <span>
-                          I have read and accept the Platform Terms. I understand
-                          Kumvwa provides software tools only, is not a lender, and
-                          is not liable for lending decisions or client repayment.
-                        </span>
-                      </label>
-                    </div>
-                  )}
-                </>
-              )}
-              <div>
-                <label className={label}>Phone number</label>
-                <input
-                  className={`${input} tabular-nums`}
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="097 1234567"
-                />
-              </div>
-              {mode !== 'forgot' && (
-                <div>
-                  <label className={label}>Password</label>
-                  <div className="relative">
-                    <input
-                      className={input}
-                      type={showPw ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPw(!showPw)}
-                      className="absolute right-3.5 top-3.5 text-ink-muted hover:text-ink"
-                    >
-                      {showPw ? <FiEyeOff size={15} /> : <FiEye size={15} />}
-                    </button>
-                  </div>
-                </div>
-              )}
-              {mode === 'login' && (
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    className="text-[12.5px] font-bold text-brand-600 hover:text-brand-900"
-                    onClick={() => {
-                      setMode('forgot');
-                      setError('');
-                      setNotice('');
-                    }}
-                  >
-                    Forgot password?
-                  </button>
-                </div>
-              )}
-              {notice && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-[11px] text-emerald-700">
-                  {notice}
-                </div>
-              )}
-              {error && <ErrorBox message={error} />}
-              <button
-                disabled={
-                  busy ||
-                  !phone ||
-                  (mode !== 'forgot' && !password) ||
-                  (mode === 'register' && (!agreed || !terms))
-                }
-                onClick={submit}
-                className="flex h-[48px] w-full items-center justify-center gap-2 rounded-btn bg-brand-600 text-[14px] font-bold text-white shadow-c1 hover:bg-brand-900 disabled:opacity-40"
-              >
-                {busy ? (
-                  <Spinner className="border-white" />
-                ) : (
-                  <>
-                    {mode === 'login'
-                      ? 'Log In'
-                      : mode === 'forgot'
-                        ? 'Send Code'
-                        : 'Continue'}{' '}
-                    <FiArrowRight size={15} />
-                  </>
-                )}
-              </button>
-              <p className="text-center text-[12.5px] text-ink-muted">
-                {mode === 'login'
-                  ? 'New to Kumvwa? '
-                  : mode === 'register'
-                    ? 'Already registered? '
-                    : 'Remember your password? '}
-                <button
-                  className="font-bold text-brand-600"
-                  onClick={() => {
-                    setMode(mode === 'login' ? 'register' : 'login');
-                    setError('');
-                    setNotice('');
-                  }}
-                >
-                  {mode === 'login' ? 'Register your business' : 'Log in'}
-                </button>
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
+function DevCode({ code }: { code: string }) {
+  return (
+    <div className="mt-3 rounded-[3px] border border-dashed border-[#B9C6E8] bg-[#EDF3FE] px-3 py-2 text-[10.5px] text-[#1A4FBF]">
+      Dev environment — your code is <b>{code}</b>
     </div>
   );
 }

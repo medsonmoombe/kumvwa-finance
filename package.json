@@ -8,6 +8,7 @@
     "dev:api": "pnpm --filter api start:dev",
     "dev:console": "pnpm --filter console dev",
     "dev:worker": "pnpm --filter worker dev",
+    "dev:all": "pnpm --parallel --filter api --filter worker --filter console dev",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test"

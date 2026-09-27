@@ -1,9 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
+  Patch,
   Post,
+  Param,
   Req,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
@@ -11,9 +14,13 @@ import type { Request } from 'express';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/guards/public.decorator';
+import { AllowUnverifiedTenant } from '../../common/guards/unverified-tenant.decorator';
 import { AuthService } from './auth.service';
 import {
+  Set2faDto,
   ChangePasswordDto,
+  ConsoleLoginDto,
+  ConsoleVerifyDto,
   ForgotPasswordDto,
   LoginDto,
   LogoutDto,
@@ -25,6 +32,7 @@ import {
 } from './dto/auth.dto';
 
 @Controller('auth')
+@AllowUnverifiedTenant()
 export class AuthController {
   constructor(private readonly auth: AuthService) {}
 
@@ -59,6 +67,26 @@ export class AuthController {
   }
 
   @Public()
+  @Post('console/login')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  consoleLogin(@Body() dto: ConsoleLoginDto, @Req() req: Request) {
+    return this.auth.consoleLogin(
+      dto,
+      req,
+      req.headers['x-device-token'] as string | undefined,
+    );
+  }
+
+  @Public()
+  @Post('console/verify-2fa')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  consoleVerify2fa(@Body() dto: ConsoleVerifyDto, @Req() req: Request) {
+    return this.auth.consoleVerify2fa(dto, req);
+  }
+
+  @Public()
   @Post('refresh')
   @HttpCode(200)
   refresh(@Body() dto: RefreshDto, @Req() req: Request) {
@@ -75,6 +103,31 @@ export class AuthController {
   @Get('me')
   me(@CurrentUser() user: { sub: string }) {
     return this.auth.me(user.sub);
+  }
+
+  @Get('2fa')
+  get2fa(@CurrentUser() user: { sub: string }) {
+    return this.auth.get2faStatus(user.sub);
+  }
+
+  @Patch('2fa')
+  @HttpCode(200)
+  set2fa(@Body() dto: Set2faDto, @CurrentUser() user: { sub: string }) {
+    return this.auth.set2fa(user.sub, dto.enabled);
+  }
+
+  @Get('devices')
+  devices(@CurrentUser() user: { sub: string }) {
+    return this.auth.devices(user.sub);
+  }
+
+  @Delete('devices/:id')
+  revokeDevice(
+    @Param('id') id: string,
+    @Req() req: Request,
+    @CurrentUser() user: { sub: string },
+  ) {
+    return this.auth.revokeDevice(user.sub, id, req);
   }
 
   @Public()

@@ -33,8 +33,10 @@ class _InviteCodeScreenState extends ConsumerState<InviteCodeScreen> {
   /// Normalises whatever the user typed: uppercase, separators stripped.
   /// "kmv 7xq4p" → "KMV-7XQ4P" (canonical server form).
   String get _normalized {
-    final raw =
-        _codeCtrl.text.trim().toUpperCase().replaceAll(RegExp(r'[\s-]'), '');
+    final raw = _codeCtrl.text.trim().toUpperCase().replaceAll(
+      RegExp(r'[\s-]'),
+      '',
+    );
     if (raw.isEmpty) return '';
     final body = raw.startsWith('KMV') ? raw.substring(3) : raw;
     return body.isEmpty ? 'KMV-' : 'KMV-$body';
@@ -157,8 +159,7 @@ class _InviteCodeScreenState extends ConsumerState<InviteCodeScreen> {
                       ? const SizedBox(
                           width: 20,
                           height: 20,
-                          child:
-                              CircularProgressIndicator(strokeWidth: 2.4),
+                          child: CircularProgressIndicator(strokeWidth: 2.4),
                         )
                       : const Text('Verify Code'),
                 )
@@ -177,8 +178,11 @@ class _InviteCodeScreenState extends ConsumerState<InviteCodeScreen> {
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.verified_user_outlined,
-                              size: 18, color: AppColors.green700),
+                          const Icon(
+                            Icons.verified_user_outlined,
+                            size: 18,
+                            color: AppColors.green700,
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(

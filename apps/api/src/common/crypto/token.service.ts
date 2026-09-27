@@ -5,13 +5,14 @@ import type { UserRole } from '@prisma/client';
 
 import { ENV, type Env } from '../../config/env';
 
-export type TokenType = 'access' | 'refresh' | 'otp';
+export type TokenType = 'access' | 'refresh' | 'otp' | 'pre2fa';
 
 export interface TokenClaims {
   sub: string;
   role?: UserRole;
   tenantId?: string | null;
   clientId?: string | null;
+  permissions?: string[];
   typ: TokenType;
   purpose?: string; // otp only
   phone?: string; // otp only
@@ -33,6 +34,7 @@ export class TokenService {
     role: UserRole;
     tenantId?: string | null;
     clientId?: string | null;
+    permissions?: string[];
   }): Promise<string> {
     return this.sign(
       {
@@ -40,6 +42,7 @@ export class TokenService {
         role: u.role,
         tenantId: u.tenantId,
         clientId: u.clientId,
+        permissions: u.permissions ?? [],
         typ: 'access',
       },
       this.accessKey,
@@ -75,6 +78,14 @@ export class TokenService {
       { sub: phone, typ: 'otp', purpose, phone, jti },
       this.accessKey,
       `${this.env.OTP_TTL_MIN}m`,
+    );
+  }
+
+  async signPre2fa(userId: string, jti: string): Promise<string> {
+    return this.sign(
+      { sub: userId, typ: 'pre2fa', jti },
+      this.accessKey,
+      `${this.env.CONSOLE_2FA_TTL_MIN}m`,
     );
   }
 

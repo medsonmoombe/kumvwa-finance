@@ -8,6 +8,7 @@ import 'package:kumvwa_finance/features/notifications/domain/app_notification.da
 abstract class NotificationsRepository {
   Future<List<AppNotification>> load({required String role});
   Future<void> markAllRead({required String role});
+  Future<void> markRead(String id);
 }
 
 /// In-memory mock, seeded per role. Swap for API + FCM push later.
@@ -16,7 +17,8 @@ class MockNotificationsRepository implements NotificationsRepository {
     AppNotification(
       id: 'n_b0',
       title: 'New loan request',
-      body: 'Mwansa Bwalya requested K 4,000 over 3 months. '
+      body:
+          'Mwansa Bwalya requested K 4,000 over 3 months. '
           'Review it in Loan Requests.',
       time: DateTime.now().subtract(const Duration(hours: 5)),
       type: NotificationType.loanRequest,
@@ -49,17 +51,20 @@ class MockNotificationsRepository implements NotificationsRepository {
     AppNotification(
       id: 'n_c0',
       title: 'Loan request declined',
-      body: 'Zamuka Savings & Credit declined your K 6,000 request. '
+      body:
+          'Zamuka Savings & Credit declined your K 6,000 request. '
           'Open My Loans → My loan requests to read their feedback.',
       time: DateTime.now().subtract(const Duration(days: 5)),
       type: NotificationType.loanRequest,
+      data: const {'requestId': 'REQ-0998'},
     ),
     AppNotification(
       id: 'n_c1',
       title: 'Payment due in 3 days',
-      body: 'Chilenje Community SACCO — K 3,267 due on the 12th.',
+      body: 'Chilenje Community SACCO: K 3,267 due on the 12th.',
       time: DateTime.now().subtract(const Duration(hours: 1)),
       type: NotificationType.paymentDue,
+      data: const {'loanId': 'LN-2025-00841'},
     ),
     AppNotification(
       id: 'n_c2',
@@ -68,6 +73,7 @@ class MockNotificationsRepository implements NotificationsRepository {
       time: DateTime.now().subtract(const Duration(days: 1)),
       type: NotificationType.paymentReceived,
       read: true,
+      data: const {'loanId': 'LN-2025-00841'},
     ),
     AppNotification(
       id: 'n_c3',
@@ -95,6 +101,17 @@ class MockNotificationsRepository implements NotificationsRepository {
 
     mark(role == 'client' ? _client : _business);
   }
+
+  @override
+  Future<void> markRead(String id) async {
+    void mark(List<AppNotification> list) {
+      final index = list.indexWhere((notification) => notification.id == id);
+      if (index != -1) list[index] = list[index].markRead();
+    }
+
+    mark(_business);
+    mark(_client);
+  }
 }
 
 // ---------- API-backed implementation ----------
@@ -121,6 +138,9 @@ class ApiNotificationsRepository implements NotificationsRepository {
             time: isoDate(n['createdAt']) ?? DateTime.now(),
             type: toNotificationType(n['type'] as String?),
             read: n['readAt'] != null,
+            data: n['data'] is Map
+                ? Map<String, dynamic>.from(n['data'] as Map)
+                : const {},
           ),
         )
         .toList();
@@ -129,6 +149,11 @@ class ApiNotificationsRepository implements NotificationsRepository {
   @override
   Future<void> markAllRead({required String role}) async {
     await _client.postA('/notifications/read-all');
+  }
+
+  @override
+  Future<void> markRead(String id) async {
+    await _client.postA('/notifications/$id/read');
   }
 }
 
@@ -142,5 +167,6 @@ final notificationsRepositoryProvider = Provider<NotificationsRepository>(
 
 final notificationsProvider = FutureProvider.autoDispose
     .family<List<AppNotification>, String>(
-  (ref, role) => ref.watch(notificationsRepositoryProvider).load(role: role),
-);
+      (ref, role) =>
+          ref.watch(notificationsRepositoryProvider).load(role: role),
+    );

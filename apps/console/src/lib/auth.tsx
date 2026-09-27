@@ -12,9 +12,11 @@ import {
   api,
   apiError,
   bootRefresh,
+  deviceToken,
   hasRefresh,
   refreshToken,
   setTokens,
+  setDeviceToken,
 } from './api';
 
 export type UserRole =
@@ -59,7 +61,8 @@ interface AuthState {
   user: SessionUser | null;
   tenant: TenantInfo | null;
   loading: boolean;
-  login: (phone: string, password: string) => Promise<string | null>;
+  loginStage1: (email: string, password: string) => Promise<{ needs2fa: boolean; error?: string; devCode?: string }>;
+  loginStage2: (code: string, rememberDevice: boolean) => Promise<string | null>;
   refreshSession: () => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -70,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
   const [loading, setLoading] = useState(true);
+  const [preToken, setPreToken] = useState<string | null>(null);
 
   const refreshSession = useCallback(async () => {
     try {
@@ -95,22 +99,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })();
   }, [refreshSession]);
 
-  const login = useCallback(
-    async (phone: string, password: string): Promise<string | null> => {
+  const loginStage1 = useCallback(
+    async (email: string, password: string) => {
       try {
         const res = await api.post<{
           accessToken: string;
           refreshToken: string;
-        }>('/auth/login', { phone, password });
+          stage?: '2fa';
+          preToken?: string;
+          devCode?: string;
+        }>('/auth/console/login', { email, password }, {
+          headers: deviceToken() ? { 'X-Device-Token': deviceToken() } : undefined,
+        });
+        if (res.data.stage === '2fa' && res.data.preToken) {
+          setPreToken(res.data.preToken);
+          return { needs2fa: true, devCode: res.data.devCode };
+        }
         setTokens(res.data.accessToken, res.data.refreshToken);
         await refreshSession();
-        return null;
+        return { needs2fa: false };
       } catch (e) {
-        return apiError(e);
+        return { needs2fa: false, error: apiError(e) };
       }
     },
     [refreshSession],
   );
+
+  const loginStage2 = useCallback(async (code: string, rememberDevice: boolean): Promise<string | null> => {
+    if (!preToken) return 'Your sign-in session expired. Start again.';
+    try {
+      const res = await api.post<{ accessToken: string; refreshToken: string; deviceToken?: string }>('/auth/console/verify-2fa', {
+        preToken, code, rememberDevice,
+      });
+      setTokens(res.data.accessToken, res.data.refreshToken);
+      if (res.data.deviceToken) setDeviceToken(res.data.deviceToken);
+      setPreToken(null);
+      await refreshSession();
+      return null;
+    } catch (e) {
+      return apiError(e);
+    }
+  }, [preToken, refreshSession]);
 
   const logout = useCallback(async () => {
     const r = refreshToken();
@@ -126,8 +155,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthState>(
-    () => ({ user, tenant, loading, login, refreshSession, logout }),
-    [user, tenant, loading, login, refreshSession, logout],
+    () => ({ user, tenant, loading, loginStage1, loginStage2, refreshSession, logout }),
+    [user, tenant, loading, loginStage1, loginStage2, refreshSession, logout],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -1,4 +1,5 @@
 import {
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -38,6 +39,11 @@ export class ApproveRequestDto {
   @IsOptional()
   @IsString()
   productId?: string;
+
+  /** Optional schedule-shape override (defaults to the product's). */
+  @IsOptional()
+  @IsIn(['monthly', 'weekly', 'fortnightly'])
+  frequency?: string;
 }
 
 export class RejectRequestDto {

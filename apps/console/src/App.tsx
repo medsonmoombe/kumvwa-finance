@@ -10,15 +10,25 @@ import { Shell } from './components/layout';
 import { CenteredSpinner } from './components/ui';
 import { useAuth } from './lib/auth';
 import { AdminQueuePage } from './features/admin/AdminQueuePage';
+import { AdminOverviewPage } from './features/admin/AdminOverviewPage';
+import { AdminClientsPage } from './features/admin/AdminClientsPage';
+import { AdminTenantDetailPage } from './features/admin/AdminTenantDetailPage';
 import { AuthPage } from './features/auth/AuthPage';
+import { ForgotPasswordPage } from './features/auth/ForgotPasswordPage';
+import { RegisterPage } from './features/auth/RegisterPage';
 import { PendingPage } from './features/auth/PendingPage';
 import { ClientsPage } from './features/clients/ClientsPage';
+import { ClientDetailPage } from './features/clients/ClientDetailPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { LoanDetailPage } from './features/loans/LoanDetailPage';
 import { LoansPage } from './features/loans/LoansPage';
+import { ProductFormPage } from './features/products/ProductFormPage';
+import { ProductsPage } from './features/products/ProductsPage';
 import { ReportsPage } from './features/reports/ReportsPage';
+import { RequestReviewPage } from './features/requests/RequestReviewPage';
 import { RequestsPage } from './features/requests/RequestsPage';
 import { SettingsPage } from './features/settings/SettingsPage';
+import { StaffPage } from './features/staff/StaffPage';
 
 /** Sends each role to the landing screen it actually has. */
 function Home() {
@@ -62,6 +72,8 @@ export default function App() {
     <Router>
       <Routes>
         <Route path="/login" element={user ? <Home /> : <AuthPage />} />
+        <Route path="/register" element={user ? <Home /> : <RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
         <Route
           element={user ? <Shell /> : <Navigate to="/login" replace />}
@@ -83,10 +95,26 @@ export default function App() {
             }
           />
           <Route
+            path="/clients/:id"
+            element={
+              <Guard>
+                <ClientDetailPage />
+              </Guard>
+            }
+          />
+          <Route
             path="/requests"
             element={
               <Guard>
                 <RequestsPage />
+              </Guard>
+            }
+          />
+          <Route
+            path="/requests/:id"
+            element={
+              <Guard>
+                <RequestReviewPage />
               </Guard>
             }
           />
@@ -115,6 +143,38 @@ export default function App() {
             }
           />
           <Route
+            path="/products"
+            element={
+              <Guard>
+                <ProductsPage />
+              </Guard>
+            }
+          />
+          <Route
+            path="/products/new"
+            element={
+              <Guard>
+                <ProductFormPage />
+              </Guard>
+            }
+          />
+          <Route
+            path="/products/:id"
+            element={
+              <Guard>
+                <ProductFormPage />
+              </Guard>
+            }
+          />
+          <Route
+            path="/staff"
+            element={
+              <Guard>
+                <StaffPage />
+              </Guard>
+            }
+          />
+          <Route
             path="/settings"
             element={
               <Guard>
@@ -123,7 +183,10 @@ export default function App() {
             }
           />
           <Route path="/verify" element={<PendingPage />} />
-          <Route path="/admin" element={<AdminQueuePage />} />
+          <Route path="/admin" element={<AdminOverviewPage />} />
+          <Route path="/admin/queue" element={<AdminQueuePage />} />
+          <Route path="/admin/tenants/:id" element={<AdminTenantDetailPage />} />
+          <Route path="/admin/borrowers" element={<AdminClientsPage />} />
           <Route path="*" element={<Home />} />
         </Route>
       </Routes>

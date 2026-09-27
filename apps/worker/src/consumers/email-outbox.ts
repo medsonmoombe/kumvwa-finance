@@ -10,13 +10,13 @@ const MAX_ATTEMPTS = 5;
 
 /** Log-only when SMTP_HOST is unset — nothing to connect to in dev. */
 function transport(): Transporter | null {
-  if (!env.SMTP_HOST) return null;
+  if (!env.EMAIL_HOST) return null;
   return nodemailer.createTransport({
-    host: env.SMTP_HOST,
-    port: env.SMTP_PORT,
-    secure: env.SMTP_PORT === 465,
-    auth: env.SMTP_USER
-      ? { user: env.SMTP_USER, pass: env.SMTP_PASS }
+    host: env.EMAIL_HOST,
+    port: env.EMAIL_PORT,
+    secure: env.EMAIL_PORT === 465,
+    auth: env.EMAIL_USER
+      ? { user: env.EMAIL_USER, pass: env.EMAIL_PASSWORD }
       : undefined,
   });
 }
@@ -37,7 +37,7 @@ export async function processEmailOutbox(): Promise<void> {
         logger.info({ to: row.to, subject: row.subject }, 'EMAIL(dev-console)');
       } else {
         await sender.sendMail({
-          from: env.SMTP_FROM,
+          from: env.EMAIL_FROM,
           to: row.to,
           subject: row.subject,
           text: row.body,

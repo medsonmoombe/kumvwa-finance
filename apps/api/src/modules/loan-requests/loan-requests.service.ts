@@ -6,13 +6,20 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { buildSchedule, kwachaToMinor, minorToKwacha } from '@kumvwa/core';
+import {
+  buildSchedule,
+  firstDueDateFrom,
+  kwachaToMinor,
+  minorToKwacha,
+  originationFee,
+  type Frequency,
+} from '@kumvwa/core';
 
 import { ENV, type Env } from '../../config/env';
 import { PrismaService } from '../../infra/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import { RiskService } from '../risk/risk.service';
+import { PolicyService } from '../policy/policy.service';
 import type {
   ApproveRequestDto,
   CreateLoanRequestDto,
@@ -29,7 +36,7 @@ type Claims = {
 export class LoanRequestsService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly risk: RiskService,
+    private readonly policy: PolicyService,
     private readonly audit: AuditService,
     private readonly notify: NotificationsService,
     @Inject(ENV) private readonly env: Env,
@@ -59,19 +66,32 @@ export class LoanRequestsService {
       );
     }
 
-    // ── Server-enforced credit limit (the app only displays it) ──
-    const profile = await this.risk.computeProfile(clientId);
+    // ── Server-enforced credit policy (the app only displays it) ──
+    // The ladder is per-lender; hard blocks (overdue/defaulted) are platform-wide.
+    // Refusal reads blockedReason — NOT tier — because a pending application
+    // resolves with the borrower's real tier AND blockedReason set (the banner
+    // keeps showing capacity; only the submit is gated).
+    const resolution = await this.policy.resolve(clientId, dto.lenderId);
     const amountMinor = kwachaToMinor(dto.amount);
-    const limitMinor = kwachaToMinor(profile.limitKwacha);
 
+    if (resolution.blockedReason) {
+      throw new ForbiddenException(
+        resolution.blockedReason,
+      );
+    }
     if (amountMinor < kwachaToMinor(this.env.REQUEST_MIN_KWACHA)) {
       throw new BadRequestException(
         `Minimum request is K${this.env.REQUEST_MIN_KWACHA}`,
       );
     }
-    if (amountMinor > limitMinor) {
+    if (amountMinor > kwachaToMinor(resolution.limitKwacha)) {
       throw new ForbiddenException(
-        `Amount above your limit of K${profile.limitKwacha}`,
+        `Amount above your limit of K${resolution.limitKwacha}`,
+      );
+    }
+    if (dto.termCount > resolution.maxTermMonths) {
+      throw new ForbiddenException(
+        `Maximum repayment term for your tier is ${resolution.maxTermMonths} months`,
       );
     }
 
@@ -112,7 +132,8 @@ export class LoanRequestsService {
       diff: {
         amountMinor: amountMinor.toString(),
         termCount: dto.termCount,
-        scoreAtRequest: profile.score,
+        tier: resolution.tier,
+        policyVersion: resolution.policyVersion,
       },
     });
 
@@ -157,13 +178,19 @@ export class LoanRequestsService {
     const r = await this.prisma.loanRequest.findUnique({
       where: { id },
       include: {
-        client: { select: { firstName: true, lastName: true, phone: true } },
+        client: {
+          select: {
+            firstName: true, lastName: true, phone: true,
+            profileCompletedAt: true,
+            employmentStatus: true, educationLevel: true,
+            incomeBand: true, kinName: true, kinPhone: true,
+          },
+        },
         tenant: { select: { name: true } },
         loan: { select: { id: true } },
       },
     });
     if (!r) throw new NotFoundException('Request not found');
-    // Object-level isolation: 404 (never 403) when it isn't yours.
     if (claims.role === 'client' && r.clientId !== claims.clientId) {
       throw new NotFoundException('Request not found');
     }
@@ -209,6 +236,24 @@ export class LoanRequestsService {
 
   // ─────────────── lender: approve ───────────────
 
+  /** `LN-YYYY-00001` — sequential per calendar year, unique per lender.
+   *  Computed inside the tx so the number is picked under the same
+   *  transaction that creates the loan; the unique index backs it up. */
+  private async nextLoanRef(tx: {
+    loan: {
+      count(args: {
+        where: { loanRef: { startsWith: string } };
+      }): Promise<number>;
+    };
+  }): Promise<string> {
+    const year = new Date().getUTCFullYear();
+    const prefix = `LN-${year}-`;
+    const count = await tx.loan.count({
+      where: { loanRef: { startsWith: prefix } },
+    });
+    return `${prefix}${String(count + 1).padStart(5, '0')}`;
+  }
+
   async approve(
     tenantId: string,
     actorId: string,
@@ -232,17 +277,44 @@ export class LoanRequestsService {
         throw new ForbiddenException('Tenant verification required');
       }
 
+      // Product terms (first active product when none pinned) supply the
+      // M4 knobs: frequency, origination fee, penalty settings.
+      const product = dto.productId
+        ? await tx.loanProduct.findFirst({
+            where: { id: dto.productId, tenantId },
+          })
+        : await tx.loanProduct.findFirst({
+            where: { tenantId, active: true },
+            orderBy: { createdAt: 'asc' },
+          });
+
+      const fee = originationFee(
+        r.amount,
+        product?.originationFeeBps ?? 0,
+        (product?.feeTreatment as 'add' | 'deduct') ?? 'add',
+      );
+      const frequency = ((dto.frequency ?? product?.frequency ??
+        'monthly') as Frequency) satisfies Frequency;
+
+      // M5 repayment structure: the product's, else the platform default.
+      // Products default to 'bullet' (one lump at maturity); existing
+      // amortizing products stay 'installments' via their own column.
+      const structure = (product?.repaymentStructure ??
+        'bullet') as 'installments' | 'bullet';
+
+      // The schedule is anchored to the day the money is released, so a
+      // `termCount`-month loan matures exactly `termCount` calendar months
+      // later. Anchor it to a fixed day-of-month instead and a 1-month term
+      // lands wherever that date happens to fall — up to a month early or late.
+      const disbursedAt = new Date();
       const schedule = buildSchedule({
         principalMinor: r.amount,
         rateBps: dto.rateBps,
         termCount: r.termCount,
-        firstDueDate: new Date(
-          Date.UTC(
-            new Date().getUTCFullYear(),
-            new Date().getUTCMonth() + 1,
-            12,
-          ),
-        ),
+        firstDueDate: firstDueDateFrom(disbursedAt, frequency),
+        frequency,
+        feeMinor: fee.feeMinor,
+        structure,
       });
 
       const loan = await tx.loan.create({
@@ -250,12 +322,17 @@ export class LoanRequestsService {
           tenantId,
           clientId: r.clientId,
           productId: dto.productId ?? null,
+          loanRef: await this.nextLoanRef(tx),
+          repaymentStructure: structure,
           principal: r.amount,
           rateBps: dto.rateBps,
           termCount: r.termCount,
+          frequency,
+          feeMinor: fee.feeMinor,
+          disbursementMinor: fee.disbursementMinor,
           totalDue: schedule.totalDueMinor,
           status: 'active',
-          disbursedAt: new Date(),
+          disbursedAt,
           installments: {
             create: schedule.installments.map((i) => ({
               seq: i.seq,
@@ -288,8 +365,7 @@ export class LoanRequestsService {
         clientUser.id,
         'request_approved',
         'Loan request approved',
-        'Your loan request was approved and is now active. ' +
-          'Open My Loans to see the schedule.',
+        'Your loan request was approved. Your loan is now active.',
         { requestId, loanId: result.loanId },
       );
     }
@@ -343,8 +419,7 @@ export class LoanRequestsService {
         clientUser.id,
         'request_rejected',
         'Loan request declined',
-        'Your loan request was declined. Open My loan requests to read ' +
-          "the lender's feedback.",
+        'Your loan request was declined. Open the app to read the feedback.',
         { requestId },
       );
     }

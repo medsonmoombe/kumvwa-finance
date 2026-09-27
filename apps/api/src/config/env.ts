@@ -32,6 +32,8 @@ const envSchema = z.object({
   OTP_DEV_CODE: z.string().regex(/^\d{6}$/).default('123456'),
   OTP_TTL_MIN: z.coerce.number().int().positive().default(10),
   OTP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+  CONSOLE_2FA_TTL_MIN: z.coerce.number().int().positive().default(5),
+  TRUSTED_DEVICE_DAYS: z.coerce.number().int().positive().default(30),
 
   SMS_PROVIDER: z.enum(['none', 'africastalking']).default('none'),
   SMS_SENDER_ID: z.string().default('KUMVWA'),
@@ -59,6 +61,8 @@ const envSchema = z.object({
   REQUEST_MIN_KWACHA: z.coerce.number().positive().default(100),
   REQUEST_MAX_TERM: z.coerce.number().int().positive().default(12),
   CREDIT_LIMIT_NO_HISTORY_KWACHA: z.coerce.number().positive().default(1000),
+  /** Max consecutive "pay interest & extend" rollovers per loan. */
+  ROLLOVER_MAX: z.coerce.number().int().positive().default(2),
   FCM_SERVER_KEY: z.string().default(''),
 
   S3_ENDPOINT: z.string().default('http://localhost:9000'),

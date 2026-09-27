@@ -9,6 +9,8 @@ environment:
 dependencies:
   dio: ^5.11.1
   file_picker: ^13.1.0
+  firebase_core: ^4.15.0
+  firebase_messaging: ^16.7.0
   flutter:
     sdk: flutter
   flutter_riverpod: ^2.6.1

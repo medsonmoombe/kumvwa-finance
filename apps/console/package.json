@@ -4,11 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit"
+    "build": "pnpm --filter @kumvwa/core build && tsc --noEmit && vite build",
+    "typecheck": "pnpm --filter @kumvwa/core build && tsc --noEmit"
   },
   "dependencies": {
+    "@kumvwa/core": "workspace:*",
     "axios": "^1.7.9",
+    "chart.js": "^4.5.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-icons": "^5.7.0",

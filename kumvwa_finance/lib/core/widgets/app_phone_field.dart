@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl_phone_field/intl_phone_field.dart';
 
 import 'package:kumvwa_finance/core/theme/app_colors.dart';
@@ -44,6 +45,7 @@ class AppPhoneField extends StatelessWidget {
           enabled: enabled,
           initialCountryCode: 'ZM', // Zambia — note: ZM, not ZW (Zimbabwe!)
           keyboardType: TextInputType.phone,
+          inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           style: AppText.fieldInput,
           dropdownTextStyle: AppText.fieldInput,
           dropdownIcon: const Icon(

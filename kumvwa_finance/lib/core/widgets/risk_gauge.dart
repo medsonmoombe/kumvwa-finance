@@ -29,10 +29,7 @@ class RiskGauge extends StatelessWidget {
         painter: _GaugePainter(fill: fill, color: color),
         child: Align(
           alignment: Alignment.bottomCenter,
-          child: Text(
-            '$score',
-            style: AppText.pageTitle,
-          ),
+          child: Text('$score', style: AppText.pageTitle),
         ),
       ),
     );
@@ -60,9 +57,21 @@ class _GaugePainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
 
     // Track: left → right half circle.
-    canvas.drawArc(rect, math.pi, math.pi, false, paint..color = AppColors.line);
+    canvas.drawArc(
+      rect,
+      math.pi,
+      math.pi,
+      false,
+      paint..color = AppColors.line,
+    );
     if (fill > 0) {
-      canvas.drawArc(rect, math.pi, math.pi * fill, false, paint..color = color);
+      canvas.drawArc(
+        rect,
+        math.pi,
+        math.pi * fill,
+        false,
+        paint..color = color,
+      );
     }
   }
 

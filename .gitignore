@@ -2,6 +2,7 @@ node_modules/
 dist/
 coverage/
 .env
+**/.env
 *.log
 *.tsbuildinfo
 .DS_Store
@@ -9,3 +10,8 @@ coverage/
 # Local postgres data dirs
 .localpg/
 .localpg13/
+
+# Android signing — never commit these
+kumvwa_finance/android/key.properties
+kumvwa_finance/android/*.jks
+kumvwa_finance/android/*.keystore

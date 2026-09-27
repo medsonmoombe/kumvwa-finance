@@ -32,12 +32,7 @@ class SectionCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Expanded(
-                child: Text(
-                  title,
-                  style: AppText.sectionTitle,
-                ),
-              ),
+              Expanded(child: Text(title, style: AppText.sectionTitle)),
               if (actionLabel != null)
                 GestureDetector(
                   onTap: onAction,

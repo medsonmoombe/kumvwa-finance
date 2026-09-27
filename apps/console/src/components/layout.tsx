@@ -7,8 +7,11 @@ import {
   FiGrid,
   FiInbox,
   FiLogOut,
+  FiPackage,
   FiSearch,
   FiSettings,
+  FiShield,
+  FiUserPlus,
   FiUsers,
 } from 'react-icons/fi';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
@@ -29,54 +32,27 @@ const NAV: { cap: string; items: NavItem[] }[] = [
   {
     cap: 'Lending',
     items: [
-      {
-        to: '/dashboard',
-        label: 'Dashboard',
-        icon: FiGrid,
-        roles: ['tenant_owner', 'tenant_staff'],
-      },
-      {
-        to: '/clients',
-        label: 'Clients',
-        icon: FiUsers,
-        roles: ['tenant_owner', 'tenant_staff'],
-      },
-      {
-        to: '/requests',
-        label: 'Requests',
-        icon: FiInbox,
-        roles: ['tenant_owner', 'tenant_staff'],
-        badge: true,
-      },
-      {
-        to: '/loans',
-        label: 'Loans',
-        icon: FiFileText,
-        roles: ['tenant_owner', 'tenant_staff'],
-      },
+      { to: '/dashboard', label: 'Dashboard',  icon: FiGrid,     roles: ['tenant_owner', 'tenant_staff'] },
+      { to: '/clients',   label: 'Clients',    icon: FiUsers,    roles: ['tenant_owner', 'tenant_staff'] },
+      { to: '/requests',  label: 'Requests',   icon: FiInbox,    roles: ['tenant_owner', 'tenant_staff'], badge: true },
+      { to: '/loans',     label: 'Loans',      icon: FiFileText, roles: ['tenant_owner', 'tenant_staff'] },
+      { to: '/products',  label: 'Products',   icon: FiPackage,  roles: ['tenant_owner', 'tenant_staff'] },
     ],
   },
   {
     cap: 'Insights',
     items: [
-      {
-        to: '/reports',
-        label: 'Reports',
-        icon: FiBarChart2,
-        roles: ['tenant_owner', 'tenant_staff'],
-      },
-      {
-        to: '/settings',
-        label: 'Settings',
-        icon: FiSettings,
-        roles: ['tenant_owner', 'tenant_staff'],
-      },
-      {
-        to: '/admin',
-        label: 'Verification',
-        icon: FiGrid,
-        roles: ['platform_admin'],
-      },
+      { to: '/reports',  label: 'Reports',  icon: FiBarChart2, roles: ['tenant_owner', 'tenant_staff'] },
+      { to: '/staff',    label: 'Staff',    icon: FiUserPlus,  roles: ['tenant_owner'] },
+      { to: '/settings', label: 'Settings', icon: FiSettings,  roles: ['tenant_owner', 'tenant_staff'] },
+    ],
+  },
+  {
+    cap: 'Platform',
+    items: [
+      { to: '/admin',           label: 'Overview',     icon: FiGrid,   roles: ['platform_admin'] },
+      { to: '/admin/queue',     label: 'Verification', icon: FiShield, roles: ['platform_admin'] },
+      { to: '/admin/borrowers', label: 'Borrowers',    icon: FiUsers,  roles: ['platform_admin'] },
     ],
   },
 ];
@@ -89,68 +65,89 @@ export function Shell() {
 
   useEffect(() => {
     if (user?.role === 'tenant_owner' || user?.role === 'tenant_staff') {
-      api
-        .get('/notifications', { params: { limit: 1 } })
-        .then((r) => setUnread(r.data.unread ?? 0))
-        .catch(() => {});
-      api
-        .get('/loan-requests/inbox', { params: { status: 'pending' } })
-        .then((r) => setPending(r.data.items.length))
-        .catch(() => {});
+      api.get('/notifications', { params: { limit: 1 } })
+        .then((r) => setUnread(r.data.unread ?? 0)).catch(() => {});
+      api.get('/loan-requests/inbox', { params: { status: 'pending' } })
+        .then((r) => setPending(r.data.items.length)).catch(() => {});
     }
   }, [loc.pathname, user?.role]);
 
-  const crumb = loc.pathname.split('/')[1] || 'dashboard';
+  // derive a readable page title from the path
+  const seg = loc.pathname.split('/').filter(Boolean);
+  const lastSeg = seg[seg.length - 1] ?? 'dashboard';
+  const pageTitle = lastSeg.replaceAll('-', ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+  // A tenant owner may authenticate to submit or resubmit verification, but
+  // no operational navigation is shown until the business is approved.
+  if (tenant && tenant.status !== 'active') {
+    return (
+      <main className="min-h-screen bg-[#F5F6F8] p-5">
+        <Outlet />
+      </main>
+    );
+  }
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <aside className="flex h-full w-[212px] shrink-0 flex-col overflow-y-auto border-r border-line bg-white">
-        <Link to="/" className="flex items-center gap-2.5 px-4 py-4">
-          <div className="flex h-[34px] w-[34px] items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-900 font-display text-[15px] font-extrabold text-white shadow-c2">
+    <div className="flex h-screen overflow-hidden bg-[#F5F6F8]">
+
+      {/* ── sidebar ── */}
+      <aside
+        className="flex h-full w-[200px] shrink-0 flex-col overflow-y-auto border-r border-[#E7EAF1] bg-white"
+        style={{ boxShadow: '1px 0 0 #E7EAF1' }}
+      >
+        {/* wordmark */}
+        <Link to="/" className="flex items-center gap-2.5 px-4 py-[14px] border-b border-[#E7EAF1]">
+          <div
+            className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[6px] font-display text-[13px] font-extrabold text-white"
+            style={{ background: 'linear-gradient(135deg,#2E63E6,#0D2C6E)' }}
+          >
             K
           </div>
           <div>
-            <b className="block font-display text-[13.5px] leading-tight tracking-tight text-ink">
+            <b className="block font-display text-[12.5px] leading-tight tracking-tight text-[#0F1115]">
               Kumvwa
             </b>
-            <span className="text-[8px] font-bold tracking-[0.24em] text-brand-600">
+            <span className="text-[7.5px] font-extrabold tracking-[0.22em] text-[#1A4FBF]">
               FINANCE
             </span>
           </div>
         </Link>
 
-        <nav className="flex-1 overflow-y-auto px-3">
+        {/* nav groups */}
+        <nav className="flex-1 overflow-y-auto py-2">
           {NAV.map((g) => {
-            const items = g.items.filter(
-              (i) => user && i.roles.includes(user.role),
-            );
+            const items = g.items.filter((i) => user && i.roles.includes(user.role));
             if (items.length === 0) return null;
             return (
-              <div key={g.cap} className="mb-2">
-                <div className="px-2.5 pb-1 pt-2.5 text-[9px] font-extrabold uppercase tracking-[0.14em] text-gray-400">
+              <div key={g.cap} className="mb-1">
+                <div className="px-4 pb-1 pt-3 text-[8.5px] font-extrabold uppercase tracking-[0.14em] text-[#9AA3B2]">
                   {g.cap}
                 </div>
                 {items.map(({ to, label, icon: Icon, badge }) => (
                   <NavLink
                     key={to}
                     to={to}
+                    end={to === '/admin'}
                     className={({ isActive }) =>
-                      `relative mb-px flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[12.5px] font-semibold ${
+                      `relative flex items-center gap-2.5 px-4 py-[7px] text-[12px] font-semibold transition-colors ${
                         isActive
-                          ? 'bg-brand-50 font-bold text-brand-600'
-                          : 'text-ink-2 hover:bg-line-2'
+                          ? 'bg-[#EEF3FD] text-[#1A4FBF]'
+                          : 'text-[#4A5568] hover:bg-[#F5F6F8] hover:text-[#0F1115]'
                       }`
                     }
                   >
                     {({ isActive }) => (
                       <>
                         {isActive && (
-                          <span className="absolute -left-3 top-1.5 bottom-1.5 w-[3px] rounded-r bg-brand-600" />
+                          <span className="absolute left-0 top-[3px] bottom-[3px] w-[3px] rounded-r-full bg-[#1A4FBF]" />
                         )}
-                        <Icon size={15} className="opacity-80" />
-                        {label}
+                        <Icon
+                          size={14}
+                          className={isActive ? 'text-[#1A4FBF]' : 'text-[#9AA3B2]'}
+                        />
+                        <span className="flex-1">{label}</span>
                         {badge && pending > 0 && (
-                          <span className="ml-auto rounded-full bg-danger-500 px-1.5 py-0.5 text-[9px] font-extrabold text-white">
+                          <span className="rounded-[3px] bg-danger-500 px-1.5 py-px text-[9px] font-extrabold text-white">
                             {pending}
                           </span>
                         )}
@@ -163,81 +160,79 @@ export function Shell() {
           })}
         </nav>
 
-        <div className="border-t border-line p-3">
+        {/* tenant chip + logout */}
+        <div className="border-t border-[#E7EAF1] p-3 space-y-1">
           {tenant && (
-            <div className="mb-2 flex items-center gap-2.5 rounded-[10px] border border-line bg-surface p-2">
-              <Avatar name={tenant.name} size={30} />
-              <div className="min-w-0">
-                <b className="block truncate text-[10.5px] text-ink">
+            <div className="flex items-center gap-2 rounded-[3px] border border-[#E7EAF1] bg-[#F5F6F8] px-2.5 py-2">
+              <Avatar name={tenant.name} size={24} />
+              <div className="min-w-0 flex-1">
+                <b className="block truncate text-[10.5px] font-semibold text-[#0F1115]">
                   {tenant.name}
                 </b>
-                <span className="flex items-center gap-1 text-[9.5px] font-bold text-accent-700">
+                <span className="flex items-center gap-1 text-[9px] font-bold text-accent-700">
                   <span className="h-1.5 w-1.5 rounded-full bg-accent-500" />
-                  {tenant.status === 'active'
-                    ? 'Verified'
-                    : tenant.status.replaceAll('_', ' ')}
+                  {tenant.status === 'active' ? 'Verified' : tenant.status.replaceAll('_', ' ')}
                 </span>
               </div>
             </div>
           )}
           <button
-            onClick={async () => {
-              await logout();
-              window.location.href = '/login';
-            }}
-            className="flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[12px] font-semibold text-ink-2 hover:bg-line-2"
+            onClick={async () => { await logout(); window.location.href = '/login'; }}
+            className="flex w-full items-center gap-2.5 rounded-[3px] px-2.5 py-2 text-[11.5px] font-semibold text-[#7A8194] hover:bg-[#F5F6F8] hover:text-[#0F1115]"
           >
-            <FiLogOut size={14} /> Log Out
+            <FiLogOut size={13} /> Log out
           </button>
         </div>
       </aside>
 
+      {/* ── main column ── */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <header className="flex shrink-0 items-center gap-3.5 border-b border-line bg-white px-6 py-3">
-          <div className="text-[12px] capitalize text-ink-muted">
-            <b className="font-semibold capitalize text-ink">{crumb}</b> ·{' '}
-            {new Date().toLocaleDateString('en-GB', {
-              weekday: 'short',
-              day: 'numeric',
-              month: 'short',
-            })}
-          </div>
-          <button
-            type="button"
-            title="Global search — coming with mobile integration"
-            className="mx-auto flex w-full max-w-[420px] items-center gap-2.5 rounded-[10px] border-[1.5px] border-line bg-surface px-3 py-2 text-left text-[12.5px] text-ink-muted"
-          >
-            <FiSearch size={14} />
-            <span className="flex-1">Search clients, loans, NRC…</span>
-            <kbd className="rounded border border-line border-b-2 bg-gray-100 px-1.5 py-0.5 text-[9.5px] font-bold">
+
+        {/* topbar */}
+        <header className="flex h-[46px] shrink-0 items-center gap-3 border-b border-[#E7EAF1] bg-white px-5">
+          {/* breadcrumb */}
+          <span className="text-[11.5px] font-bold text-[#0F1115]">{pageTitle}</span>
+          <span className="text-[#D1D5DB]">·</span>
+          <span className="text-[11px] text-[#9AA3B2]">
+            {new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+          </span>
+
+          {/* search */}
+          <div className="mx-auto flex w-full max-w-[360px] items-center gap-2 rounded-[3px] border border-[#E7EAF1] bg-[#F5F6F8] px-3 py-1.5">
+            <FiSearch size={12} className="shrink-0 text-[#9AA3B2]" />
+            <span className="flex-1 text-[11.5px] text-[#9AA3B2]">Search clients, loans, NRC…</span>
+            <kbd className="rounded-[2px] border border-[#E7EAF1] bg-white px-1.5 py-px text-[9px] font-bold text-[#9AA3B2]">
               ⌘K
             </kbd>
-          </button>
+          </div>
+
+          {/* notification bell */}
           <button
             type="button"
-            title="Notifications"
-            className="relative flex h-9 w-9 items-center justify-center rounded-[10px] border-[1.5px] border-line bg-white text-ink-2"
+            className="relative flex h-[30px] w-[30px] items-center justify-center rounded-[3px] border border-[#E7EAF1] bg-white text-[#7A8194] hover:bg-[#F5F6F8]"
           >
-            <FiBell size={15} />
+            <FiBell size={13} />
             {unread > 0 && (
-              <em className="absolute -right-1 -top-1 rounded-full border-2 border-white bg-danger-500 px-1 py-px text-[8.5px] font-extrabold not-italic text-white">
+              <em className="absolute -right-1 -top-1 flex h-[14px] min-w-[14px] items-center justify-center rounded-full border border-white bg-danger-500 px-1 text-[8px] font-extrabold not-italic text-white">
                 {unread}
               </em>
             )}
           </button>
-          <div className="flex items-center gap-2.5">
-            <Avatar name={user?.displayName ?? '?'} tone="green" />
+
+          {/* user chip */}
+          <div className="flex items-center gap-2 rounded-[3px] border border-[#E7EAF1] bg-[#F5F6F8] px-2.5 py-1.5">
+            <Avatar name={user?.displayName ?? '?'} tone="brand" size={20} />
             <div>
-              <b className="block text-[12px] leading-tight text-ink">
-                {user?.displayName}
-              </b>
-              <span className="text-[10px] capitalize text-ink-muted">
+              <b className="block text-[11px] leading-tight text-[#0F1115]">{user?.displayName}</b>
+              <span className="text-[9px] capitalize text-[#9AA3B2]">
                 {user?.role.replaceAll('_', ' ')}
               </span>
             </div>
           </div>
         </header>
-        <main className="min-w-0 flex-1 overflow-y-auto p-6">
+
+        {/* page content */}
+        <main className="min-w-0 flex-1 overflow-y-auto p-5">
           <Outlet />
         </main>
       </div>

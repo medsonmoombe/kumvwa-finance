@@ -14,6 +14,8 @@ export interface AllocatableInstallment {
   amountMinor: bigint;
   paidAmountMinor: bigint;
   status: InstallmentState;
+  /** Accrued penalty riding with this installment — settled alongside it. */
+  penaltyMinor?: bigint;
 }
 
 export interface AllocationChange {
@@ -42,7 +44,9 @@ export interface AllocationResult {
  *
  * There is no "partially paid" status in the data model, so a partial payment
  * leaves the installment's existing status (pending/overdue) in place and only
- * promotes it to `paid` once the full amount is covered.
+ * promotes it to `paid` once the full amount PLUS any accrued penalty is
+ * covered. The penalty rides with its installment, so money conservation
+ * extends naturally: Σ applied = min(payment, Σ(amount + penalty − paid))⁺.
  *
  * Does not mutate `installments`.
  */
@@ -64,12 +68,13 @@ export function allocateRepayment(
   for (const inst of ordered) {
     if (remaining <= 0n) break;
 
-    const owed = inst.amountMinor - inst.paidAmountMinor;
-    if (owed <= 0n) continue; // already settled
+    const owed =
+      inst.amountMinor + (inst.penaltyMinor ?? 0n) - inst.paidAmountMinor;
+    if (owed <= 0n) continue; // already settled (incl. penalty)
 
     const applied = remaining < owed ? remaining : owed;
     const paid = inst.paidAmountMinor + applied;
-    const settled = paid >= inst.amountMinor;
+    const settled = paid >= inst.amountMinor + (inst.penaltyMinor ?? 0n);
 
     changes.push({
       id: inst.id,

@@ -1,9 +1,11 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import type { TenantStatus } from '@prisma/client';
+import { minorToKwacha } from '@kumvwa/core';
 
 import { NrcCryptoService } from '../../common/crypto/nrc-crypto.service';
 import { PrismaService } from '../../infra/prisma.module';
@@ -90,7 +92,14 @@ export class AdminService {
   ) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { id: true, name: true, status: true, bozSubmittedAt: true },
+      include: {
+        bozFile: { select: { id: true, checksum: true } },
+        users: {
+          where: { role: 'tenant_owner' },
+          select: { id: true },
+          take: 1,
+        },
+      },
     });
     if (!tenant) throw new NotFoundException('Tenant not found');
 
@@ -98,9 +107,10 @@ export class AdminService {
       if (tenant.status === 'active') {
         throw new BadRequestException('Tenant is already verified');
       }
-      if (!tenant.bozSubmittedAt) {
+      const readiness = this.reviewReadiness(tenant);
+      if (!readiness.canApprove) {
         throw new BadRequestException(
-          'Tenant has not submitted a certificate yet',
+          `Cannot approve this business: ${readiness.blockers.join('; ')}`,
         );
       }
     } else if (!dto.reason) {
@@ -113,9 +123,18 @@ export class AdminService {
     const updated = await this.prisma.tenant.update({
       where: { id: tenantId },
       data: approve
-        ? { status: 'active', verificationNote: null }
-        : { status: 'rejected', verificationNote: dto.reason!.trim() },
-      select: { id: true, name: true, status: true, verificationNote: true },
+        ? {
+            status: 'active', verificationNote: null,
+            verificationReviewedAt: new Date(), verificationReviewedBy: adminId,
+          }
+        : {
+            status: 'rejected', verificationNote: dto.reason!.trim(),
+            verificationReviewedAt: new Date(), verificationReviewedBy: adminId,
+          },
+      select: {
+        id: true, name: true, status: true, verificationNote: true,
+        verificationReviewedAt: true, verificationReviewedBy: true,
+      },
     });
 
     const owner = await this.prisma.user.findFirst({
@@ -148,6 +167,8 @@ export class AdminService {
       name: updated.name,
       status: updated.status,
       verificationNote: updated.verificationNote,
+      reviewedAt: updated.verificationReviewedAt,
+      reviewedBy: updated.verificationReviewedBy,
     };
   }
 
@@ -180,7 +201,482 @@ export class AdminService {
     };
   }
 
+  /** Full review document for a lender business, including portfolio context. */
+  async tenantDetail(tenantId: string, actorId: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: {
+        bozFile: { select: { id: true, kind: true, mime: true, size: true, createdAt: true, checksum: true } },
+        files: {
+          where: {
+            checksum: { not: '' },
+            kind: { in: ['boz_certificate', 'kyc_document', 'other'] },
+          },
+          select: { id: true, kind: true, mime: true, size: true, createdAt: true },
+          orderBy: { createdAt: 'desc' },
+        },
+        users: {
+          where: { role: { in: ['tenant_owner', 'tenant_staff'] } },
+          select: { id: true, displayName: true, email: true, phone: true, role: true, status: true, createdAt: true },
+          orderBy: { createdAt: 'asc' },
+        },
+        products: { select: { id: true, name: true, active: true, rateBps: true, maxTerm: true } },
+        clientLinks: { select: { clientId: true } },
+        loans: {
+          select: { id: true, loanRef: true, status: true, principal: true, totalDue: true, paidAmount: true, createdAt: true },
+          orderBy: { createdAt: 'desc' },
+          take: 100,
+        },
+      },
+    });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+
+    const reviewer = tenant.verificationReviewedBy
+      ? await this.prisma.user.findUnique({
+          where: { id: tenant.verificationReviewedBy },
+          select: { displayName: true, email: true },
+        })
+      : null;
+
+    await this.audit.record({
+      actorId,
+      action: 'tenant.review_detail_read',
+      entity: 'Tenant',
+      entityId: tenantId,
+      tenantId,
+    });
+    const outstanding = tenant.loans.reduce((sum, loan) => {
+      const remaining = loan.totalDue - loan.paidAmount;
+      return sum + (remaining > 0n ? remaining : 0n);
+    }, 0n);
+    return {
+      id: tenant.id,
+      name: tenant.name,
+      type: tenant.type,
+      status: tenant.status,
+      email: tenant.email,
+      address: tenant.address,
+      tpin: tenant.tpin,
+      contactPerson: tenant.contactPerson,
+      tagline: tenant.tagline,
+      verificationNote: tenant.verificationNote,
+      bozSubmittedAt: tenant.bozSubmittedAt,
+      bozFile: tenant.bozFile,
+      attachments: tenant.files,
+      review: {
+        ...this.reviewReadiness(tenant),
+        reviewedAt: tenant.verificationReviewedAt,
+        reviewer: reviewer
+          ? { name: reviewer.displayName, email: reviewer.email }
+          : null,
+      },
+      createdAt: tenant.createdAt,
+      users: tenant.users,
+      products: tenant.products,
+      portfolio: {
+        clientCount: tenant.clientLinks.length,
+        loanCount: tenant.loans.length,
+        outstanding: minorToKwacha(outstanding),
+        overdueCount: tenant.loans.filter((loan) => loan.status === 'overdue').length,
+      },
+      loans: tenant.loans.map((loan) => ({
+        id: loan.id,
+        loanRef: loan.loanRef,
+        status: loan.status,
+        principal: minorToKwacha(loan.principal),
+        outstanding: minorToKwacha(
+          loan.totalDue - loan.paidAmount > 0n ? loan.totalDue - loan.paidAmount : 0n,
+        ),
+        createdAt: loan.createdAt,
+      })),
+    };
+  }
+
+  /** One source of truth for the decision UI and the approval endpoint. */
+  private reviewReadiness(tenant: {
+    status: TenantStatus;
+    name: string;
+    type: string;
+    email: string | null;
+    contactPerson: string | null;
+    bozSubmittedAt: Date | null;
+    ownerNrcEncrypted: string | null;
+    bozFile: { id: string; checksum: string } | null;
+    users: { id: string }[];
+  }) {
+    const blockers: string[] = [];
+    if (!tenant.name.trim()) blockers.push('Business name is missing');
+    if (!tenant.type.trim()) blockers.push('Business type is missing');
+    if (!tenant.email?.trim()) blockers.push('Business email is missing');
+    if (!tenant.contactPerson?.trim()) blockers.push('Contact person is missing');
+    if (!tenant.users.length) blockers.push('A business owner account is missing');
+    if (!tenant.ownerNrcEncrypted) blockers.push('Owner NRC is missing');
+    if (!tenant.bozSubmittedAt) blockers.push('BOZ certificate has not been submitted');
+    if (!tenant.bozFile || tenant.bozFile.checksum === '') {
+      blockers.push('A confirmed BOZ certificate is required');
+    }
+    if (tenant.status !== 'pending_verification') {
+      blockers.unshift(
+        tenant.status === 'active'
+          ? 'This business is already approved'
+          : tenant.status === 'rejected'
+            ? 'Awaiting a corrected resubmission from the business'
+            : 'This business is suspended and cannot be approved',
+      );
+    }
+    return { canApprove: tenant.status === 'pending_verification' && blockers.length === 0, blockers };
+  }
+
+  /** The console's platform overview band — one query per slice, parallel. */
+  async stats() {
+    const [tenants, clients, users, loans, outstanding, pendingVerifications] =
+      await Promise.all([
+        this.prisma.tenant.groupBy({ by: ['status'], _count: { _all: true } }),
+        this.prisma.client.count(),
+        this.prisma.user.count({
+          where: {
+            role: { in: ['platform_admin', 'tenant_owner', 'tenant_staff'] },
+          },
+        }),
+        this.prisma.loan.groupBy({ by: ['status'], _count: { _all: true } }),
+        this.prisma.loan.aggregate({
+          where: { status: { in: ['active', 'overdue'] } },
+          _sum: { totalDue: true, paidAmount: true },
+        }),
+        this.prisma.tenant.count({
+          where: { status: 'pending_verification' },
+        }),
+      ]);
+
+    const tenantCounts = Object.fromEntries(
+      tenants.map((g) => [g.status, g._count._all]),
+    );
+    const out =
+      (outstanding._sum.totalDue ?? 0n) - (outstanding._sum.paidAmount ?? 0n);
+
+    return {
+      tenants: {
+        pending: tenantCounts.pending_verification ?? 0,
+        active: tenantCounts.active ?? 0,
+        rejected: tenantCounts.rejected ?? 0,
+        suspended: tenantCounts.suspended ?? 0,
+        total: tenants.reduce((a, g) => a + g._count._all, 0),
+      },
+      clients,
+      users,
+      loans: Object.fromEntries(
+        loans.map((g) => [g.status, g._count._all]),
+      ) as Record<string, number>,
+      outstandingMinor: (out > 0n ? out : 0n).toString(),
+      pendingVerifications,
+    };
+  }
+
+  /** Tenant summary for the overview grid — portfolio + status per lender. */
+  async tenantsWithStats() {
+    const tenants = await this.listTenants();
+    return Promise.all(
+      tenants.map(async (t) => {
+        const [loans, outstanding, clientCount] = await Promise.all([
+          this.prisma.loan.groupBy({
+            by: ['status'],
+            where: { tenantId: t.id },
+            _count: { _all: true },
+          }),
+          this.prisma.loan.aggregate({
+            where: { tenantId: t.id, status: { in: ['active', 'overdue'] } },
+            _sum: { totalDue: true, paidAmount: true },
+          }),
+          this.prisma.clientLenderLink.count({ where: { tenantId: t.id } }),
+        ]);
+        const out =
+          (outstanding._sum.totalDue ?? 0n) -
+          (outstanding._sum.paidAmount ?? 0n);
+        return {
+          ...t,
+          clients: clientCount,
+          loanCounts: Object.fromEntries(
+            loans.map((g) => [g.status, g._count._all]),
+          ) as Record<string, number>,
+          outstandingMinor: (out > 0n ? out : 0n).toString(),
+        };
+      }),
+    );
+  }
+
+  // ─────────────── platform-wide borrower oversight ───────────────
+
+  async listClients(q?: string) {
+    const term = q?.trim();
+    const rows = await this.prisma.client.findMany({
+      where: term
+        ? {
+            OR: [
+              { firstName: { contains: term, mode: 'insensitive' as const } },
+              { lastName: { contains: term, mode: 'insensitive' as const } },
+              { phone: { contains: term } },
+            ],
+          }
+        : undefined,
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        phone: true,
+        email: true,
+        status: true,
+        lenderLinks: { select: { tenantId: true } },
+        loans: { select: { status: true } },
+        user: { select: { status: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    return {
+      items: rows.map((c) => ({
+        id: c.id,
+        name: `${c.firstName} ${c.lastName}`.trim(),
+        phone: c.phone,
+        email: c.email,
+        status: c.status,
+        lenders: c.lenderLinks.length,
+        loans: c.loans.length,
+        overdue: c.loans.filter((l) => l.status === 'overdue').length,
+        accountStatus: c.user?.status ?? 'no_account',
+      })),
+    };
+  }
+
+  /**
+   * Cross-platform borrower detail for the oversight drawer. A PII read —
+   * audited every time (same pattern as the owner-identity reveal above).
+   */
+  async clientDetail(id: string, actorId: string) {
+    const client = await this.prisma.client.findUnique({
+      where: { id },
+      include: {
+        lenderLinks: {
+          include: { tenant: { select: { id: true, name: true, status: true } } },
+        },
+        loans: {
+          select: {
+            id: true,
+            tenantId: true,
+            loanRef: true,
+            status: true,
+            principal: true,
+            totalDue: true,
+            paidAmount: true,
+            createdAt: true,
+            tenant: { select: { id: true, name: true, status: true } },
+            repayments: {
+              select: { id: true, amount: true, method: true, reference: true, createdAt: true },
+              orderBy: { createdAt: 'desc' },
+            },
+          },
+        },
+        user: { select: { status: true } },
+      },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    await this.audit.record({
+      actorId,
+      action: 'pii.read',
+      entity: 'Client',
+      entityId: id,
+      diff: { context: 'admin.client_detail' },
+    });
+
+    const outstanding = client.loans.map((l) => {
+      const rest = l.totalDue - l.paidAmount;
+      return {
+        id: l.id,
+        loanRef: l.loanRef,
+        lender: l.tenant,
+        status: l.status,
+        createdAt: l.createdAt,
+        principal: minorToKwacha(l.principal),
+        outstanding: minorToKwacha(rest > 0n ? rest : 0n),
+        repayments: l.repayments.map((repayment) => ({
+          id: repayment.id,
+          amount: minorToKwacha(repayment.amount),
+          method: repayment.method,
+          reference: repayment.reference,
+          recordedAt: repayment.createdAt,
+        })),
+      };
+    });
+
+    return {
+      id: client.id,
+      name: `${client.firstName} ${client.lastName}`.trim(),
+      phone: client.phone,
+      email: client.email,
+      status: client.status,
+      createdAt: client.createdAt,
+      nrc: client.nrcEncrypted ? this.nrc.decrypt(client.nrcEncrypted) : null,
+      dob: client.dob,
+      address: client.address,
+      employmentStatus: client.employmentStatus,
+      incomeBand: client.incomeBand,
+      incomeSource: client.incomeSource,
+      kinName: client.kinName,
+      kinPhone: client.kinPhone,
+      profileCompletedAt: client.profileCompletedAt,
+      lenders: client.lenderLinks.map((l) => ({
+        id: l.tenant.id,
+        name: l.tenant.name,
+        status: l.tenant.status,
+        linkedAt: l.createdAt,
+      })),
+      accountStatus: client.user?.status ?? 'no_account',
+      loans: outstanding,
+    };
+  }
+
+  // ─────────────── platform-wide console user oversight ───────────────
+
+  async listUsers() {
+    const rows = await this.prisma.user.findMany({
+      where: {
+        role: { in: ['platform_admin', 'tenant_owner', 'tenant_staff'] },
+      },
+      select: {
+        id: true,
+        displayName: true,
+        email: true,
+        phone: true,
+        role: true,
+        status: true,
+        createdAt: true,
+        tenant: { select: { id: true, name: true } },
+      },
+      orderBy: [{ role: 'asc' }, { createdAt: 'desc' }],
+      take: 300,
+    });
+    return {
+      items: rows.map((u) => ({
+        id: u.id,
+        displayName: u.displayName,
+        email: u.email,
+        phone: u.phone,
+        role: u.role,
+        status: u.status,
+        tenantId: u.tenant?.id ?? null,
+        tenantName: u.tenant?.name ?? 'Platform',
+        createdAt: u.createdAt,
+      })),
+    };
+  }
+
+  /**
+   * Disable kills every session immediately (refresh families revoked);
+   * enable simply flips the flag back. Platform admins are protected — that
+   * account class is the break-glass path.
+   */
+  async setUserStatus(
+    actorId: string,
+    userId: string,
+    status: 'active' | 'disabled',
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, role: true, status: true, tenantId: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.role === 'platform_admin') {
+      throw new ForbiddenException(
+        'Platform admin accounts cannot be disabled from this console',
+      );
+    }
+    if (user.status === status) return { id: user.id, status };
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { status },
+    });
+    if (status === 'disabled') {
+      await this.prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    }
+
+    await this.audit.record({
+      actorId,
+      action: 'admin.user_status',
+      entity: 'User',
+      entityId: userId,
+      tenantId: user.tenantId ?? undefined,
+      diff: { from: user.status, to: status },
+    });
+    return { id: user.id, status };
+  }
+
+  /**
+   * Direct lifecycle control (approve/reject/suspend/reactivate) — used by
+   * the tenant detail document. Requires a certificate before activation.
+   */
+  async setStatus(
+    actorId: string,
+    tenantId: string,
+    status: TenantStatus,
+  ) {
+    if (!TENANT_STATUSES.includes(status)) {
+      throw new BadRequestException(
+        `status must be one of: ${TENANT_STATUSES.join(', ')}`,
+      );
+    }
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, status: true, bozSubmittedAt: true },
+    });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    if (status === 'active' && !tenant.bozSubmittedAt) {
+      throw new BadRequestException(
+        'Tenant has not submitted a certificate yet',
+      );
+    }
+
+    const updated = await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: { status },
+      select: { id: true, status: true },
+    });
+
+    await this.audit.record({
+      actorId,
+      action: 'admin.tenant_status',
+      entity: 'Tenant',
+      entityId: tenantId,
+      tenantId,
+      diff: { from: tenant.status, to: status },
+    });
+
+    const owner = await this.prisma.user.findFirst({
+      where: { tenantId, role: 'tenant_owner' },
+      select: { id: true },
+    });
+    if (owner) {
+      await this.notify.create(
+        owner.id,
+        'verification',
+        status === 'active'
+          ? 'Your account is active'
+          : `Your account is now ${status.replaceAll('_', ' ')}`,
+        status === 'active'
+          ? 'You can lend on Kumvwa again.'
+          : 'Contact support for details.',
+        { tenantId, status },
+      );
+    }
+
+    return { id: updated.id, status: updated.status };
+  }
+
   private toJson(t: AdminTenantRow) {
+
     return {
       id: t.id,
       name: t.name,

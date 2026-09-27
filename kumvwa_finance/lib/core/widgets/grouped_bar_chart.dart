@@ -14,7 +14,8 @@ class GroupedBarChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final maxVal = groups.fold<double>(
       0,
-      (m, g) => m < g.disbursed ? g.disbursed : (m < g.collected ? g.collected : m),
+      (m, g) =>
+          m < g.disbursed ? g.disbursed : (m < g.collected ? g.collected : m),
     );
     // Guard against an all-zero (or empty) series so we never divide by zero.
     final scale = maxVal > 0 ? maxVal : 1.0;
@@ -137,10 +138,7 @@ class _Dot extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
-        Text(
-          label,
-          style: AppText.subText.copyWith(color: AppColors.ink2),
-        ),
+        Text(label, style: AppText.subText.copyWith(color: AppColors.ink2)),
       ],
     );
   }

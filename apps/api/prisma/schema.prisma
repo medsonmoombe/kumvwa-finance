@@ -38,6 +38,7 @@ enum OtpPurpose {
   login
   password_reset
   phone_change
+  console_2fa
 }
 
 enum OtpStatus {
@@ -112,6 +113,17 @@ enum FileKind {
   other
 }
 
+enum EducationLevel {
+  primary
+  junior_secondary
+  senior_secondary
+  certificate
+  diploma
+  degree
+  postgraduate
+  none
+}
+
 enum EmploymentStatus {
   formal_employment
   self_employed
@@ -150,6 +162,8 @@ model Tenant {
   // rejection (shown back to the owner on the pending screen).
   bozSubmittedAt    DateTime?
   verificationNote  String?
+  verificationReviewedAt DateTime?
+  verificationReviewedBy String?
   // Owner's NRC as AES-256-GCM ciphertext, so the reviewer can check it
   // against the certificate. Never emitted except to platform_admin.
   ownerNrcEncrypted String?
@@ -165,6 +179,7 @@ model Tenant {
   tagline           String?
 
   users        User[]
+  roles        Role[]
   logoFile     File?              @relation("TenantLogo", fields: [logoFileId], references: [id])
   terms        TenantTerms[]
   files        File[]             @relation("TenantFiles")
@@ -176,27 +191,64 @@ model Tenant {
   requests     LoanRequest[]
   repayments   Repayment[]
   creditChecks CreditCheck[]
+  // ── M5: lending rules (versioned credit ladder) + per-client exceptions ──
+  creditPolicy CreditPolicy?
+  overrides    ClientLimitOverride[]
 }
 
 model User {
-  id           String     @id @default(cuid())
-  phone        String     @unique // E.164, e.g. +260971234567
-  passwordHash String
-  displayName  String
-  role         UserRole
-  status       UserStatus @default(active)
-  tenantId     String? // set for tenant_owner / tenant_staff
-  clientId     String?    @unique // set for client (links identity)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id               String     @id @default(cuid())
+  phone            String     @unique // E.164, e.g. +260971234567
+  email            String?    @unique // console login identity
+  passwordHash     String
+  displayName      String
+  role             UserRole
+  status           UserStatus @default(active)
+  tenantId         String?    // set for tenant_owner / tenant_staff
+  clientId         String?    @unique // set for client (links identity)
+  roleId           String?    // custom staff role (tenant_staff)
+  twoFactorEnabled Boolean    @default(true)
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
 
-  tenant        Tenant?           @relation(fields: [tenantId], references: [id])
-  client        Client?           @relation(fields: [clientId], references: [id])
-  refreshTokens RefreshToken[]
-  notifications Notification[]
-  devices       DevicePushToken[]
+  tenant         Tenant?           @relation(fields: [tenantId], references: [id])
+  client         Client?           @relation(fields: [clientId], references: [id])
+  staffRole      Role?             @relation(fields: [roleId], references: [id])
+  refreshTokens  RefreshToken[]
+  notifications  Notification[]
+  devices        DevicePushToken[]
+  trustedDevices TrustedDevice[]
 
   @@index([tenantId])
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String
+  isSystem    Boolean  @default(false)
+  permissions String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users  User[]
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model TrustedDevice {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  label     String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Client {
@@ -215,8 +267,13 @@ model Client {
   // question for clients is still open). The rest is the rich profile the
   // lender's KYC review consumes.
   email              String?
+  // The NRC is a two-sided card: both faces are captured by the stepper and
+  // both ride the same `nrc_photo` file kind (the kind describes the document,
+  // not the side). Either side is optional on its own.
   nrcPhotoFileId     String?
+  nrcBackPhotoFileId String?
   employmentStatus   EmploymentStatus?
+  educationLevel     EducationLevel?
   incomeBand         IncomeBand?
   incomeSource       String?
   kinName            String?
@@ -232,6 +289,7 @@ model Client {
   requests     LoanRequest[]
   creditChecks CreditCheck[]
   invites      Invite[]
+  overrides    ClientLimitOverride[]
 }
 
 model ClientLenderLink {
@@ -267,16 +325,29 @@ model Invite {
 }
 
 model LoanProduct {
-  id        String   @id @default(cuid())
-  tenantId  String
-  name      String
-  rateBps   Int
-  minAmount BigInt // ngwee
-  maxAmount BigInt
-  minTerm   Int
-  maxTerm   Int
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
+  id                String   @id @default(cuid())
+  tenantId          String
+  name              String
+  // ── C2: human-facing identifiers. `code` is the lender's own product code
+  // (e.g. PL-001) shown on screens and reports; `description` is an internal
+  // note clients never see.
+  code              String?
+  description       String?
+  rateBps           Int
+  minAmount         BigInt // ngwee
+  maxAmount         BigInt
+  minTerm           Int
+  maxTerm           Int
+  active            Boolean  @default(true)
+  // ── M4 money-maturity knobs ──
+  frequency         String   @default("monthly") // monthly | weekly | fortnightly
+  originationFeeBps Int      @default(0)
+  feeTreatment      String   @default("add") // add | deduct
+  penaltyBpsPerDay  Int      @default(0) // 0 = penalties off
+  penaltyCapBps     Int      @default(2000)
+  // ── M5: repayment structure — bullet (one maturity) is the market default ──
+  repaymentStructure String  @default("bullet") // bullet | installments
+  createdAt         DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id])
   loans  Loan[]
@@ -285,19 +356,27 @@ model LoanProduct {
 }
 
 model Loan {
-  id          String     @id @default(cuid())
-  tenantId    String
-  clientId    String
-  productId   String?
-  principal   BigInt
-  rateBps     Int
-  termCount   Int
-  totalDue    BigInt
-  paidAmount  BigInt     @default(0)
-  status      LoanStatus @default(active)
-  disbursedAt DateTime?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id                String     @id @default(cuid())
+  tenantId          String
+  clientId          String
+  productId         String?
+  principal         BigInt
+  rateBps           Int
+  termCount         Int
+  totalDue          BigInt
+  paidAmount        BigInt     @default(0)
+  // ── M4 money-maturity fields ──
+  frequency         String     @default("monthly")
+  feeMinor          BigInt     @default(0)
+  disbursementMinor BigInt     @default(0)
+  rolloverCount     Int        @default(0)
+  // ── M5: friendly human reference (LN-2026-00001) + structure snapshot ──
+  loanRef           String     @unique
+  repaymentStructure String    @default("installments") // bullet | installments
+  status            LoanStatus @default(active)
+  disbursedAt       DateTime?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
 
   tenant       Tenant        @relation(fields: [tenantId], references: [id])
   client       Client        @relation(fields: [clientId], references: [id])
@@ -311,14 +390,16 @@ model Loan {
 }
 
 model Installment {
-  id         String            @id @default(cuid())
-  loanId     String
-  seq        Int
-  dueDate    DateTime          @db.Date
-  amount     BigInt
-  paidAmount BigInt            @default(0)
-  status     InstallmentStatus @default(pending)
-  paidAt     DateTime?
+  id           String            @id @default(cuid())
+  loanId       String
+  seq          Int
+  dueDate      DateTime          @db.Date
+  amount       BigInt
+  paidAmount   BigInt            @default(0)
+  // ── M4: accrued late penalty riding with this installment ──
+  penaltyMinor BigInt            @default(0)
+  status       InstallmentStatus @default(pending)
+  paidAt       DateTime?
 
   loan Loan @relation(fields: [loanId], references: [id])
 
@@ -426,8 +507,9 @@ model SmsOutbox {
 model OtpCode {
   id         String     @id @default(cuid())
   phone      String
+  userId     String?    // set for console_2fa (keyed on user, not phone)
   purpose    OtpPurpose
-  codeHash   String // OTP is hashed like a password — never plaintext
+  codeHash   String     // OTP is hashed like a password — never plaintext
   status     OtpStatus  @default(pending)
   attempts   Int        @default(0)
   expiresAt  DateTime
@@ -435,6 +517,7 @@ model OtpCode {
   createdAt  DateTime   @default(now())
 
   @@index([phone, purpose, status])
+  @@index([userId, purpose, status])
 }
 
 model RefreshToken {
@@ -544,4 +627,41 @@ model EmailOutbox {
   createdAt DateTime  @default(now())
 
   @@index([status, createdAt])
+}
+
+// ── M5: per-tenant lending rules (the credit ladder) ──
+model CreditPolicy {
+  id          String   @id @default(cuid())
+  tenantId    String   @unique
+  version     Int      @default(1)
+  policy      Json
+  publishedAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+}
+
+// ── M5: audited per-client limit exception (console grant/revoke) ──
+model ClientLimitOverride {
+  id          String   @id @default(cuid())
+  clientId    String
+  tenantId    String
+  limitKwacha Int
+  reason      String
+  grantedBy   String // userId of the owner/staff who granted it
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  client Client @relation(fields: [clientId], references: [id])
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([clientId, tenantId])
+}
+
+// ── C4: platform-wide feature flags & killswitches ──
+model PlatformConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedBy String?
+  updatedAt DateTime @updatedAt
 }

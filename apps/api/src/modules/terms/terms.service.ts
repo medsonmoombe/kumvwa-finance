@@ -84,6 +84,22 @@ export class TermsService implements OnModuleInit {
     });
   }
 
+  /** Platform admins publish a new platform terms version. */
+  async publishPlatformTerms(actorId: string, body: string) {
+    const latest = await this.platformLatest();
+    const created = await this.prisma.platformTerms.create({
+      data: { version: (latest?.version ?? 0) + 1, body: body.trim() },
+    });
+    await this.audit.record({
+      actorId,
+      action: 'terms.publish_platform',
+      entity: 'PlatformTerms',
+      entityId: created.id,
+      diff: { version: created.version },
+    });
+    return { version: created.version };
+  }
+
   /** Publishes a NEW version (never edits history — acceptances reference versions). */
   async publishTenant(tenantId: string, actorId: string, body: string) {
     const latest = await this.tenantLatest(tenantId);

@@ -140,16 +140,12 @@ class AppTheme {
         backgroundColor: AppColors.ink,
         contentTextStyle: GoogleFonts.inter(fontSize: 14, color: Colors.white),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
       dialogTheme: DialogThemeData(
         backgroundColor: AppColors.card,
         surfaceTintColor: Colors.transparent,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         titleTextStyle: GoogleFonts.poppins(
           fontSize: 17,
           fontWeight: FontWeight.w700,

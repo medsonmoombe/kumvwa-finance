@@ -39,7 +39,10 @@ void main() {
   group('Loan.progress', () {
     test('is the repaid fraction', () {
       expect(makeLoan(totalDue: 1000, amountPaid: 250).progress, 0.25);
-      expect(makeLoan(totalDue: 9775, amountPaid: 6516.6667).progress, closeTo(2 / 3, 0.0001));
+      expect(
+        makeLoan(totalDue: 9775, amountPaid: 6516.6667).progress,
+        closeTo(2 / 3, 0.0001),
+      );
     });
 
     test('is 0 for an untouched loan', () {
@@ -112,15 +115,27 @@ void main() {
   group('CreditRisk.band', () {
     test('derives the band from the score', () {
       expect(
-        CreditRisk(score: 742, source: 'TransUnion Zambia', checkedAt: DateTime(2025, 8, 2)).band,
+        CreditRisk(
+          score: 742,
+          source: 'TransUnion Zambia',
+          checkedAt: DateTime(2025, 8, 2),
+        ).band,
         RiskLevel.low,
       );
       expect(
-        CreditRisk(score: 610, source: 'TransUnion Zambia', checkedAt: DateTime(2025, 7, 20)).band,
+        CreditRisk(
+          score: 610,
+          source: 'TransUnion Zambia',
+          checkedAt: DateTime(2025, 7, 20),
+        ).band,
         RiskLevel.medium,
       );
       expect(
-        CreditRisk(score: 480, source: 'TransUnion Zambia', checkedAt: DateTime(2025, 6, 30)).band,
+        CreditRisk(
+          score: 480,
+          source: 'TransUnion Zambia',
+          checkedAt: DateTime(2025, 6, 30),
+        ).band,
         RiskLevel.high,
       );
     });

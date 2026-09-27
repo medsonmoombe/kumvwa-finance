@@ -1,0 +1,81 @@
+# Application containers (api + console). Infra lives in docker-compose.dev.yml
+# and is layered in, so the two files share one project, network and volumes:
+#
+#   docker compose -f docker-compose.dev.yml -f docker-compose.app.yml up -d --build
+#   docker compose -f docker-compose.dev.yml -f docker-compose.app.yml logs -f api
+#
+# Console → http://localhost:5173   API → http://localhost:8080/api/v1
+name: kumvwa-dev
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: dev
+      PORT: "8080"
+      # Service names, not localhost — these resolve inside the compose network.
+      DATABASE_URL: postgresql://kumvwa:kumvwa_dev@postgres:5432/kumvwa?schema=public
+      REDIS_URL: redis://redis:6379
+      # The browser origin, so the console can talk to this API. Empty = ALL
+      # origins in dev (reflect), so Flutter web (random dev port) also works.
+      CORS_ORIGINS: ""
+      APP_BASE_URL: http://localhost:5173
+      # Dev-only secrets — 32+ chars or loadEnv() refuses to boot.
+      JWT_ACCESS_SECRET: dev-only-access-secret-change-me-32-chars!
+      JWT_REFRESH_SECRET: dev-only-refresh-secret-change-me-32-chars!
+      NRC_HMAC_KEY: dev-only-nrc-hmac-key-change-me-32-chars!!
+      FIELD_ENCRYPTION_KEY: dev-only-field-enc-key-change-me-32-chars!
+      # Fixed OTP 123456, and lenders skip the BOZ approval queue so the
+      # console is usable immediately. NEVER set either in prod.
+      OTP_DEV_MODE: "true"
+      OTP_DEV_CODE: "123456"
+      DEV_AUTO_VERIFY_TENANTS: "true"
+      REQUEST_MIN_KWACHA: "100"
+      REQUEST_MAX_TERM: "12"
+      CREDIT_LIMIT_NO_HISTORY_KWACHA: "1000"
+      ROLLOVER_MAX: "2"
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+      SMTP_FROM: Kumvwa Finance <no-reply@kumvwa.co.zm>
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: kumvwa-dev
+      S3_SECRET_KEY: kumvwa-dev-secret
+      S3_BUCKET: kumvwa-documents
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  console:
+    build:
+      context: .
+      dockerfile: apps/console/Dockerfile
+      args:
+        # Baked into the bundle and read by the BROWSER → host URL, not `api`.
+        VITE_API_URL: http://localhost:8080/api/v1
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
+  # Penalty accrual + overdue flipping (M4). Optional for UI work, required
+  # for anything that depends on time passing — start it with:
+  #   docker compose ... up -d --build api console worker
+  worker:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    profiles: ["jobs"]
+    environment:
+      DATABASE_URL: postgresql://kumvwa:kumvwa_dev@postgres:5432/kumvwa?schema=public
+      REDIS_URL: redis://redis:6379
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+      SMTP_FROM: Kumvwa Finance <no-reply@kumvwa.co.zm>
+      WORKER_TICK_MS: "15000"
+    command: ["pnpm", "--filter", "worker", "start"]

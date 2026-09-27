@@ -196,3 +196,61 @@ describe('TenantsService.me', () => {
     await expect(service.me('t1')).rejects.toThrow(/not found/i);
   });
 });
+
+describe('TenantsService.publicInfo', () => {
+  it('ships the first active product for the apply breakdown', async () => {
+    const { service } = setup({
+      tenant: {
+        id: 't1',
+        name: 'Chilenje Community SACCO',
+        tagline: null,
+        primaryColor: null,
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+        logoFile: null,
+        terms: [],
+        products: [
+          {
+            id: 'prod1',
+            name: 'SACCO Installments',
+            rateBps: 1500,
+            originationFeeBps: 500,
+            maxTerm: 12,
+            frequency: 'monthly',
+            repaymentStructure: 'installments',
+          },
+        ],
+      },
+    });
+
+    const result = await service.publicInfo('t1');
+
+    expect(result.product).toEqual({
+      id: 'prod1',
+      name: 'SACCO Installments',
+      ratePct: 15,
+      feePct: 5,
+      maxTermMonths: 12,
+      frequency: 'monthly',
+      repaymentStructure: 'installments',
+    });
+  });
+
+  it('returns product null when the lender has no active product', async () => {
+    const { service } = setup({
+      tenant: {
+        id: 't1',
+        name: 'Chilenje Community SACCO',
+        tagline: null,
+        primaryColor: null,
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+        logoFile: null,
+        terms: [],
+        products: [],
+      },
+    });
+
+    const result = await service.publicInfo('t1');
+
+    expect(result.product).toBeNull();
+  });
+});

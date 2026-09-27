@@ -35,6 +35,12 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
   var _saving = false;
   String? _error;
 
+  /// A stored value renders as a read-only summary until the borrower taps
+  /// "Change" — so a returning user is never asked for details we already
+  /// hold (and never sees a blank field next to a green tick).
+  var _editingDob = false;
+  var _editingAddress = false;
+
   @override
   void dispose() {
     _nrcCtrl.dispose();
@@ -53,18 +59,27 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
     if (picked != null) setState(() => _dob = picked);
   }
 
+  /// dd/mm/yyyy — the format Zambian ID/forms use, so it needs no locale
+  /// package or explanation.
+  static String _formatDob(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/'
+      '${d.month.toString().padLeft(2, '0')}/${d.year}';
+
   Future<void> _save() async {
     setState(() => _error = null);
     final dobError = Validators.adultDob(_dob);
     if (dobError != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(dobError)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(dobError)));
       return;
     }
 
     setState(() => _saving = true);
     try {
-      final profile = await ref.read(clientsRepositoryProvider).updateProfile(
+      final profile = await ref
+          .read(clientsRepositoryProvider)
+          .updateProfile(
             nrc: _nrcCtrl.text,
             dateOfBirth: _dob,
             address: _addressCtrl.text,
@@ -75,7 +90,9 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
       // needsProfile redirect lets the borrower into the app.
       final session = ref.read(authControllerProvider).session;
       if (session != null) {
-        ref.read(authControllerProvider.notifier).applyUpdatedSession(
+        ref
+            .read(authControllerProvider.notifier)
+            .applyUpdatedSession(
               session.copyWith(
                 profileComplete: profile.complete,
                 profilePercent: profile.profilePercent,
@@ -86,7 +103,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
       if (profile.complete) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Profile complete — you can now request loans.'),
+            content: Text('Profile complete. You can now request loans.'),
           ),
         );
         context.go('/c/home');
@@ -100,6 +117,10 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
             _nrcCtrl.clear();
             _addressCtrl.clear();
             _dob = null;
+            // Collapse back to the "on file" summaries so the refreshed
+            // profile (not the inputs) drives what is displayed.
+            _editingDob = false;
+            _editingAddress = false;
           });
         }
       }
@@ -116,7 +137,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
             _ => null,
           };
           _error =
-              known ?? 'Could not save — check your connection and try again.';
+              known ?? 'Could not save. Check your connection and try again.';
         });
       }
     }
@@ -140,8 +161,11 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.cloud_off_outlined,
-                      size: 44, color: AppColors.muted),
+                  const Icon(
+                    Icons.cloud_off_outlined,
+                    size: 44,
+                    color: AppColors.muted,
+                  ),
                   const SizedBox(height: 14),
                   const Text('Could not load your profile'),
                   const SizedBox(height: 16),
@@ -194,8 +218,11 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
               color: AppColors.green50,
               borderRadius: BorderRadius.circular(18),
             ),
-            child: const Icon(Icons.badge_outlined,
-                size: 28, color: AppColors.green700),
+            child: const Icon(
+              Icons.badge_outlined,
+              size: 28,
+              color: AppColors.green700,
+            ),
           ),
           const SizedBox(height: 18),
           Text(
@@ -208,8 +235,10 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Your account is $percent% complete. Add your identity '
-            'details below to unlock loan requests.',
+            done
+                ? 'Your identity details are on file. Review them below.'
+                : 'Your account is $percent% complete. Add the missing '
+                      'details below to unlock loan requests.',
             style: AppText.subText.copyWith(height: 1.55),
           ),
           const SizedBox(height: 18),
@@ -234,52 +263,75 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
             ),
             const SizedBox(height: 14),
           ],
+          // ── 1. NRC — identity: shown, never re-asked or self-edited ──
           _StepHeader(index: 1, label: 'NRC number', done: hasNrc),
           const SizedBox(height: 8),
-          AppTextField(
-            label: hasNrc ? 'NRC (verified)' : 'NRC number',
-            controller: _nrcCtrl,
-            hint: '245711/63/1',
-            enabled: !hasNrc && !_saving,
-            keyboardType: TextInputType.number,
-            inputFormatters: [NrcInputFormatter()],
-            validator: Validators.nrc,
-          ),
-          if (hasNrc) ...[
-            const SizedBox(height: 4),
-            const Text(
-              'Stored as encrypted ciphertext.',
-              style: TextStyle(fontSize: 10.5, color: AppColors.muted),
+          if (hasNrc)
+            _ProvidedRow(
+              value: profile.nrcMasked ?? 'NRC on file',
+              note:
+                  'Stored as encrypted ciphertext. Ask your lender to '
+                  'correct it if the number is wrong.',
+            )
+          else
+            AppTextField(
+              label: 'NRC number',
+              controller: _nrcCtrl,
+              hint: '245711/63/1',
+              enabled: !_saving,
+              keyboardType: TextInputType.number,
+              inputFormatters: [NrcInputFormatter()],
+              validator: Validators.nrc,
             ),
-          ],
           const SizedBox(height: 16),
+
+          // ── 2. Date of birth ──
           _StepHeader(index: 2, label: 'Date of birth', done: hasDob),
           const SizedBox(height: 8),
-          AppTextField(
-            label: 'Date of birth',
-            controller: TextEditingController(
-              text: _dob == null
-                  ? ''
-                  : '${_dob!.day}/${_dob!.month}/${_dob!.year}',
+          if (hasDob && !_editingDob)
+            _ProvidedRow(
+              value: _formatDob(profile.dateOfBirth!),
+              onEdit: () => setState(() {
+                _dob = profile.dateOfBirth;
+                _editingDob = true;
+              }),
+            )
+          else
+            AppTextField(
+              label: 'Date of birth',
+              controller: TextEditingController(
+                text: _dob == null
+                    ? ''
+                    : '${_dob!.day}/${_dob!.month}/${_dob!.year}',
+              ),
+              hint: 'Select date',
+              readOnly: true,
+              enabled: !_saving,
+              onTap: _pickDob,
+              suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
             ),
-            hint: 'Select date',
-            readOnly: true,
-            enabled: !_saving,
-            onTap: _pickDob,
-            suffixIcon:
-                const Icon(Icons.calendar_today_outlined, size: 18),
-          ),
           const SizedBox(height: 16),
+
+          // ── 3. Home address ──
           _StepHeader(index: 3, label: 'Home address', done: hasAddress),
           const SizedBox(height: 8),
-          AppTextField(
-            label: 'Home address',
-            controller: _addressCtrl,
-            hint: 'e.g. Plot 12, Chilenje, Lusaka',
-            maxLines: 2,
-            enabled: !_saving,
-            validator: (v) => Validators.required(v, field: 'Address'),
-          ),
+          if (hasAddress && !_editingAddress)
+            _ProvidedRow(
+              value: profile.address!,
+              onEdit: () => setState(() {
+                _addressCtrl.text = profile.address!;
+                _editingAddress = true;
+              }),
+            )
+          else
+            AppTextField(
+              label: 'Home address',
+              controller: _addressCtrl,
+              hint: 'e.g. Plot 12, Chilenje, Lusaka',
+              maxLines: 2,
+              enabled: !_saving,
+              validator: (v) => Validators.required(v, field: 'Address'),
+            ),
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(
@@ -294,9 +346,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen> {
           const SizedBox(height: 24),
           ElevatedButton(
             onPressed: _saving ? null : _save,
-            child: _saving
-                ? const ButtonSpinner()
-                : const Text('Save Profile'),
+            child: _saving ? const ButtonSpinner() : const Text('Save Profile'),
           ),
         ],
       ),
@@ -348,6 +398,73 @@ class _StepHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A detail we ALREADY hold, shown as a read-only row instead of a (blank)
+/// input. [onEdit] is omitted for values the borrower cannot correct alone —
+/// an NRC is identity data, so it is summarised with a "contact your lender"
+/// note rather than an editable box that invites a typo.
+class _ProvidedRow extends StatelessWidget {
+  const _ProvidedRow({required this.value, this.note, this.onEdit});
+
+  final String value;
+  final String? note;
+  final VoidCallback? onEdit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+      decoration: BoxDecoration(
+        color: AppColors.green50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFBFE9D2)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.check_circle, size: 17, color: AppColors.green700),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.ink,
+                  ),
+                ),
+                if (note != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    note!,
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      color: AppColors.muted,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (onEdit != null)
+            TextButton(
+              onPressed: onEdit,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text('Change', style: TextStyle(fontSize: 12)),
+            ),
+        ],
+      ),
     );
   }
 }

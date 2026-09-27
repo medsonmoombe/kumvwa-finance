@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:kumvwa_finance/core/theme/app_colors.dart';
+import 'package:kumvwa_finance/core/time/zambia_time.dart';
 
 /// Color-coded countdown to a due date:
 /// red overdue/today · amber ≤7 days · blue further out.
@@ -11,28 +12,17 @@ class DueChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final due = DateTime(
-      dueDate.year,
-      dueDate.month,
-      dueDate.day,
-    );
-    final days = due.difference(today).inDays;
+    final days = daysUntilZambianDate(dueDate);
 
     final (Color bg, Color fg, String label) = switch (days) {
       < 0 => (
-          AppColors.red50,
-          const Color(0xFFC03538),
-          '${-days} day${-days == 1 ? '' : 's'} overdue',
-        ),
+        AppColors.red50,
+        const Color(0xFFC03538),
+        '-${days}d overdue',
+      ),
       0 => (AppColors.red50, const Color(0xFFC03538), 'Due today'),
-      1 => (AppColors.amber50, const Color(0xFFB26A00), 'Due tomorrow'),
-      <= 7 => (
-          AppColors.amber50,
-          const Color(0xFFB26A00),
-          'in $days days',
-        ),
+      1 => (AppColors.amber50, const Color(0xFFB26A00), 'Tomorrow'),
+      <= 7 => (AppColors.amber50, const Color(0xFFB26A00), 'in ${days}d'),
       _ => (AppColors.blue50, AppColors.blue600, 'in $days days'),
     };
 
@@ -44,11 +34,7 @@ class DueChip extends StatelessWidget {
       ),
       child: Text(
         label,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: fg,
-        ),
+        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: fg),
       ),
     );
   }

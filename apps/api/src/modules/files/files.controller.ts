@@ -10,11 +10,13 @@ import {
 import type { TokenClaims } from '../../common/crypto/token.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/guards/roles.decorator';
+import { AllowUnverifiedTenant } from '../../common/guards/unverified-tenant.decorator';
 import { CreateUploadUrlDto } from './dto/files.dto';
 import { FilesService } from './files.service';
 
 @Roles('tenant_owner', 'tenant_staff')
 @Controller('files')
+@AllowUnverifiedTenant()
 export class FilesController {
   constructor(private readonly files: FilesService) {}
 

@@ -96,10 +96,15 @@ void main() {
     });
 
     test('a fully repaid loan has every installment paid', () async {
-      final loan = await repo.getById('LN-2025-00690'); // Tamara, paidCount == term
+      final loan = await repo.getById(
+        'LN-2025-00690',
+      ); // Tamara, paidCount == term
 
       expect(loan.status, LoanStatus.cleared);
-      expect(loan.schedule.every((i) => i.status == InstallmentStatus.paid), isTrue);
+      expect(
+        loan.schedule.every((i) => i.status == InstallmentStatus.paid),
+        isTrue,
+      );
       expect(loan.progress, closeTo(1, 0.0001));
       expect(loan.outstanding, closeTo(0, 0.0001));
     });
@@ -147,19 +152,35 @@ void main() {
     test('only the newest loans have no credit check', () async {
       final loans = await repo.load();
 
-      expect(
-        loans.where((l) => l.risk == null).map((l) => l.id).toSet(),
-        {'LN-2025-00860', 'LN-2025-00210'},
-      );
+      expect(loans.where((l) => l.risk == null).map((l) => l.id).toSet(), {
+        'LN-2025-00860',
+        'LN-2025-00210',
+      });
     });
 
     test('bands follow the seeded scores', () async {
-      expect((await repo.getById('LN-2025-00841')).risk!.band, RiskLevel.low); // 742
-      expect((await repo.getById('LN-2025-00836')).risk!.band, RiskLevel.medium); // 610
-      expect((await repo.getById('LN-2025-00780')).risk!.band, RiskLevel.high); // 480
-      expect((await repo.getById('LN-2025-00755')).risk!.band, RiskLevel.high); // 520
-      expect((await repo.getById('LN-2025-00690')).risk!.band, RiskLevel.medium); // 690
-    });    test('records the bureau source', () async {
+      expect(
+        (await repo.getById('LN-2025-00841')).risk!.band,
+        RiskLevel.low,
+      ); // 742
+      expect(
+        (await repo.getById('LN-2025-00836')).risk!.band,
+        RiskLevel.medium,
+      ); // 610
+      expect(
+        (await repo.getById('LN-2025-00780')).risk!.band,
+        RiskLevel.high,
+      ); // 480
+      expect(
+        (await repo.getById('LN-2025-00755')).risk!.band,
+        RiskLevel.high,
+      ); // 520
+      expect(
+        (await repo.getById('LN-2025-00690')).risk!.band,
+        RiskLevel.medium,
+      ); // 690
+    });
+    test('records the bureau source', () async {
       expect(
         (await repo.getById('LN-2025-00841')).risk!.source,
         'TransUnion Zambia',
@@ -172,29 +193,47 @@ void main() {
   });
 
   group('recordPayment', () {
-    test('settles the next unpaid installment and advances the balance',
-        () async {
-      final before = await repo.getById('LN-2025-00841'); // 2 of 3 paid
-      final next = before.nextInstallment!;
+    test(
+      'settles the next unpaid installment and advances the balance',
+      () async {
+        final before = await repo.getById('LN-2025-00841'); // 2 of 3 paid
+        final next = before.nextInstallment!;
 
-      final after = await repo.recordPayment('LN-2025-00841', amount: next.amount);
+        final after = await repo.recordPayment(
+          'LN-2025-00841',
+          amount: next.amount,
+        );
 
-      expect(after.schedule.firstWhere((i) => i.number == next.number).status,
-          InstallmentStatus.paid);
-      expect(after.amountPaid, closeTo(before.amountPaid + next.amount, 0.0001));
-      expect(after.outstanding, closeTo(before.outstanding - next.amount, 0.0001));
-      // Mwansa's loan has 3 installments with 2 paid: settling the last
-      // one clears it (the seed's final installment is already in the past,
-      // so 'next' here is the third and final one).
-    });
+        expect(
+          after.schedule.firstWhere((i) => i.number == next.number).status,
+          InstallmentStatus.paid,
+        );
+        expect(
+          after.amountPaid,
+          closeTo(before.amountPaid + next.amount, 0.0001),
+        );
+        expect(
+          after.outstanding,
+          closeTo(before.outstanding - next.amount, 0.0001),
+        );
+        // Mwansa's loan has 3 installments with 2 paid: settling the last
+        // one clears it (the seed's final installment is already in the past,
+        // so 'next' here is the third and final one).
+      },
+    );
 
     test('mutates the shared store — getById reflects the payment', () async {
-      final before = await repo.getById('LN-2025-00860'); // 1 installment, unpaid
+      final before = await repo.getById(
+        'LN-2025-00860',
+      ); // 1 installment, unpaid
 
       await repo.recordPayment('LN-2025-00860', amount: before.totalDue);
       final after = await repo.getById('LN-2025-00860');
 
-      expect(after.amountPaid, closeTo(before.amountPaid + before.totalDue, 0.0001));
+      expect(
+        after.amountPaid,
+        closeTo(before.amountPaid + before.totalDue, 0.0001),
+      );
     });
 
     test('flips a loan to cleared once the schedule is fully paid', () async {
@@ -215,7 +254,10 @@ void main() {
 
       final after = await repo.recordPayment('LN-2025-00860', amount: 1);
 
-      expect(after.schedule.every((i) => i.status == InstallmentStatus.paid), isTrue);
+      expect(
+        after.schedule.every((i) => i.status == InstallmentStatus.paid),
+        isTrue,
+      );
       expect(after.status, LoanStatus.cleared);
       expect(after.nextInstallment, isNull);
     });
@@ -232,6 +274,102 @@ void main() {
         repo.recordPayment('LN-NOPE', amount: 1),
         throwsStateError,
       );
+    });
+  });
+
+  group('rollover', () {
+    test(
+      'moves unpaid dates +1 month and appends the interest share',
+      () async {
+        final before = await repo.getById('LN-2025-00841'); // 3 installments
+        final share =
+            before.principal *
+            before.interestRatePct /
+            100 /
+            before.termInstallments;
+        final movedFrom = before.schedule[2].dueDate; // the unpaid installment
+
+        final after = await repo.rollover('LN-2025-00841');
+
+        expect(after.rolloverCount, 1);
+        expect(after.schedule, hasLength(4));
+        // Settled history keeps its dates…
+        expect(after.schedule[0].dueDate, before.schedule[0].dueDate);
+        expect(after.schedule[1].dueDate, before.schedule[1].dueDate);
+        // …the unpaid installment moves exactly one calendar month…
+        final movedTo = after.schedule[2].dueDate;
+        expect(
+          DateTime(movedTo.year, movedTo.month - 1, movedTo.day),
+          DateTime(movedFrom.year, movedFrom.month, movedFrom.day),
+        );
+        // …and the appended interest-only installment lands after everything.
+        final appended = after.schedule[3];
+        expect(appended.number, 4);
+        expect(appended.amount, closeTo(share, 0.0001));
+        // Born paid — the fee WAS the rollover payment, so it must not
+        // re-appear as debt (mirrors the API's ledger rule).
+        expect(appended.status, InstallmentStatus.paid);
+        expect(appended.dueDate.isAfter(movedTo), isTrue);
+      },
+    );
+
+    test('the appended fee is an extension, not an installment', () async {
+      final before = await repo.getById('LN-2025-00841');
+      final after = await repo.rollover('LN-2025-00841');
+
+      final extensions = after.schedule.where((i) => i.rolloverFee).toList();
+      final planned = after.schedule.where((i) => !i.rolloverFee).toList();
+
+      expect(extensions, hasLength(after.rolloverCount));
+      // The plan itself is untouched: 3 installments stay 3 installments,
+      // and the detail screen renders the fee rows in their own section.
+      expect(planned, hasLength(before.termInstallments));
+      expect(before.schedule.every((i) => !i.rolloverFee), isTrue);
+    });
+
+    test(
+      'conserves money: outstanding unchanged, Σ installments = totalDue',
+      () async {
+        final before = await repo.getById('LN-2025-00836'); // 1 of 2 paid
+        final share =
+            before.principal *
+            before.interestRatePct /
+            100 /
+            before.termInstallments;
+
+        final after = await repo.rollover('LN-2025-00836');
+
+        expect(after.outstanding, closeTo(before.outstanding, 0.0001));
+        expect(after.totalDue, closeTo(before.totalDue + share, 0.0001));
+        expect(after.amountPaid, closeTo(before.amountPaid + share, 0.0001));
+        final sum = after.schedule.fold<double>(0, (a, i) => a + i.amount);
+        expect(sum, closeTo(after.totalDue, 0.0001));
+        // Ledger invariant (the rule the API now enforces with a "born paid"
+        // appended installment): the installments marked paid must sum to the
+        // paid ledger. Booking the carry-over fee as COLLECTED and as an
+        // unpaid installment at once is what left settled loans showing a pay
+        // button — outstanding 0, yet an installment still due.
+        final instPaid = after.schedule
+            .where((i) => i.status == InstallmentStatus.paid)
+            .fold<double>(0, (a, i) => a + i.amount);
+        expect(instPaid, closeTo(after.amountPaid, 0.0001));
+        // Dates stay strictly increasing after the shift + append.
+        for (var i = 1; i < after.schedule.length; i++) {
+          expect(
+            after.schedule[i].dueDate.isAfter(after.schedule[i - 1].dueDate),
+            isTrue,
+            reason: 'installment ${after.schedule[i].number} is out of order',
+          );
+        }
+      },
+    );
+
+    test('refuses to carry over a cleared loan', () async {
+      await expectLater(repo.rollover('LN-2025-00690'), throwsStateError);
+    });
+
+    test('refuses an unknown loan id', () async {
+      await expectLater(repo.rollover('LN-NOPE'), throwsStateError);
     });
   });
 }

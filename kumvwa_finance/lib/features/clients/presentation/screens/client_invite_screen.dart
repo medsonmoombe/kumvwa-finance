@@ -48,7 +48,7 @@ class ClientInviteScreen extends ConsumerWidget {
             message: e is InviteException
                 ? e.message
                 : 'This invite code is invalid or has expired. '
-                    'Please ask your lender to send a new one.',
+                      'Please ask your lender to send a new one.',
           ),
           data: (invite) => invite.completed
               ? const _AlreadyCompletedView()
@@ -194,7 +194,9 @@ class _AccountFormState extends ConsumerState<_AccountForm> {
 
     setState(() => _submitting = true);
     try {
-      await ref.read(inviteRepositoryProvider).submitAccount(
+      await ref
+          .read(inviteRepositoryProvider)
+          .submitAccount(
             code: invite.code,
             fullName: _nameCtrl.text,
             password: _passwordCtrl.text,
@@ -280,8 +282,8 @@ class _AccountFormState extends ConsumerState<_AccountForm> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Welcome, ${invite.clientName}. ${invite.businessName} '
-                  'invited you to Kumvwa Finance.',
+                  'Welcome, ${invite.clientName}. ${invite.businessName} is '
+                  'your lender and invited you to the Kumvwa Finance app.',
                   style: AppText.subText.copyWith(height: 1.55),
                 ),
                 const SizedBox(height: 24),
@@ -331,8 +333,9 @@ class _AccountFormState extends ConsumerState<_AccountForm> {
                           _agreeError = false;
                         }),
                         child: Text(
-                          'I agree that Kumvwa Finance may keep my KYC '
-                          'details for lending decisions.',
+                          'I agree that ${invite.businessName} and Kumvwa '
+                          '(the platform it uses) may keep my KYC details '
+                          'for lending decisions.',
                           style: AppText.subText.copyWith(fontSize: 12.5),
                         ),
                       ),

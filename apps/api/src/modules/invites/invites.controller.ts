@@ -12,6 +12,7 @@ import type { Request } from 'express';
 
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/guards/public.decorator';
+import { RequirePermissions } from '../../common/guards/permissions.decorator';
 import { Roles } from '../../common/guards/roles.decorator';
 import type { TokenClaims } from '../../common/crypto/token.service';
 import { CompleteInviteDto, CreateInviteDto } from './dto/invites.dto';
@@ -22,12 +23,14 @@ export class InvitesController {
   constructor(private readonly invites: InvitesService) {}
 
   @Roles('tenant_owner', 'tenant_staff')
+  @RequirePermissions('clients.invite')
   @Post()
   create(@CurrentUser() u: TokenClaims, @Body() dto: CreateInviteDto) {
     return this.invites.create(u.tenantId!, u.sub, dto);
   }
 
   @Roles('tenant_owner', 'tenant_staff')
+  @RequirePermissions('clients.read')
   @Get()
   list(@CurrentUser() u: TokenClaims, @Query('status') status?: string) {
     return this.invites.listForTenant(u.tenantId!, status);

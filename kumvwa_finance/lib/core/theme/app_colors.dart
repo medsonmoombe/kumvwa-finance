@@ -28,4 +28,10 @@ class AppColors {
   static const Color line = Color(0xFFE6E9F0);
   static const Color bg = Color(0xFFF8F9FB);
   static const Color card = Color(0xFFFFFFFF);
+
+  // Dark home surface
+  static const Color darkBg = Color(0xFF0D1B3E);
+  static const Color darkCard = Color(0xFF152348);
+  static const Color darkLine = Color(0xFF1E2F5A);
+  static const Color darkMuted = Color(0xFF7A8FAF);
 }

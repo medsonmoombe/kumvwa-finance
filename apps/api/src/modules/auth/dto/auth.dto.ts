@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsEmail,
+  IsBoolean,
   IsIn,
   IsInt,
   IsOptional,
@@ -17,6 +18,11 @@ export class OtpRequestDto {
   @ApiProperty({ enum: ['registration', 'login', 'password_reset'] })
   @IsIn(['registration', 'login', 'password_reset'])
   purpose!: string;
+
+  /** Registration supplies this before a user record exists. */
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 }
 
 export class OtpVerifyDto extends OtpRequestDto {
@@ -50,10 +56,9 @@ export class RegisterTenantDto {
   otpToken!: string;
 
   // ── Business info (branding/billing contact) ──
-  @ApiProperty({ required: false, example: 'info@sacco.zm' })
-  @IsOptional()
+  @ApiProperty({ example: 'info@sacco.zm' })
   @IsEmail()
-  email?: string;
+  email!: string;
 
   @ApiProperty({ required: false, example: 'Plot 7, Lusaka' })
   @IsOptional()
@@ -80,25 +85,46 @@ export class RegisterTenantDto {
 }
 
 export class ForgotPasswordDto {
-  @ApiProperty({ example: '0971234567' })
+  @ApiProperty({ required: false, example: 'user@yourbusiness.zm' })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
+
+  @ApiProperty({ required: false, example: '0971234567' })
+  @IsOptional()
   @IsString()
-  phone!: string;
+  phone?: string;
 }
 
 export class ResetPasswordDto {
-  @ApiProperty({ example: '0971234567' })
-  @IsString()
-  phone!: string;
+  @ApiProperty({ required: false, example: 'user@yourbusiness.zm' })
+  @IsOptional()
+  @IsEmail()
+  email?: string;
 
-  @ApiProperty({ description: 'Token from POST /auth/otp/verify (purpose: password_reset)' })
+  @ApiProperty({ required: false, example: '0971234567' })
+  @IsOptional()
   @IsString()
-  otpToken!: string;
+  phone?: string;
+
+  @ApiProperty({ required: false, example: '123456' })
+  @IsOptional()
+  @IsString()
+  @MinLength(6)
+  @MaxLength(6)
+  code?: string;
+
+  @ApiProperty({ required: false, description: 'Token from POST /auth/otp/verify (if phone flow)' })
+  @IsOptional()
+  @IsString()
+  otpToken?: string;
 
   @ApiProperty({ minLength: 8 })
   @IsString()
   @MinLength(8, { message: 'Password must be at least 8 characters' })
   newPassword!: string;
 }
+
 
 export class ChangePasswordDto {
   @ApiProperty({ description: 'The currently signed-in password' })
@@ -118,6 +144,39 @@ export class LoginDto {
 
   @IsString()
   password!: string;
+}
+
+export class ConsoleLoginDto {
+  @IsEmail()
+  email!: string;
+
+  @IsString()
+  @MinLength(8)
+  password!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  deviceLabel?: string;
+}
+
+export class ConsoleVerifyDto {
+  @IsString()
+  preToken!: string;
+
+  @IsString()
+  @MinLength(6)
+  @MaxLength(6)
+  code!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  rememberDevice?: boolean;
+}
+
+export class Set2faDto {
+  @IsBoolean()
+  enabled!: boolean;
 }
 
 export class RefreshDto {

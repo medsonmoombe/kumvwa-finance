@@ -69,8 +69,7 @@ void main() {
       expect(session.role, 'client');
     });
 
-    test('the business account still works after adding the client',
-        () async {
+    test('the business account still works after adding the client', () async {
       final session = await repo().login(
         phone: '971234567',
         password: 'kumvwa123',

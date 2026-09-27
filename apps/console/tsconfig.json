@@ -15,7 +15,10 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "paths": {
+      "@kumvwa/core": ["../../packages/core/dist/index.d.ts"]
+    }
   },
   "include": ["src"]
 }

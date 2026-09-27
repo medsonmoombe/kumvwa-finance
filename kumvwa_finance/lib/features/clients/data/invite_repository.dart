@@ -99,10 +99,13 @@ class ApiInviteRepository implements InviteRepository {
   }) async {
     try {
       final results = await Future.wait([
-        _client.postA('/invites', data: {
-          'clientName': clientName.trim(),
-          'phone': toE164(phone.trim()),
-        }),
+        _client.postA(
+          '/invites',
+          data: {
+            'clientName': clientName.trim(),
+            'phone': toE164(phone.trim()),
+          },
+        ),
         _client.getA('/tenants/me'),
       ]);
       final data = results[0].data as Map<String, dynamic>;
@@ -159,10 +162,10 @@ class ApiInviteRepository implements InviteRepository {
   }
 
   static String _friendly(ApiException e) => switch (e.statusCode) {
-        404 => 'This invite code is invalid or has expired.',
-        409 => e.message,
-        _ => e.message,
-      };
+    404 => 'This invite code is invalid or has expired.',
+    409 => e.message,
+    _ => e.message,
+  };
 }
 
 // ---------- DI ----------

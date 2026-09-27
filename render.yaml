@@ -76,28 +76,4 @@ services:
       - key: DEV_AUTO_VERIFY_TENANTS
         value: false
 
-  # ── Worker (email outbox + overdue jobs) ───────────────────────────────────
-  - type: worker
-    name: kumvwa-worker
-    runtime: node
-    rootDir: apps/worker
-    buildCommand: cd ../.. && npm install -g pnpm && pnpm install --frozen-lockfile && pnpm --filter @kumvwa/core build && pnpm --filter worker build
-    startCommand: node dist/main.js
-    plan: free
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: kumvwa-db
-          property: connectionString
-      - key: SMTP_HOST
-        value: smtp.gmail.com
-      - key: SMTP_PORT
-        value: 587
-      - key: SMTP_USER
-        sync: false
-      - key: SMTP_PASS
-        sync: false
-      - key: SMTP_FROM
-        sync: false
-      - key: WORKER_TICK_MS
-        value: 30000
+
