@@ -148,6 +148,15 @@ export function assertDeployableStorage(env: Env): void {
       `S3_ENDPOINT="${env.S3_ENDPOINT}" is a loopback address while STORAGE_DRIVER=s3, so clients could not upload to or read from the bucket. Point it at your MinIO/S3/R2 endpoint.`,
     );
   }
+  // A plain-http endpoint fails in the browser for a reason nothing server-side
+  // can see: an https console refuses to PUT to an http URL (mixed content)
+  // and reports it as an opaque network error, before CORS is even consulted.
+  // The API's own self-test still passes, so the config looks healthy.
+  if (env.STORAGE_DRIVER === 's3' && !/^https:\/\//i.test(env.S3_ENDPOINT)) {
+    problems.push(
+      `S3_ENDPOINT="${env.S3_ENDPOINT}" is not https, so browsers block every upload as mixed content before storage is contacted. Use https, e.g. https://s3.us-east-005.backblazeb2.com`,
+    );
+  }
   // Same shape of silent failure: B2 signs the region, so a region that
   // disagrees with the endpoint rejects every presigned PUT and GET while the
   // API's own logs stay quiet. Only checked when S3_REGION is set by hand —

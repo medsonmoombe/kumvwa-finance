@@ -5,7 +5,11 @@ import path from 'node:path';
 import type { Readable } from 'node:stream';
 
 import type { Env } from '../../../config/env';
-import type { StorageDriver, StoredObject } from './storage.interface';
+import type {
+  StorageDriver,
+  StorageSelfTest,
+  StoredObject,
+} from './storage.interface';
 
 export const PRESIGN_TTL_SEC = 900;
 
@@ -44,6 +48,35 @@ export class LocalStorageDriver implements StorageDriver {
   async init(): Promise<void> {
     await fs.promises.mkdir(this.storageDir, { recursive: true });
     this.logger.log(`Local file storage active at "${this.storageDir}"`);
+
+    const result = await this.selfTest();
+    if (result.ok) {
+      this.logger.log(`Storage self-test passed (${result.detail})`);
+    } else {
+      this.logger.error(
+        `Storage self-test FAILED (${result.detail}). Every upload will fail.`,
+      );
+    }
+  }
+
+  /** Local disk is either writable or it is not — same contract as S3. */
+  async selfTest(): Promise<StorageSelfTest> {
+    const fullPath = this.resolvePath('_diagnostics/storage-probe');
+    try {
+      await fs.promises.mkdir(path.dirname(fullPath), { recursive: true });
+      await fs.promises.writeFile(fullPath, 'kumvwa storage probe');
+      await fs.promises.readFile(fullPath);
+      await fs.promises.rm(fullPath, { force: true });
+      return {
+        ok: true,
+        detail: `wrote, read back and deleted a probe under "${this.storageDir}"`,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        detail: `${(err as Error).message ?? err}`,
+      };
+    }
   }
 
   resolvePath(key: string): string {

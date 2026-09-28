@@ -41,6 +41,29 @@ function storageHint(uploadUrl: string): string {
 }
 
 /**
+ * `fetch` rejects with the same opaque TypeError for a genuine network
+ * failure, a CORS preflight the bucket refused, and a mixed-content block —
+ * the browser deliberately withholds the reason. The scheme is the one thing
+ * we can still check, and it decides between the two likely causes.
+ */
+function storageHintCause(uploadUrl: string): string {
+  let insecure = false;
+  try {
+    insecure =
+      new URL(uploadUrl).protocol === 'http:' &&
+      window.location.protocol === 'https:';
+  } catch {
+    return 'Check the storage service is running, then try again.';
+  }
+  if (insecure) {
+    return 'Its address is http while this page is https, so the browser blocked it as mixed content — the API needs S3_ENDPOINT set to an https URL.';
+  }
+  return (
+    "The browser could not complete the request. If the storage service is running, the bucket's CORS rules are refusing this origin — they must allow PUT and the 'content-type' header."
+  );
+}
+
+/**
  * Presign → PUT → confirm. The PUT goes straight to storage (the API never
  * proxies PII bytes), so its failures are network-level: say so, and say
  * nothing was saved, instead of bubbling an opaque "failed to fetch".
@@ -63,7 +86,7 @@ export async function uploadFile(file: File, kind: UploadKind): Promise<string> 
     });
   } catch {
     throw new Error(
-      `Could not reach file storage (${storageHint(up.data.uploadUrl)}). Nothing was saved — start the storage service and try again.`,
+      `Could not reach file storage (${storageHint(up.data.uploadUrl)}). Nothing was saved. ${storageHintCause(up.data.uploadUrl)}`,
     );
   }
   if (!put.ok) {

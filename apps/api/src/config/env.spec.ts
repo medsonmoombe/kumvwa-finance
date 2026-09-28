@@ -129,6 +129,27 @@ describe('loadEnv', () => {
     expect(resolveS3Region(loadEnv(base))).toBe('us-east-1');
   });
 
+  it('refuses a plain-http S3 endpoint in prod (browser mixed-content block)', () => {
+    expect(() =>
+      loadEnv({
+        ...base,
+        NODE_ENV: 'prod',
+        STORAGE_DRIVER: 's3',
+        API_PUBLIC_URL: 'https://api.kumvwa.co.zm/api/v1',
+        S3_ENDPOINT: 'http://s3.us-east-005.backblazeb2.com',
+      }),
+    ).toThrow(/S3_ENDPOINT/);
+  });
+
+  it('keeps a plain-http endpoint working in dev', () => {
+    const env = loadEnv({
+      ...base,
+      STORAGE_DRIVER: 's3',
+      S3_ENDPOINT: 'http://localhost:9000',
+    });
+    expect(resolveS3Region(env)).toBe('us-east-1');
+  });
+
   it('refuses an S3_REGION that contradicts a Backblaze endpoint in prod', () => {
     expect(() =>
       loadEnv({

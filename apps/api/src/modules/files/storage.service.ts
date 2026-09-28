@@ -6,10 +6,14 @@ import {
   PRESIGN_TTL_SEC,
 } from './storage/local-storage.driver';
 import { S3StorageDriver } from './storage/s3-storage.driver';
-import type { StorageDriver, StoredObject } from './storage/storage.interface';
+import type {
+  StorageDriver,
+  StorageSelfTest,
+  StoredObject,
+} from './storage/storage.interface';
 
 export { PRESIGN_TTL_SEC };
-export type { StoredObject };
+export type { StorageSelfTest, StoredObject };
 
 /**
  * Storage provider coordinator.
@@ -58,6 +62,11 @@ export class StorageService implements OnModuleInit {
 
   head(key: string): Promise<StoredObject | null> {
     return this.driver.head(key);
+  }
+
+  /** On-demand re-run of the boot check, for ops without a redeploy. */
+  selfTest(): Promise<StorageSelfTest> {
+    return this.driver.selfTest();
   }
 
   isLocal(): boolean {
