@@ -67,6 +67,12 @@ export class AuthController {
   }
 
   @Public()
+  @Get('console/config')
+  consoleConfig() {
+    return this.auth.consoleOtpFlow();
+  }
+
+  @Public()
   @Post('console/login')
   @HttpCode(200)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })

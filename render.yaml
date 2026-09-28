@@ -47,6 +47,10 @@ services:
         generateValue: true
       - key: OTP_DEV_MODE
         value: false
+      # TEMPORARY: console sign-in is credentials-only (no OTP screen).
+      # Flip to 'enabled' to restore console 2FA.
+      - key: CONSOLE_OTP_FLOW
+        value: disabled
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT

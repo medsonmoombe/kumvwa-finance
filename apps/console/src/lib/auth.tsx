@@ -61,6 +61,12 @@ interface AuthState {
   user: SessionUser | null;
   tenant: TenantInfo | null;
   loading: boolean;
+  /**
+   * Mirrors the API's `otpFlow` flag. When false, console sign-in completes on
+   * credentials alone — no OTP screen, no 2FA copy. Fetched from the API so a
+   * deploy can flip it without rebuilding the console.
+   */
+  otpFlowEnabled: boolean;
   loginStage1: (email: string, password: string) => Promise<{ needs2fa: boolean; error?: string; devCode?: string }>;
   loginStage2: (code: string, rememberDevice: boolean) => Promise<string | null>;
   refreshSession: () => Promise<void>;
@@ -74,6 +80,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [preToken, setPreToken] = useState<string | null>(null);
+  // Optimistic default: assume 2FA is on until the API says otherwise, so we
+  // never silently downgrade security if the config call fails.
+  const [otpFlowEnabled, setOtpFlowEnabled] = useState(true);
 
   const refreshSession = useCallback(async () => {
     try {
@@ -98,6 +107,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
     })();
   }, [refreshSession]);
+
+  // Public flag — readable before authentication so the login screen can
+  // decide whether to render any 2FA UI at all.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const cfg = await api.get<{ otpFlow: 'enabled' | 'disabled' }>(
+          '/auth/console/config',
+        );
+        setOtpFlowEnabled(cfg.data.otpFlow !== 'disabled');
+      } catch {
+        // Keep the safe default when the API is unreachable.
+      }
+    })();
+  }, []);
 
   const loginStage1 = useCallback(
     async (email: string, password: string) => {
@@ -155,8 +179,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthState>(
-    () => ({ user, tenant, loading, loginStage1, loginStage2, refreshSession, logout }),
-    [user, tenant, loading, loginStage1, loginStage2, refreshSession, logout],
+    () => ({ user, tenant, loading, otpFlowEnabled, loginStage1, loginStage2, refreshSession, logout }),
+    [user, tenant, loading, otpFlowEnabled, loginStage1, loginStage2, refreshSession, logout],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -372,6 +372,16 @@ export class AuthService {
     };
   }
 
+  /**
+   * Public feature flag the console reads before login so it can hide the OTP
+   * screen entirely when the flow is switched off (e.g. broken email delivery).
+   * Mobile login already issues tokens without a console 2FA step, so this only
+   * governs the management console.
+   */
+  consoleOtpFlow(): { otpFlow: 'enabled' | 'disabled' } {
+    return { otpFlow: this.env.CONSOLE_OTP_FLOW };
+  }
+
   async consoleVerify2fa(dto: ConsoleVerifyDto, req: Request) {
     const claims = await this.tokens.verify(dto.preToken, 'pre2fa');
     const user = await this.prisma.user.findUnique({ where: { id: claims.sub } });

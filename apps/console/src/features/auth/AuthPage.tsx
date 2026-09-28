@@ -37,8 +37,15 @@ const FOOTERS: Record<View['k'], string> = {
   otp: 'Codes are single-use',
 };
 
+/** Shown when the API reports `otpFlow=disabled` — no 2FA language at all. */
+const LOGIN_BANNER_NO_2FA = {
+  ...BANNERS.login,
+  footerBody: 'Encrypted data · full audit trail',
+};
+const LOGIN_FOOTER_NO_2FA = 'All attempts logged';
+
 export function AuthPage() {
-  const { loginStage1, loginStage2 } = useAuth();
+  const { loginStage1, loginStage2, otpFlowEnabled } = useAuth();
   const nav = useNavigate();
 
   const [view, setView] = useState<View>({ k: 'login' });
@@ -92,8 +99,21 @@ export function AuthPage() {
     try { await loginStage1(email, password); } catch { /* silent */ }
   }
 
+  // With 2FA off, the OTP banner/footer never apply and the login copy drops
+  // every two-factor mention — the console never even hints at a code screen.
+  const banner = view.k === 'otp'
+    ? BANNERS.otp
+    : otpFlowEnabled
+      ? BANNERS.login
+      : LOGIN_BANNER_NO_2FA;
+  const footer = view.k === 'otp'
+    ? FOOTERS.otp
+    : otpFlowEnabled
+      ? FOOTERS.login
+      : LOGIN_FOOTER_NO_2FA;
+
   return (
-    <AuthLayout banner={BANNERS[view.k]} footer={FOOTERS[view.k]}>
+    <AuthLayout banner={banner} footer={footer}>
       {error && <div className="mt-5 mb-0"><ErrorBox message={error} /></div>}
 
       {/* ══ LOGIN ══ */}
@@ -123,13 +143,15 @@ export function AuthPage() {
               </button>
             </div>
           </div>
-          <div className="mb-4 flex items-center justify-between">
-            <Cbx checked={remember} onChange={setRemember} label="Remember device 30d" />
+          <div className={`mb-4 flex items-center ${otpFlowEnabled ? 'justify-between' : 'justify-end'}`}>
+            {otpFlowEnabled && (
+              <Cbx checked={remember} onChange={setRemember} label="Remember device 30d" />
+            )}
             <button className="text-[11px] font-bold text-[#1A4FBF]" onClick={() => nav('/forgot-password')}>
               Forgot password?
             </button>
           </div>
-          {hasTrustedDevice && (
+          {otpFlowEnabled && hasTrustedDevice && (
             <div className="mb-3 flex items-center justify-between rounded-[3px] border border-[#B9C6E8] bg-[#EDF3FE] px-3 py-2">
               <div className="flex items-center gap-2 text-[11px] text-[#1A4FBF]">
                 <FiMonitor size={13} />
@@ -150,6 +172,11 @@ export function AuthPage() {
             New to Kumvwa?{' '}
             <b className="cursor-pointer text-[#1A4FBF]" onClick={() => nav('/register')}>Register your business</b>
           </p>
+          {!otpFlowEnabled && (
+            <p className="mt-2 text-center text-[10.5px] text-[#888]">
+              Two-factor sign-in is temporarily off. You'll be signed in with your email and password.
+            </p>
+          )}
         </>
       )}
 
