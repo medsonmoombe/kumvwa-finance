@@ -178,7 +178,7 @@ export function RequestReviewPage() {
         {pending && (
           <FormSection title="Decision" defaultOpen>
             {risk && (
-              <div className="mb-3 grid grid-cols-3 gap-2.5">
+              <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
                 <div className="border border-line bg-surface p-2.5 text-center">
                   <div className="text-[9px] font-bold uppercase text-ink-muted">Score</div>
                   <b className="font-display text-[16px] tabular-nums"

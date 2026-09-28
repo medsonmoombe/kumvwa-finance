@@ -172,7 +172,7 @@ export function ProductForm({
 
       {/* config document */}
       <div className="overflow-hidden rounded-[3px] border border-line bg-white">
-        <div className="flex items-center justify-between border-b border-line bg-[#FAFBFD] px-3 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-line bg-[#FAFBFD] px-3 py-2">
           <span className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-ink-muted">
             {isEdit ? 'Modify' : 'Create'} · Loan Type
           </span>

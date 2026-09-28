@@ -1,5 +1,21 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { FiCheck, FiChevronDown, FiChevronLeft, FiChevronRight, FiMoreVertical, FiPlus, FiRefreshCw, FiSearch, FiTrash2, FiX } from 'react-icons/fi';
+
+/**
+ * Column counts are declared as literal class strings (never interpolated) so
+ * Tailwind's scanner can see them. Below `sm` every band collapses to two
+ * columns so the figures stay readable on a phone.
+ */
+const BAND_GRID: Record<number, string> = {
+  1: 'grid-cols-1',
+  2: 'grid-cols-2',
+  3: 'grid-cols-2 sm:grid-cols-3',
+  4: 'grid-cols-2 sm:grid-cols-4',
+  5: 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5',
+  6: 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-6',
+};
+const bandGrid = (cols: number) => BAND_GRID[cols] ?? 'grid-cols-2 sm:grid-cols-3';
 
 /** Figures band — headline numbers. */
 export function StatBand({ items, cols = 6 }: {
@@ -7,9 +23,9 @@ export function StatBand({ items, cols = 6 }: {
   cols?: number;
 }) {
   return (
-    <div className="ms mb-3.5" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+    <div className={`ms mb-3.5 ${bandGrid(cols)}`}>
       {items.map((it) => (
-        <div key={it.label}>
+        <div key={it.label} className="min-w-0">
           <div className="k">{it.label}</div>
           <div className="v tabular-nums" style={it.color ? { color: it.color } : undefined}>
             {it.value}
@@ -66,7 +82,7 @@ export function Sk({ w = 'w-full', h = 'h-3', className = '' }: { w?: string; h?
 /** Skeleton for the StatBand — N shimmer tiles. */
 export function StatBandSkeleton({ cols = 6 }: { cols?: number }) {
   return (
-    <div className="ms mb-3.5" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
+    <div className={`ms mb-3.5 ${bandGrid(cols)}`}>
       {Array.from({ length: cols }).map((_, i) => (
         <div key={i}>
           <Sk w="w-16" h="h-2" className="mb-2" />
@@ -107,7 +123,7 @@ export function ChartCardSkeleton({ height = 250, title = '' }: { height?: numbe
 export function DataGridSkeleton({ rows = 4, cols = 4 }: { rows?: number; cols?: number }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full">
+      <table className="w-full min-w-[560px]">
         <thead>
           <tr className="bg-[#FAFBFD]">
             {Array.from({ length: cols }).map((_, i) => (
@@ -210,7 +226,7 @@ export function ListSkeleton({
 /** Skeleton for a grid of small stat tiles. */
 export function StatTilesSkeleton({ cols = 4 }: { cols?: number }) {
   return (
-    <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+    <div className={`grid gap-3 ${bandGrid(cols)}`}>
       {Array.from({ length: cols }).map((_, i) => (
         <div key={i} className="border border-line bg-white p-3">
           <Sk w="w-16" h="h-2" className="mb-2" />
@@ -224,9 +240,9 @@ export function StatTilesSkeleton({ cols = 4 }: { cols?: number }) {
 /** Skeleton for a FormGrid of labelled inputs. */
 export function FormSkeleton({ fields = 6, cols = 3 }: { fields?: number; cols?: number }) {
   return (
-    <div className="grid gap-x-5 gap-y-3.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+    <div className={`grid gap-x-5 gap-y-3.5 ${bandGrid(cols)}`}>
       {Array.from({ length: fields }).map((_, i) => (
-        <div key={i}>
+        <div key={i} className="min-w-0">
           <Sk w="w-24" h="h-2" className="mb-1.5" />
           <Sk w="w-full" h="h-[38px]" />
         </div>
@@ -301,8 +317,8 @@ export function DetailPageSkeleton({
 export function FormSection({ title, children, defaultOpen = false, actions }: { title: string; children: ReactNode; defaultOpen?: boolean; actions?: ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
   return <div className="border-t border-line first:border-t-0">
-    <div className="flex items-center justify-between bg-[#FAFBFD] px-3 py-2">
-      <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 text-[10.5px] font-extrabold uppercase tracking-[0.1em] text-ink-2">
+    <div className="flex flex-wrap items-center justify-between gap-2 bg-[#FAFBFD] px-3 py-2">
+      <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 text-left text-[10.5px] font-extrabold uppercase tracking-[0.1em] text-ink-2">
         {open ? <FiChevronDown size={12} /> : <FiPlus size={12} className="text-brand-500" />}{title}
       </button>
       {actions}
@@ -311,16 +327,34 @@ export function FormSection({ title, children, defaultOpen = false, actions }: {
   </div>;
 }
 
+/**
+ * Field spans are applied from `sm` (two-column grid) or `lg` (three/four-column
+ * grid) upwards only, so a `span={3}` never asks for more tracks than the
+ * current breakpoint actually has.
+ */
+const FIELD_SPAN: Record<number, string> = {
+  1: '',
+  2: 'sm:col-span-2',
+  3: 'lg:col-span-3',
+};
+
 export function Field({ label, required, children, span = 1 }: { label: string; required?: boolean; children: ReactNode; span?: 1 | 2 | 3 }) {
-  return <div style={{ gridColumn: `span ${span}` }}><label className="mb-1 block text-[11px] font-semibold text-ink-2">{label} {required && <span className="text-danger-500">*</span>}</label>{children}</div>;
+  return <div className={`min-w-0 ${FIELD_SPAN[span] ?? ''}`}><label className="mb-1 block text-[11px] font-semibold text-ink-2">{label} {required && <span className="text-danger-500">*</span>}</label>{children}</div>;
 }
 
+const FORM_GRID: Record<number, string> = {
+  1: 'grid-cols-1',
+  2: 'grid-cols-1 sm:grid-cols-2',
+  3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
+  4: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4',
+};
+
 export function FormGrid({ children, cols = 3 }: { children: ReactNode; cols?: 2 | 3 | 4 }) {
-  return <div className="grid gap-x-5 gap-y-3.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>{children}</div>;
+  return <div className={`grid gap-x-5 gap-y-3.5 ${FORM_GRID[cols] ?? FORM_GRID[3]}`}>{children}</div>;
 }
 
 export function Toolbar({ children, right }: { children: ReactNode; right?: ReactNode }) {
-  return <div className="flex items-center gap-2 border-t border-line bg-[#FAFBFD] px-3 py-2">{children}{right && <div className="ml-auto flex items-center gap-2">{right}</div>}</div>;
+  return <div className="flex flex-wrap items-center gap-2 border-t border-line bg-[#FAFBFD] px-3 py-2">{children}{right && <div className="ml-auto flex items-center gap-2">{right}</div>}</div>;
 }
 
 /** Small action chip — the system's primary inline action button. */
@@ -348,12 +382,12 @@ export function Pill({ children, onClick, disabled, tone = 'primary' }: {
 /** Page-level action bar — title + sub + right-side action pills. */
 export function PageActionBar({ title, sub, actions }: { title: string; sub?: string; actions?: ReactNode }) {
   return (
-    <div className="mb-3.5 flex items-center justify-between">
-      <div>
+    <div className="mb-3.5 flex flex-col gap-2.5 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
+      <div className="min-w-0">
         <h1 className="font-display text-[17px] font-bold tracking-tight text-ink">{title}</h1>
         {sub && <p className="mt-0.5 text-[11px] text-ink-muted">{sub}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="-mx-1 flex flex-wrap items-center gap-2 px-1">{actions}</div>}
     </div>
   );
 }
@@ -366,7 +400,7 @@ export function KitButton({ children, tone = 'create', onClick, disabled }: { ch
 export interface Column<T> { key: string; header: string; render: (row: T) => ReactNode; width?: string; }
 export function DataGrid<T extends { id: string }>({ columns, rows, onRowClick, empty, skeletonRows = 5 }: { columns: Array<Column<T>>; rows: T[] | null; onRowClick?: (row: T) => void; empty?: string; skeletonRows?: number }) {
   if (!rows) return <DataGridSkeleton rows={skeletonRows} cols={columns.length} />;
-  return <div className="overflow-x-auto"><table className="w-full"><thead><tr className="bg-[#FAFBFD] text-left text-[9.5px] font-extrabold uppercase tracking-wider text-ink-muted">{columns.map((column) => <th key={column.key} className="border-b border-line px-3 py-2" style={column.width ? { width: column.width } : undefined}>{column.header}</th>)}</tr></thead><tbody>{rows.length === 0 && <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-[12px] text-ink-muted">{empty ?? 'No records'}</td></tr>}{rows.map((row) => <tr key={row.id} onClick={() => onRowClick?.(row)} className={`border-b border-line-2 text-[12px] transition-colors ${onRowClick ? 'cursor-pointer hover:bg-[#F5F8FE]' : ''}`}>{columns.map((column) => <td key={column.key} className="px-3 py-2.5">{column.render(row)}</td>)}</tr>)}</tbody></table></div>;
+  return <div className="overflow-x-auto"><table className="w-full min-w-[560px]"><thead><tr className="bg-[#FAFBFD] text-left text-[9.5px] font-extrabold uppercase tracking-wider text-ink-muted">{columns.map((column) => <th key={column.key} className="border-b border-line px-3 py-2 whitespace-nowrap" style={column.width ? { width: column.width } : undefined}>{column.header}</th>)}</tr></thead><tbody>{rows.length === 0 && <tr><td colSpan={columns.length} className="px-3 py-8 text-center text-[12px] text-ink-muted">{empty ?? 'No records'}</td></tr>}{rows.map((row) => <tr key={row.id} onClick={() => onRowClick?.(row)} className={`border-b border-line-2 text-[12px] transition-colors ${onRowClick ? 'cursor-pointer hover:bg-[#F5F8FE]' : ''}`}>{columns.map((column) => <td key={column.key} className="px-3 py-2.5">{column.render(row)}</td>)}</tr>)}</tbody></table></div>;
 }
 
 // ─── AppTable — the universal page-level table ────────────────────────────────
@@ -404,35 +438,51 @@ export interface AppTableProps<T extends { id: string }> {
 function RowMenu<T extends { id: string }>({
   row, actions, onRowClick,
 }: { row: T; actions?: (row: T) => Array<TableAction<T>>; onRowClick?: (row: T) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!pos) return;
     function close(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const menu = document.getElementById('row-menu-portal');
+      if (menu && menu.contains(e.target as Node)) return;
+      setPos(null);
     }
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
-  }, [open]);
+  }, [pos]);
 
   const items = actions?.(row) ?? [];
   const hasDetail = !!onRowClick;
   if (!hasDetail && items.length === 0) return null;
 
+  function open(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!btnRef.current) return;
+    const r = btnRef.current.getBoundingClientRect();
+    const menuH = (hasDetail ? 1 : 0 + items.length) * 36 + 8;
+    const top = r.bottom + menuH > window.innerHeight ? r.top - menuH : r.bottom + 4;
+    setPos({ top, left: r.right });
+  }
+
   return (
-    <div ref={ref} className="relative" onClick={(e) => e.stopPropagation()}>
+    <div onClick={(e) => e.stopPropagation()}>
       <button
-        onClick={() => setOpen((v) => !v)}
+        ref={btnRef}
+        onClick={open}
         className="flex h-6 w-6 items-center justify-center rounded-[3px] text-ink-muted hover:bg-[#ECEEF2] hover:text-ink"
       >
         <FiMoreVertical size={13} />
       </button>
-      {open && (
-        <div className="absolute right-0 top-7 z-50 min-w-[160px] overflow-hidden rounded-[4px] border border-line bg-white shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
+      {pos && createPortal(
+        <div
+          id="row-menu-portal"
+          style={{ position: 'fixed', top: pos.top, left: pos.left, transform: 'translateX(-100%)', zIndex: 9999 }}
+          className="min-w-[160px] overflow-hidden rounded-[4px] border border-line bg-white shadow-[0_4px_20px_rgba(0,0,0,0.14)]"
+        >
           {hasDetail && (
             <button
-              onClick={() => { setOpen(false); onRowClick(row); }}
+              onClick={() => { setPos(null); onRowClick!(row); }}
               className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold text-ink hover:bg-[#F5F8FE]"
             >
               View details
@@ -441,7 +491,7 @@ function RowMenu<T extends { id: string }>({
           {hasDetail && items.length > 0 && <div className="border-t border-line" />}
           {items.map((a, i) => (
             <button key={i}
-              onClick={() => { setOpen(false); a.onClick(row); }}
+              onClick={() => { setPos(null); a.onClick(row); }}
               className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] hover:bg-[#F5F8FE] ${
                 a.danger ? 'font-semibold text-red-600' : 'text-ink-2'
               }`}
@@ -450,7 +500,8 @@ function RowMenu<T extends { id: string }>({
               {a.label}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
@@ -476,6 +527,7 @@ export function AppTable<T extends { id: string }>({
   const total = rows?.length ?? 0;
   const pages = Math.max(1, Math.ceil(total / pageSize));
   const slice = rows?.slice((page - 1) * pageSize, page * pageSize) ?? null;
+  const hasChips = !!filters && filters.length > 1;
 
   const allCols = [
     ...columns,
@@ -491,12 +543,12 @@ export function AppTable<T extends { id: string }>({
       {/* ── toolbar ── */}
       <div className="flex flex-wrap items-center gap-2 border-b border-line bg-[#FAFBFD] px-3 py-2">
         {/* filter chips */}
-        {filters && filters.length > 1 && (
-          <div className="flex items-center gap-1">
-            {filters.map((f) => (
+        {hasChips && (
+          <div className="-mx-1 flex max-w-full items-center gap-1 overflow-x-auto px-1">
+            {filters!.map((f) => (
               <button key={f.value}
                 onClick={() => { onFilterChange?.(f.value); setPage(1); }}
-                className={`rounded-[3px] px-2.5 py-1 text-[10.5px] font-bold transition-colors ${
+                className={`shrink-0 whitespace-nowrap rounded-[3px] px-2.5 py-1 text-[10.5px] font-bold transition-colors ${
                   activeFilter === f.value
                     ? 'bg-brand-600 text-white'
                     : 'border border-line bg-white text-ink-2 hover:text-ink'
@@ -506,14 +558,14 @@ export function AppTable<T extends { id: string }>({
             ))}
           </div>
         )}
-        {/* search */}
-        <div className="relative ml-auto">
+        {/* search — full width on a phone unless the chips already took the row */}
+        <div className={`relative min-w-0 sm:ml-auto sm:w-auto ${hasChips ? 'w-full' : 'w-full flex-1 sm:flex-none'}`}>
           <FiSearch size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-muted" />
           <input
             value={q}
             onChange={(e) => handleSearch(e.target.value)}
             placeholder="Search…"
-            className="h-[26px] w-[180px] rounded-[3px] border border-line bg-white pl-7 pr-3 text-[11px] outline-none focus:border-brand-500 focus:w-[220px] transition-all"
+            className="h-[26px] w-full min-w-0 rounded-[3px] border border-line bg-white pl-7 pr-3 text-[11px] outline-none transition-all sm:w-[180px] sm:focus:w-[220px]"
           />
           {q && (
             <button onClick={() => handleSearch('')}
@@ -524,8 +576,8 @@ export function AppTable<T extends { id: string }>({
         </div>
         {toolbarRight}
         {onRefresh && (
-          <button onClick={onRefresh}
-            className="flex h-[26px] w-[26px] items-center justify-center rounded-[3px] border border-line bg-white text-ink-muted hover:text-ink">
+          <button onClick={onRefresh} aria-label="Refresh"
+            className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-[3px] border border-line bg-white text-ink-muted hover:text-ink">
             <FiRefreshCw size={11} />
           </button>
         )}
@@ -536,11 +588,11 @@ export function AppTable<T extends { id: string }>({
         <DataGridSkeleton rows={Math.min(6, pageSize)} cols={allCols.length} />
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full min-w-[560px]">
             <thead>
               <tr className="bg-[#FAFBFD] text-left text-[9.5px] font-extrabold uppercase tracking-wider text-ink-muted">
                 {allCols.map((col) => (
-                  <th key={col.key} className="border-b border-line px-3 py-2"
+                  <th key={col.key} className="border-b border-line px-3 py-2 whitespace-nowrap"
                     style={col.width ? { width: col.width } : undefined}>
                     {col.header}
                   </th>
@@ -574,20 +626,20 @@ export function AppTable<T extends { id: string }>({
 
       {/* ── pagination ── */}
       {total > pageSize && (
-        <div className="flex items-center justify-between border-t border-line bg-[#FAFBFD] px-3 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-[#FAFBFD] px-3 py-2">
           <span className="text-[10.5px] text-ink-muted">
             {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} of {total}
           </span>
           <div className="flex items-center gap-1">
             <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page === 1}
-              className="flex h-6 w-6 items-center justify-center rounded-[3px] border border-line bg-white text-ink-muted disabled:opacity-40 hover:text-ink">
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[3px] border border-line bg-white text-ink-muted disabled:opacity-40 hover:text-ink">
               <FiChevronLeft size={12} />
             </button>
             {Array.from({ length: Math.min(pages, 7) }, (_, i) => {
               const n = pages <= 7 ? i + 1 : page <= 4 ? i + 1 : page >= pages - 3 ? pages - 6 + i : page - 3 + i;
               return (
                 <button key={n} onClick={() => setPage(n)}
-                  className={`flex h-6 min-w-[24px] items-center justify-center rounded-[3px] px-1 text-[10.5px] font-bold ${
+                  className={`flex h-6 min-w-[24px] shrink-0 items-center justify-center rounded-[3px] px-1 text-[10.5px] font-bold ${
                     n === page ? 'bg-brand-600 text-white' : 'border border-line bg-white text-ink-2 hover:text-ink'
                   }`}>
                   {n}
@@ -595,7 +647,7 @@ export function AppTable<T extends { id: string }>({
               );
             })}
             <button onClick={() => setPage((p) => Math.min(pages, p + 1))} disabled={page === pages}
-              className="flex h-6 w-6 items-center justify-center rounded-[3px] border border-line bg-white text-ink-muted disabled:opacity-40 hover:text-ink">
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[3px] border border-line bg-white text-ink-muted disabled:opacity-40 hover:text-ink">
               <FiChevronRight size={12} />
             </button>
           </div>
@@ -629,33 +681,44 @@ export function Drawer({ open, onClose, title, sub, children, width = 420 }: {
       />
       {/* panel */}
       <aside
-        style={{ width }}
+        style={{ width, maxWidth: '100vw' }}
         className={`fixed right-0 top-0 z-50 flex h-full flex-col border-l border-line bg-white shadow-[-20px_0_48px_rgba(15,17,21,0.10)] transition-transform duration-200 ease-out ${
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
         {/* header */}
-        <div className="flex shrink-0 items-start justify-between border-b border-line px-5 py-4">
-          <div>
+        <div className="flex shrink-0 items-start justify-between gap-2 border-b border-line px-4 py-4 sm:px-5">
+          <div className="min-w-0">
             <h3 className="font-display text-[15px] font-bold leading-tight text-ink">{title}</h3>
             {sub && <p className="mt-0.5 text-[11px] text-ink-muted">{sub}</p>}
           </div>
           <button
             onClick={onClose}
-            className="ml-4 flex h-7 w-7 shrink-0 items-center justify-center rounded-[3px] border border-line text-ink-muted hover:bg-surface hover:text-ink"
+            className="ml-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-[3px] border border-line text-ink-muted hover:bg-surface hover:text-ink"
           >
             <FiX size={13} />
           </button>
         </div>
         {/* scrollable body */}
-        <div className="flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">{children}</div>
       </aside>
     </>
   );
 }
 
 export function PageTabs({ tabs, active, onChange }: { tabs: Array<{ id: string; label: string }>; active: string; onChange: (id: string) => void }) {
-  return <div className="flex gap-5 border-b border-line">{tabs.map((tab) => <button key={tab.id} onClick={() => onChange(tab.id)} className={`-mb-px border-b-2 pb-2.5 text-[12.5px] font-semibold transition-colors ${active === tab.id ? 'border-brand-500 text-brand-600' : 'border-transparent text-ink-muted hover:text-ink'}`}>{tab.label}</button>)}</div>;
+  return (
+    <div className="-mx-1 overflow-x-auto px-1">
+      <div className="flex w-max gap-5 border-b border-line">
+        {tabs.map((tab) => (
+          <button key={tab.id} onClick={() => onChange(tab.id)}
+            className={`-mb-px whitespace-nowrap border-b-2 pb-2.5 text-[12.5px] font-semibold transition-colors ${active === tab.id ? 'border-brand-500 text-brand-600' : 'border-transparent text-ink-muted hover:text-ink'}`}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // ─── ConfirmDialog — destructive action gate ───────────────────────────────
@@ -668,7 +731,7 @@ export function ConfirmDialog({
 }) {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#0D1426]/40 p-6 backdrop-blur-[2px]"
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[#0D1426]/40 p-4 backdrop-blur-[2px] sm:p-6"
       onClick={onClose}>
       <div className="w-full max-w-sm overflow-hidden rounded-[4px] border border-line bg-white shadow-[0_8px_32px_rgba(0,0,0,0.18)]"
         onClick={(e) => e.stopPropagation()}>
@@ -678,7 +741,7 @@ export function ConfirmDialog({
         </div>
         <div className="px-4 py-4">
           <p className="text-[12.5px] leading-relaxed text-ink-2">{body}</p>
-          <div className="mt-4 flex justify-end gap-2">
+          <div className="mt-4 flex flex-wrap justify-end gap-2">
             <Pill tone="ghost" onClick={onClose}>Cancel</Pill>
             <Pill tone={danger ? 'danger' : 'primary'} onClick={onConfirm} disabled={busy}>
               {busy ? 'Working…' : confirmLabel}
@@ -706,7 +769,7 @@ export function AuthLayout({
   footer?: string;
 }) {
   return (
-    <div className="flex h-screen overflow-hidden bg-[#171C28]">
+    <div className="flex min-h-[100dvh] flex-col overflow-hidden bg-[#171C28] lg:flex-row">
       {/* ── left brand panel ── */}
       <div
         className="relative hidden flex-[1.05] flex-col justify-between overflow-hidden p-[38px] lg:flex"
@@ -735,9 +798,9 @@ export function AuthLayout({
       </div>
 
       {/* ── right form panel ── */}
-      <div className="relative flex flex-1 flex-col overflow-hidden bg-white">
+      <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden bg-white">
         {/* mini logo — fixed top */}
-        <div className="flex shrink-0 items-center gap-2 px-[34px] pt-[22px] pb-3">
+        <div className="flex shrink-0 items-center gap-2 px-5 pb-3 pt-[22px] sm:px-[34px]">
           <div className="flex h-[22px] w-[22px] items-center justify-center rounded-[5px] bg-gradient-to-br from-[#2E63E6] to-[#0D2C6E] text-[10px] font-extrabold text-white">K</div>
           <div>
             <b className="block text-[12px] leading-tight text-ink">Kumvwa</b>
@@ -746,9 +809,9 @@ export function AuthLayout({
           <span className="ml-auto rounded-[3px] border border-[#D9DDE3] px-[7px] py-[2px] text-[9px] font-bold text-[#888]">PRODUCTION</span>
         </div>
         {/* scrollable form area */}
-        <div className="flex-1 overflow-y-auto px-[34px] pb-[48px]">{children}</div>
+        <div className="flex-1 overflow-y-auto px-5 pb-[48px] sm:px-[34px]">{children}</div>
         {/* sticky footer */}
-        <div className="absolute bottom-0 left-0 right-0 flex justify-between border-t border-[#ECECEC] bg-white px-[34px] py-2.5 text-[9px] text-[#B4BAC8]">
+        <div className="absolute bottom-0 left-0 right-0 flex justify-between border-t border-[#ECECEC] bg-white px-5 py-2.5 text-[9px] text-[#B4BAC8] sm:px-[34px]">
           <b className="font-semibold text-[#3A4050]">Kumvwa Finance</b>
           <span>{footer ?? 'Console v1.0'}</span>
         </div>
@@ -757,22 +820,25 @@ export function AuthLayout({
   );
 }
 
+/** Horizontal gutter used by auth section headers — mirrors AuthLayout padding. */
+export const AUTH_GUTTER = '-mx-5 px-5 sm:-mx-[34px] sm:px-[34px]';
+
 /** 3-step stepper used across auth flows. */
 export function AuthStepper({ steps, current }: { steps: string[]; current: number }) {
   return (
-    <div className="mb-5 flex items-center gap-2">
+    <div className="mb-5 flex items-center gap-1.5 sm:gap-2">
       {steps.map((label, i) => {
         const done = i < current;
         const now = i === current;
         return (
           <Fragment key={label}>
-            {i > 0 && <div className={`h-0.5 flex-1 rounded-full ${done ? 'bg-[#2E7D32]' : 'bg-[#D9DDE3]'}`} />}
+            {i > 0 && <div className={`h-0.5 min-w-[6px] flex-1 rounded-full ${done ? 'bg-[#2E7D32]' : 'bg-[#D9DDE3]'}`} />}
             <span className={`flex h-[21px] w-[21px] shrink-0 items-center justify-center rounded-full text-[9.5px] font-extrabold ${
               done ? 'bg-[#2E7D32] text-white' : now ? 'bg-brand-600 text-white shadow-[0_0_0_3px_rgba(26,79,191,0.15)]' : 'bg-[#E4E7ED] text-[#888]'
             }`}>
               {done ? <FiCheck className="h-2.5 w-2.5" /> : i + 1}
             </span>
-            <span className={`text-[10px] font-bold ${now ? 'text-ink' : 'text-[#888]'}`}>{label}</span>
+            <span className={`whitespace-nowrap text-[10px] font-bold ${now ? 'text-ink' : 'text-[#888]'}`}>{label}</span>
           </Fragment>
         );
       })}

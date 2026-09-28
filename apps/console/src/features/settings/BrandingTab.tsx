@@ -70,7 +70,7 @@ export function BrandingTab({
         </div>
         <div>
           <Sk w="w-40" h="h-2.5" className="mb-2" />
-          <div className="mx-auto w-[260px] rounded-[38px] border-[7px] border-[#0B0F1A] bg-surface p-2.5 shadow-c3">
+          <div className="mx-auto w-[260px] max-w-full rounded-[38px] border-[7px] border-[#0B0F1A] bg-surface p-2.5 shadow-c3">
             <div className="h-[380px] animate-pulse rounded-[31px] bg-[#E9ECF1]" />
           </div>
         </div>
@@ -286,7 +286,7 @@ export function BrandingTab({
 export function PreviewCard({ branding }: { branding: Branding }) {
   const c = branding.primaryColor;
   return (
-    <div className="mx-auto w-[260px] rounded-[38px] border-[7px] border-[#0B0F1A] bg-surface shadow-c3">
+        <div className="mx-auto w-[260px] max-w-full rounded-[38px] border-[7px] border-[#0B0F1A] bg-surface shadow-c3">
       <div className="overflow-hidden rounded-[31px]">
         <div className="flex items-center justify-between bg-white px-4 pb-1 pt-2.5 text-[9px] font-bold text-ink">
           <span>09:41</span>

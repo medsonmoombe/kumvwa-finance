@@ -279,7 +279,7 @@ export function ClientDetailPage() {
 
       {/* NRC photo modal */}
       {showPhoto && photoUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0D1426]/50 p-6"
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0D1426]/50 p-4 sm:p-6"
           onClick={() => setShowPhoto(false)}>
           <div className="max-w-md rounded-card bg-white p-4 shadow-c3" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 flex items-center justify-between">

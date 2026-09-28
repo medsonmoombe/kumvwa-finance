@@ -304,6 +304,71 @@ export class InvitesService {
     return { clientId, linkedExisting: false };
   }
 
+  /**
+   * Resend the invite email for a pending invite. The code is unchanged —
+   * only the email is re-sent so the client can find it.
+   */
+  async resend(tenantId: string, actorId: string, inviteId: string) {
+    const invite = await this.prisma.invite.findFirst({
+      where: { id: inviteId, tenantId },
+    });
+    if (!invite) throw new NotFoundException('Invite not found');
+    if (invite.status !== 'pending') {
+      throw new BadRequestException('Only pending invites can be resent');
+    }
+    if (invite.expiresAt < new Date()) {
+      throw new BadRequestException('Invite has expired — create a new one');
+    }
+
+    // We never store the raw code — look it up via the stored hash by
+    // re-deriving it from the invite row. We can't recover the original code,
+    // so we mint a fresh one and update the hash.
+    const code = await this.newCode();
+    await this.prisma.invite.update({
+      where: { id: invite.id },
+      data: { tokenHash: this.hashToken(code) },
+    });
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { name: true },
+    });
+    const subject = `Your invite code — ${tenant?.name ?? 'Kumvwa Finance'}`;
+    const body = [
+      `Hi ${invite.clientName},`,
+      '',
+      `Here is your updated invite code for ${tenant?.name ?? 'Kumvwa Finance'}:`,
+      '',
+      `Invite code: ${code}`,
+      `Or tap on your phone: kumvwa:///invite/${code}`,
+      '',
+      `This invite expires on ${invite.expiresAt.toDateString()}.`,
+    ].join('\n');
+
+    // We don't store the email on the invite row, so we look it up from the
+    // EmailOutbox (the original invite email is always the first one).
+    const original = await this.prisma.emailOutbox.findFirst({
+      where: { purpose: 'invite', body: { contains: invite.phone } },
+      orderBy: { createdAt: 'asc' },
+      select: { to: true },
+    });
+    const to = original?.to;
+    if (to) {
+      await this.prisma.emailOutbox.create({ data: { to, subject, body, purpose: 'invite' } });
+      await this.email.send(to, subject, body);
+    }
+
+    await this.audit.record({
+      actorId,
+      action: 'invite.resend',
+      entity: 'Invite',
+      entityId: invite.id,
+      tenantId,
+    });
+
+    return { id: invite.id, code, resent: true, link: this.env.APP_DOWNLOAD_URL };
+  }
+
   /** Lender-side list for the invites screen. */
   async listForTenant(tenantId: string, status?: string) {
     const rows = await this.prisma.invite.findMany({

@@ -36,6 +36,13 @@ export class InvitesController {
     return this.invites.listForTenant(u.tenantId!, status);
   }
 
+  @Roles('tenant_owner', 'tenant_staff')
+  @RequirePermissions('clients.invite')
+  @Post(':id/resend')
+  resend(@CurrentUser() u: TokenClaims, @Param('id') id: string) {
+    return this.invites.resend(u.tenantId!, u.sub, id);
+  }
+
   /** The invited client has no account yet — this route must be open. */
   @Public()
   @Get(':code')

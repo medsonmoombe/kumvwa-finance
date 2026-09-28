@@ -196,6 +196,13 @@ export class AuthService {
     const exists = await this.prisma.user.findUnique({ where: { phone } });
     if (exists) throw new ConflictException('Phone already registered');
 
+    if (dto.email) {
+      const emailTaken = await this.prisma.user.findUnique({
+        where: { email: dto.email.trim().toLowerCase() },
+      });
+      if (emailTaken) throw new ConflictException('Email already registered');
+    }
+
     // Terms acceptance is mandatory at registration. The UI shows the current
     // version; a stale/absent version means the text changed under them.
     const terms = await this.terms.platformLatest();

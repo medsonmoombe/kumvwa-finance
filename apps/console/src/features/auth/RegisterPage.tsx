@@ -237,7 +237,7 @@ export function RegisterPage() {
               onBlur={() => setTouched((t) => ({ ...t, phone: true }))} placeholder="0971234567" />
             <FieldError message={show('phone') && !phoneOk ? 'Enter a Zambian mobile number, e.g. 0971234567' : ''} />
           </div>
-          <div className="mb-3 grid grid-cols-2 gap-2">
+          <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div>
               <label className={lbl}>TPIN <span className="font-normal text-[#A6ADC0]">optional</span></label>
               <input className={`${inp} tabular-nums`} value={rTpin}

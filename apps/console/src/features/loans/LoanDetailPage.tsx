@@ -208,20 +208,24 @@ export function LoanDetailPage() {
                   <span className={`absolute -left-[35px] top-3 h-3.5 w-3.5 rounded-full border-[2.5px] border-white ${
                     isPaid ? 'bg-accent-500' : isOverdue ? 'bg-danger-500' : 'animate-pulse bg-brand-500'
                   }`} style={{ boxShadow: '0 0 0 2px #E7EAF1' }} />
-                  <b className="block text-[12.5px] font-semibold">
-                    Installment {s.seq} · {isPaid ? 'Paid' : isOverdue ? 'Overdue' : `Due ${date(s.dueDate)}`}
-                  </b>
-                  <span className="text-[10.5px] tabular-nums text-ink-muted">
-                    {date(s.dueDate)}{isPaid && s.paidAt ? ` · paid ${date(s.paidAt)}` : ''}
-                  </span>
-                  {Number(s.penaltyMinor) > 0 && (
-                    <span className="ml-2 text-[10.5px] font-bold tabular-nums text-danger-500">
-                      + penalty {money(s.penaltyMinor)}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <b className="block text-[12.5px] font-semibold">
+                        Installment {s.seq} — {isPaid ? 'Paid' : isOverdue ? 'Overdue' : `Due ${date(s.dueDate)}`}
+                      </b>
+                      <span className="text-[10.5px] tabular-nums text-ink-muted">
+                        {date(s.dueDate)}{isPaid && s.paidAt ? ` · paid ${date(s.paidAt)}` : ''}
+                      </span>
+                      {Number(s.penaltyMinor) > 0 && (
+                        <span className="ml-2 text-[10.5px] font-bold tabular-nums text-danger-500">
+                          + penalty {money(s.penaltyMinor)}
+                        </span>
+                      )}
+                    </div>
+                    <span className={`shrink-0 font-display text-[12.5px] font-bold tabular-nums ${isPaid ? 'text-accent-700' : 'text-ink'}`}>
+                      {money(s.amountMinor)}
                     </span>
-                  )}
-                  <span className={`absolute right-0 top-2.5 font-display text-[12.5px] font-bold tabular-nums ${isPaid ? 'text-accent-700' : 'text-ink'}`}>
-                    {money(s.amountMinor)}
-                  </span>
+                  </div>
                 </div>
               );
             })}
@@ -248,7 +252,7 @@ export function LoanDetailPage() {
               <div className="band"><span className="t">Record Repayment</span></div>
               <div className="p-3.5 space-y-2.5">
                 <div className="flex gap-2">
-                  <input className={inputCls} value={amount}
+                  <input className={`${inputCls} min-w-0`} value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     placeholder="Amount in K" inputMode="decimal" />
                   <button type="button"

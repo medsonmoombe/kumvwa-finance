@@ -32,8 +32,8 @@ input[type='range'] {
 .ms .k { font-size: 9px; font-weight: 700; color: #7A8194; text-transform: uppercase; letter-spacing: .05em; }
 .ms .v { font-family: Poppins, sans-serif; font-size: 17px; font-weight: 800; color: #0F1115; margin-top: 2px; }
 
-/* section band */
-.band { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+/* section band — wraps so long meta text reflows instead of overflowing */
+.band { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px;
   background: #F5F6F8; border-bottom: 1px solid #ECECEC; }
 .band .t { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #333; }
 

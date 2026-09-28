@@ -25,6 +25,8 @@ type TenantDetail = {
   loans: Array<{ id: string; loanRef: string; status: string; principal: string; outstanding: string; createdAt: string }>;
 };
 
+type OwnerNrc = { revealed: false } | { revealed: true; value: string | null };
+
 export function AdminTenantDetailPage() {
   const { id } = useParams();
   const [tenant, setTenant] = useState<TenantDetail | null>(null);
@@ -33,6 +35,8 @@ export function AdminTenantDetailPage() {
   const [error, setError] = useState('');
   const [document, setDocument] = useState<Attachment | null>(null);
   const [documentUrl, setDocumentUrl] = useState('');
+  const [ownerNrc, setOwnerNrc] = useState<OwnerNrc>({ revealed: false });
+  const [nrcBusy, setNrcBusy] = useState(false);
 
   const load = useCallback(() => {
     api.get<TenantDetail>(`/admin/tenants/${id}`).then((r) => setTenant(r.data)).catch((e) => setError(apiError(e)));
@@ -46,6 +50,16 @@ export function AdminTenantDetailPage() {
       await api.patch(`/admin/tenants/${id}/verification`, { decision, ...(decision === 'reject' ? { reason: reason.trim() } : {}) });
       load();
     } catch (e) { setError(apiError(e)); } finally { setBusy(false); }
+  }
+
+  async function revealNrc() {
+    if (!id || nrcBusy) return;
+    setNrcBusy(true);
+    try {
+      const res = await api.get<{ ownerNrc: string | null }>(`/admin/tenants/${id}/identity`);
+      setOwnerNrc({ revealed: true, value: res.data.ownerNrc });
+    } catch (e) { setError(apiError(e)); }
+    finally { setNrcBusy(false); }
   }
 
   async function viewDocument(file: Attachment) {
@@ -108,6 +122,20 @@ export function AdminTenantDetailPage() {
             <Field label="Business type">{tenant.type}</Field><Field label="Contact person">{tenant.contactPerson ?? 'Not provided'}</Field><Field label="Business email">{tenant.email ?? 'Not provided'}</Field>
             <Field label="TPIN">{tenant.tpin ?? 'Not provided'}</Field><Field label="Address" span={2}>{tenant.address ?? 'Not provided'}</Field>
             <Field label="Business description" span={2}>{tenant.tagline ?? 'Not provided'}</Field><Field label="Registration date">{date(tenant.createdAt)}</Field>
+          </FormGrid>
+        </FormSection>
+
+        <FormSection title="Owner identity" defaultOpen>
+          <FormGrid cols={3}>
+            <Field label="Owner NRC">
+              {ownerNrc.revealed
+                ? <span className="font-mono text-[12px]">{ownerNrc.value ?? '—'}</span>
+                : <button onClick={() => void revealNrc()} disabled={nrcBusy}
+                    className="text-[11.5px] font-bold text-brand-600 hover:underline disabled:opacity-40">
+                    {nrcBusy ? 'Loading…' : 'Reveal (access is audited)'}
+                  </button>
+              }
+            </Field>
           </FormGrid>
         </FormSection>
 

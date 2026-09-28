@@ -19,6 +19,9 @@ import { RegisterPage } from './features/auth/RegisterPage';
 import { PendingPage } from './features/auth/PendingPage';
 import { ClientsPage } from './features/clients/ClientsPage';
 import { ClientDetailPage } from './features/clients/ClientDetailPage';
+import { InvitesPage } from './features/clients/InvitesPage';
+import { InviteDetailPage } from './features/clients/InviteDetailPage';
+import { NotificationsPage } from './features/notifications/NotificationsPage';
 import { DashboardPage } from './features/dashboard/DashboardPage';
 import { LoanDetailPage } from './features/loans/LoanDetailPage';
 import { LoansPage } from './features/loans/LoansPage';
@@ -62,7 +65,7 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-[100dvh] items-center justify-center">
         <CenteredSpinner />
       </div>
     );
@@ -102,6 +105,9 @@ export default function App() {
               </Guard>
             }
           />
+          <Route path="/invites" element={<Guard><InvitesPage /></Guard>} />
+          <Route path="/invites/:id" element={<Guard><InviteDetailPage /></Guard>} />
+          <Route path="/notifications" element={<Guard><NotificationsPage /></Guard>} />
           <Route
             path="/requests"
             element={

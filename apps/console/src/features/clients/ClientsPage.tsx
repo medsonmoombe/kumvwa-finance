@@ -146,7 +146,7 @@ export function ClientsPage() {
 
 // ── Invite form (inside Drawer) ───────────────────────────────────────────────
 
-function InviteForm({ onDone }: { onDone: () => void }) {
+export function InviteForm({ onDone }: { onDone: () => void }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');

@@ -115,30 +115,36 @@ export function PolicyTab({
           <p className="mb-3 text-[11.5px] text-ink-muted">
             Clients climb by clearing loans with your business. The top tier is the ceiling any manual override can grant.
           </p>
-          <FormGrid cols={4}>
-            {['Repaid ≥', 'Tier name', 'Limit (K)', 'Max term'].map((h) => (
-              <div key={h} className="text-[10px] font-bold uppercase text-ink-muted">{h}</div>
-            ))}
-            {policy.tiers.map((t, i) => (
-              <Fragment key={i}>
-                <input className={inputCls} inputMode="numeric" value={t.clearedFrom}
-                  onChange={(e) => setTier(i, { clearedFrom: Number(e.target.value) || 0 })} />
-                <input className={inputCls} value={t.label} placeholder="Tier label"
-                  onChange={(e) => setTier(i, { label: e.target.value })} />
-                <input className={inputCls} inputMode="numeric" value={t.limitKwacha}
-                  onChange={(e) => setTier(i, { limitKwacha: Number(e.target.value) || 0 })} />
-                <div className="flex items-center gap-1.5">
-                  <input className={inputCls} inputMode="numeric" value={t.maxTermMonths}
-                    onChange={(e) => setTier(i, { maxTermMonths: Number(e.target.value) || 1 })} />
-                  <button type="button" onClick={() => removeTier(i)}
-                    disabled={policy.tiers.length === 1}
-                    className="rounded-[3px] p-1 text-red-500 hover:bg-red-50 disabled:opacity-30">
-                    <FiTrash2 size={13} />
-                  </button>
-                </div>
-              </Fragment>
-            ))}
-          </FormGrid>
+          {/* The ladder reads as a 4-up table, so it scrolls rather than
+              stacking — stacking would detach each header from its inputs. */}
+          <div className="-mx-1 overflow-x-auto px-1">
+            <div className="min-w-[520px]">
+              <div className="grid grid-cols-4 gap-x-5 gap-y-3.5">
+                {['Repaid ≥', 'Tier name', 'Limit (K)', 'Max term'].map((h) => (
+                  <div key={h} className="text-[10px] font-bold uppercase text-ink-muted">{h}</div>
+                ))}
+                {policy.tiers.map((t, i) => (
+                  <Fragment key={i}>
+                    <input className={inputCls} inputMode="numeric" value={t.clearedFrom}
+                      onChange={(e) => setTier(i, { clearedFrom: Number(e.target.value) || 0 })} />
+                    <input className={inputCls} value={t.label} placeholder="Tier label"
+                      onChange={(e) => setTier(i, { label: e.target.value })} />
+                    <input className={inputCls} inputMode="numeric" value={t.limitKwacha}
+                      onChange={(e) => setTier(i, { limitKwacha: Number(e.target.value) || 0 })} />
+                    <div className="flex items-center gap-1.5">
+                      <input className={inputCls} inputMode="numeric" value={t.maxTermMonths}
+                        onChange={(e) => setTier(i, { maxTermMonths: Number(e.target.value) || 1 })} />
+                      <button type="button" onClick={() => removeTier(i)}
+                        disabled={policy.tiers.length === 1}
+                        className="shrink-0 rounded-[3px] p-1 text-red-500 hover:bg-red-50 disabled:opacity-30">
+                        <FiTrash2 size={13} />
+                      </button>
+                    </div>
+                  </Fragment>
+                ))}
+              </div>
+            </div>
+          </div>
           <button type="button" onClick={addTier}
             className="mt-3 flex items-center gap-1.5 text-[11.5px] font-bold text-brand-600 hover:text-brand-900">
             <FiPlus size={12} /> Add tier

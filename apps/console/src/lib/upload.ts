@@ -84,14 +84,19 @@ export async function uploadFile(file: File, kind: UploadKind): Promise<string> 
       headers: { 'Content-Type': mime },
       body: file,
     });
-  } catch {
+  } catch (fetchErr) {
+    const detail = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+    console.error('[upload] PUT network error', { url: up.data.uploadUrl, error: detail, fetchErr });
     throw new Error(
-      `Could not reach file storage (${storageHint(up.data.uploadUrl)}). Nothing was saved. ${storageHintCause(up.data.uploadUrl)}`,
+      `Could not reach file storage (${storageHint(up.data.uploadUrl)}). Nothing was saved. ${storageHintCause(up.data.uploadUrl)} [${detail}]`,
     );
   }
   if (!put.ok) {
+    let body = '';
+    try { body = await put.text(); } catch { /* ignore */ }
+    console.error('[upload] PUT rejected', { status: put.status, statusText: put.statusText, body, url: up.data.uploadUrl });
     throw new Error(
-      `File storage rejected the upload (${put.status} ${put.statusText}). Nothing was saved — try again.`,
+      `File storage rejected the upload (${put.status} ${put.statusText}). Nothing was saved — try again. ${body ? `Detail: ${body.slice(0, 300)}` : ''}`,
     );
   }
 

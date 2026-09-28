@@ -122,7 +122,7 @@ export function AdminClientsPage() {
       {selected && (
         <div className="fixed inset-0 z-50 bg-[#0D1426]/40" onClick={() => setSelected(null)}>
           <aside
-            className="absolute right-0 top-0 flex h-full w-[400px] flex-col overflow-y-auto border-l border-line bg-white p-5"
+            className="absolute right-0 top-0 flex h-full w-[400px] max-w-full flex-col overflow-y-auto border-l border-line bg-white p-4 sm:p-5"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-1 flex items-start justify-between">
@@ -155,7 +155,7 @@ export function AdminClientsPage() {
                     )}
                   </dd>
                 </div>
-                <div><dt className="text-ink-muted">Email</dt><dd className="truncate font-semibold">{selected.email ?? 'Not provided'}</dd></div>
+                <div><dt className="text-ink-muted">Email</dt><dd className="break-words font-semibold">{selected.email ?? 'Not provided'}</dd></div>
                 <div><dt className="text-ink-muted">Date of birth</dt><dd className="font-semibold">{selected.dob ? new Date(selected.dob).toLocaleDateString() : 'Not provided'}</dd></div>
                 <div><dt className="text-ink-muted">Profile</dt><dd className="font-semibold">{selected.profileCompletedAt ? 'Completed' : 'Incomplete'}</dd></div>
                 <div className="col-span-2"><dt className="text-ink-muted">Address</dt><dd className="font-semibold">{selected.address ?? 'Not provided'}</dd></div>
@@ -222,7 +222,7 @@ export function AdminClientsPage() {
 
       {/* NRC photo modal — same contract as the lender's client detail page */}
       {selected && showPhoto(photoUrl) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0D1426]/50 p-6"
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0D1426]/50 p-4 sm:p-6"
           onClick={() => setPhotoUrl(null)}>
           <div className="max-w-md rounded-card bg-white p-4 shadow-c3" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 flex items-center justify-between">

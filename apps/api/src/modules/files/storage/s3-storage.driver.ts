@@ -69,12 +69,14 @@ export class S3StorageDriver implements StorageDriver {
     this.endpoint = env.S3_ENDPOINT;
     this.accessKey = env.S3_ACCESS_KEY;
     this.region = resolveS3Region(env);
+    // MinIO requires path-style; Backblaze B2 requires virtual-hosted style
+    // for presigned URLs used by browsers (path-style is rejected with an
+    // opaque network error that looks like CORS but isn't).
+    const isBackblaze = /backblazeb2\.com/i.test(env.S3_ENDPOINT);
     this.client = new S3Client({
       endpoint: env.S3_ENDPOINT,
       region: this.region,
-      // Both MinIO and Backblaze accept path-style addressing; virtual-host
-      // style would additionally require wildcard DNS + a matching cert.
-      forcePathStyle: true,
+      forcePathStyle: !isBackblaze,
       credentials: {
         accessKeyId: env.S3_ACCESS_KEY,
         secretAccessKey: env.S3_SECRET_KEY,

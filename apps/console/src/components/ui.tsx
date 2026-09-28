@@ -62,7 +62,7 @@ export function CardHead({
   right?: ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between border-b border-line-2 px-4 py-3">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-2 px-4 py-3">
       <b className="text-[13px] text-ink">{title}</b>
       {right}
     </div>
@@ -199,7 +199,7 @@ export function Spinner({ className = '' }: { className?: string }) {
 
 export function CenteredSpinner({ className = 'h-7 w-7' }: { className?: string }) {
   return (
-    <div className="flex justify-center py-24">
+    <div className="flex justify-center py-16 sm:py-24">
       <Spinner className={className} />
     </div>
   );
@@ -223,7 +223,7 @@ export function Empty({
   hint?: string;
 }) {
   return (
-    <div className="py-16 text-center">
+    <div className="px-4 py-12 text-center sm:py-16">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-100 text-xl text-ink-muted">
         {icon}
       </div>
@@ -243,8 +243,8 @@ export function PageHead({
   action?: ReactNode;
 }) {
   return (
-    <div className="mb-5 flex items-end justify-between">
-      <div>
+    <div className="mb-5 flex flex-col gap-2.5 sm:flex-row sm:items-end sm:justify-between sm:gap-3">
+      <div className="min-w-0">
         <h1 className="font-display text-[18px] font-bold tracking-tight text-ink">
           {title}
         </h1>

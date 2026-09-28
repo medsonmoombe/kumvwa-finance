@@ -131,10 +131,10 @@ export function TermsTab({ onFlash }: { onFlash: (m: string) => void }) {
 
         {/* editor */}
         <div className="overflow-hidden rounded-card border border-line bg-white">
-          <div className="flex items-center justify-between border-b border-line bg-[#FAFBFD] px-3 py-2">
-            <span className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-ink-muted">
-              {current ? `Draft v${nextVersion}` : 'Publish your first lending terms (v1)'}
-            </span>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-b border-line bg-[#FAFBFD] px-3 py-2">
+          <span className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-ink-muted">
+            {current ? `Draft v${nextVersion}` : 'Publish your first lending terms (v1)'}
+          </span>
             <span className="text-[10px] text-ink-muted">{draftText.length} chars · min 50</span>
           </div>
           <div className="p-3.5">

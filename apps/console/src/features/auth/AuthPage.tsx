@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { FiArrowRight, FiEye, FiEyeOff, FiMonitor } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 
-import { AuthLayout, OtpInput } from '../../components/kit';
+import { AUTH_GUTTER, AuthLayout, OtpInput } from '../../components/kit';
 import { ErrorBox } from '../../components/ui';
 import { apiError, deviceToken, setDeviceToken } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -13,7 +13,7 @@ const lbl = 'mb-1 block text-[10.5px] font-semibold text-[#555]';
 const btn =
   'flex w-full items-center justify-center gap-1.5 h-9 rounded-[3px] bg-[#1A4FBF] text-[11.5px] font-extrabold uppercase tracking-wide text-white transition-colors hover:bg-[#12378F] disabled:opacity-40';
 const sectionBand =
-  'flex items-center gap-2 -mx-[34px] px-[34px] pb-3 mb-4 border-b border-[#ECECEC]';
+  `flex flex-wrap items-center gap-2 ${AUTH_GUTTER} pb-3 mb-4 border-b border-[#ECECEC]`;
 
 type View = { k: 'login' } | { k: 'otp'; email: string; devCode: string };
 
