@@ -69,6 +69,11 @@ services:
         value: s3
       - key: API_PUBLIC_URL
         value: https://kumvwa-api.onrender.com/api/v1
+      # Backblaze B2 in production. S3_ENDPOINT must carry its region
+      # (https://s3.<region>.backblazeb2.com) and the keys must be an
+      # APPLICATION key ID + APPLICATION key — B2 rejects the master key.
+      # S3_REGION is left unset on purpose: the API reads the region off the
+      # endpoint, which is the only value B2 will accept a signature for.
       - key: S3_ENDPOINT
         sync: false
       - key: S3_ACCESS_KEY

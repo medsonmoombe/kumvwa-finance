@@ -9,7 +9,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-import type { Env } from '../../../config/env';
+import { resolveS3Region, type Env } from '../../../config/env';
 import type { StorageDriver, StoredObject } from './storage.interface';
 
 export const PRESIGN_TTL_SEC = 900;
@@ -21,9 +21,13 @@ export class S3StorageDriver implements StorageDriver {
 
   constructor(env: Env) {
     this.bucket = env.S3_BUCKET;
+    const region = resolveS3Region(env);
+    this.logger.log(`S3 storage signing for region "${region}"`);
     this.client = new S3Client({
       endpoint: env.S3_ENDPOINT,
-      region: 'us-east-1',
+      region,
+      // Both MinIO and Backblaze accept path-style addressing; virtual-host
+      // style would additionally require wildcard DNS + a matching cert.
       forcePathStyle: true,
       credentials: {
         accessKeyId: env.S3_ACCESS_KEY,

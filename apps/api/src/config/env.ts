@@ -77,6 +77,13 @@ const envSchema = z.object({
   API_PUBLIC_URL: z.string().default('http://localhost:8080/api/v1'),
 
   S3_ENDPOINT: z.string().default('http://localhost:9000'),
+  /**
+   * SigV4 signs the region into every request, so it must name the bucket's
+   * real region: Backblaze B2 rejects `us-east-1` for a `us-east-005` bucket.
+   * Left empty it is read off a Backblaze endpoint (see `resolveS3Region`);
+   * MinIO ignores the value entirely, so the fallback is never load-bearing.
+   */
+  S3_REGION: z.string().default(''),
   S3_ACCESS_KEY: z.string().default('kumvwa-dev'),
   S3_SECRET_KEY: z.string().default('kumvwa-dev-secret'),
   S3_BUCKET: z.string().default('kumvwa-documents'),
@@ -91,6 +98,34 @@ export const ENV = Symbol('ENV');
 
 /** Any host a browser or a phone cannot reach, however well-formed it looks. */
 const LOOPBACK_URL = /^(https?:\/\/)?(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])([:/]|$)/i;
+
+/**
+ * Reads the region out of a Backblaze B2 endpoint, which always carries it:
+ * `https://s3.us-east-005.backblazeb2.com` → `us-east-005`. Accepts the
+ * bucket-in-hostname form too, and returns '' for anything that isn't B2
+ * (MinIO, AWS, R2) so the caller can fall back.
+ */
+export function regionFromS3Endpoint(endpoint: string): string {
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(endpoint)
+    ? endpoint
+    : `https://${endpoint}`;
+  try {
+    const match = /(?:^|\.)s3\.([a-z0-9-]+)\.backblazeb2\.com$/i.exec(
+      new URL(withScheme).host,
+    );
+    return match?.[1] ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Region handed to the S3 client for signing. Explicit config wins, then the
+ * bucket's own region off a B2 endpoint, then the harmless MinIO/AWS default.
+ */
+export function resolveS3Region(env: Env): string {
+  return env.S3_REGION || regionFromS3Endpoint(env.S3_ENDPOINT) || 'us-east-1';
+}
 
 /**
  * Deploy guard for storage. Both values below are *signed into the URLs handed
@@ -111,6 +146,21 @@ export function assertDeployableStorage(env: Env): void {
   if (env.STORAGE_DRIVER === 's3' && LOOPBACK_URL.test(env.S3_ENDPOINT)) {
     problems.push(
       `S3_ENDPOINT="${env.S3_ENDPOINT}" is a loopback address while STORAGE_DRIVER=s3, so clients could not upload to or read from the bucket. Point it at your MinIO/S3/R2 endpoint.`,
+    );
+  }
+  // Same shape of silent failure: B2 signs the region, so a region that
+  // disagrees with the endpoint rejects every presigned PUT and GET while the
+  // API's own logs stay quiet. Only checked when S3_REGION is set by hand —
+  // an empty value means "read it off the endpoint", which cannot disagree.
+  const endpointRegion = regionFromS3Endpoint(env.S3_ENDPOINT);
+  if (
+    env.STORAGE_DRIVER === 's3' &&
+    env.S3_REGION &&
+    endpointRegion &&
+    env.S3_REGION !== endpointRegion
+  ) {
+    problems.push(
+      `S3_REGION="${env.S3_REGION}" does not match S3_ENDPOINT's region "${endpointRegion}", and Backblaze B2 rejects requests signed for the wrong region. Set S3_REGION=${endpointRegion} or leave it empty to detect it automatically.`,
     );
   }
   // `STORAGE_DRIVER=local` in prod is NOT fatal — a host can mount a

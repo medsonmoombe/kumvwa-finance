@@ -1,4 +1,8 @@
-import { loadEnv } from './env';
+import {
+  loadEnv,
+  regionFromS3Endpoint,
+  resolveS3Region,
+} from './env';
 
 const base: Record<string, string> = {
   DATABASE_URL: 'postgresql://kumvwa:kumvwa_dev@localhost:5432/kumvwa',
@@ -86,5 +90,66 @@ describe('loadEnv', () => {
     });
     expect(env.STORAGE_DRIVER).toBe('s3');
     expect(env.API_PUBLIC_URL).toBe('https://api.kumvwa.co.zm/api/v1');
+  });
+
+  // ── S3 signing region ──
+  // B2 signs the region, so signing with the wrong one rejects every
+  // presigned PUT and GET without any API-side error to go on.
+
+  it('reads the region off a Backblaze endpoint', () => {
+    expect(
+      regionFromS3Endpoint('https://s3.us-east-005.backblazeb2.com'),
+    ).toBe('us-east-005');
+    expect(regionFromS3Endpoint('s3.eu-central-003.backblazeb2.com')).toBe(
+      'eu-central-003',
+    );
+    // Bucket-in-hostname form, which B2 also accepts.
+    expect(
+      regionFromS3Endpoint('https://kumvwa-documents.s3.us-west-004.backblazeb2.com'),
+    ).toBe('us-west-004');
+  });
+
+  it('returns no region for non-Backblaze endpoints', () => {
+    expect(regionFromS3Endpoint('http://localhost:9000')).toBe('');
+    expect(regionFromS3Endpoint('https://r2.cloudflarestorage.com')).toBe('');
+    expect(regionFromS3Endpoint('not a url')).toBe('');
+  });
+
+  it('resolves the signing region: explicit wins, then the endpoint, then the default', () => {
+    const b2 = 'https://s3.us-east-005.backblazeb2.com';
+    expect(resolveS3Region(loadEnv({ ...base, S3_ENDPOINT: b2 }))).toBe(
+      'us-east-005',
+    );
+    expect(
+      resolveS3Region(
+        loadEnv({ ...base, S3_ENDPOINT: b2, S3_REGION: 'us-west-004' }),
+      ),
+    ).toBe('us-west-004');
+    // MinIO ignores it, so the fallback just has to be well-formed.
+    expect(resolveS3Region(loadEnv(base))).toBe('us-east-1');
+  });
+
+  it('refuses an S3_REGION that contradicts a Backblaze endpoint in prod', () => {
+    expect(() =>
+      loadEnv({
+        ...base,
+        NODE_ENV: 'prod',
+        STORAGE_DRIVER: 's3',
+        API_PUBLIC_URL: 'https://api.kumvwa.co.zm/api/v1',
+        S3_ENDPOINT: 'https://s3.us-east-005.backblazeb2.com',
+        S3_REGION: 'us-east-1',
+      }),
+    ).toThrow(/S3_REGION/);
+  });
+
+  it('allows the empty S3_REGION that an auto-detected bucket region needs', () => {
+    const env = loadEnv({
+      ...base,
+      NODE_ENV: 'prod',
+      STORAGE_DRIVER: 's3',
+      API_PUBLIC_URL: 'https://api.kumvwa.co.zm/api/v1',
+      S3_ENDPOINT: 'https://s3.us-east-005.backblazeb2.com',
+    });
+    expect(resolveS3Region(env)).toBe('us-east-005');
   });
 });
