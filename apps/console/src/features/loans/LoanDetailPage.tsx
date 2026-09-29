@@ -26,7 +26,7 @@ interface Loan {
 }
 interface Repayment {
   id: string; amountMinor?: string; amount?: string; method: string;
-  reference: string | null; createdAt: string;
+  kind?: 'repayment' | 'rollover_interest'; reference: string | null; createdAt: string;
 }
 
 const METHODS = ['cash', 'mobile_money', 'bank', 'in_app'] as const;
@@ -51,6 +51,7 @@ export function LoanDetailPage() {
   const [busy, setBusy] = useState(false);
 
   const allocRef = useRef<HTMLCanvasElement>(null);
+  const paymentKeys = useRef(new Map<string, string>());
 
   const load = useCallback(() => {
     if (!id) return;
@@ -91,11 +92,15 @@ export function LoanDetailPage() {
   async function submit() {
     if (!id) return;
     setBusy(true); setFormError(''); setNotice('');
+    const operation = `${id}:${amount}:${method}:${reference.trim()}`;
+    const idempotencyKey = paymentKeys.current.get(operation) ?? crypto.randomUUID();
+    paymentKeys.current.set(operation, idempotencyKey);
     try {
       const res = await api.post(`/loans/${id}/repayments`, {
         amount: Number(amount), method,
         ...(reference.trim() ? { reference: reference.trim() } : {}),
-      });
+      }, { headers: { 'Idempotency-Key': idempotencyKey } });
+      paymentKeys.current.delete(operation);
       setNotice(
         res.data.replayed
           ? 'Duplicate detected — the original payment stands.'
@@ -156,7 +161,7 @@ export function LoanDetailPage() {
 
   const repayCols: Array<Column<Repayment>> = [
     { key: 'a', header: 'Amount', render: (r) => <b className="tabular-nums">{money(r.amountMinor ?? r.amount ?? '0')}</b> },
-    { key: 'm', header: 'Method', render: (r) => <span className="capitalize text-ink-2">{r.method.replaceAll('_', ' ')}</span> },
+    { key: 'm', header: 'Type', render: (r) => <span className="capitalize text-ink-2">{r.kind === 'rollover_interest' ? 'Interest extension' : r.method.replaceAll('_', ' ')}</span> },
     { key: 'r', header: 'Reference', render: (r) => <span className="text-[11px] text-ink-muted">{r.reference ?? '—'}</span> },
     { key: 'd', header: 'Date', render: (r) => <span className="text-[11px] text-ink-muted">{date(r.createdAt)}</span> },
   ];

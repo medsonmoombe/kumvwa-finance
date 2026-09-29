@@ -9,6 +9,7 @@ import 'package:kumvwa_finance/features/auth/domain/user_session.dart';
 /// Never store auth tokens in plain SharedPreferences.
 class TokenStore {
   static const _key = 'kumvwa_session';
+  static const _lenderDeviceKey = 'kumvwa_lender_device';
   final _storage = const FlutterSecureStorage();
 
   Future<void> saveSession(UserSession session) =>
@@ -33,4 +34,9 @@ class TokenStore {
   }
 
   Future<void> clear() => _storage.delete(key: _key);
+
+  Future<String?> readLenderDeviceToken() => _storage.read(key: _lenderDeviceKey);
+
+  Future<void> saveLenderDeviceToken(String token) =>
+      _storage.write(key: _lenderDeviceKey, value: token);
 }

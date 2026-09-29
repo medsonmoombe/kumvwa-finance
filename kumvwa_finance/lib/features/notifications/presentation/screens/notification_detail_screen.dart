@@ -71,7 +71,10 @@ class NotificationDetailScreen extends StatelessWidget {
                 children: [
                   _DetailRow(label: 'Received', value: Fmt.date(item.time)),
                   const Divider(height: 1, color: AppColors.line),
-                  _DetailRow(label: 'Status', value: item.read ? 'Read' : 'Unread'),
+                  _DetailRow(
+                    label: 'Status',
+                    value: item.read ? 'Read' : 'Unread',
+                  ),
                 ],
               ),
             ),

@@ -47,10 +47,12 @@ void main() {
         overrides: [
           authControllerProvider.overrideWith(_Authed.new),
           loansRepositoryProvider.overrideWithValue(mockLoansRepository),
-          loanRequestsRepositoryProvider
-              .overrideWithValue(mockLoanRequestsRepository),
-          notificationsRepositoryProvider
-              .overrideWithValue(MockNotificationsRepository()),
+          loanRequestsRepositoryProvider.overrideWithValue(
+            mockLoanRequestsRepository,
+          ),
+          notificationsRepositoryProvider.overrideWithValue(
+            MockNotificationsRepository(),
+          ),
           clientMeProvider.overrideWith(
             (ref) async => clientProfileFromJson(const {
               'fullName': 'Mwansa Bwalya',

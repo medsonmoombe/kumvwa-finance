@@ -57,18 +57,15 @@ void main() {
 
     test('names each field the borrower has not provided', () {
       expect(
-        missingRegistrationFields(
-          profile(kinName: null, kinPhone: '  '),
-        ),
+        missingRegistrationFields(profile(kinName: null, kinPhone: '  ')),
         [RegistrationField.kinName, RegistrationField.kinPhone],
       );
     });
 
     test('treats a whitespace-only value as missing', () {
-      expect(
-        missingRegistrationFields(profile(email: '   ')),
-        [RegistrationField.email],
-      );
+      expect(missingRegistrationFields(profile(email: '   ')), [
+        RegistrationField.email,
+      ]);
     });
 
     test('requires a sector from a formally employed borrower', () {
@@ -111,14 +108,10 @@ void main() {
         RegistrationField.kinName,
         RegistrationField.kinPhone,
       ]);
-      expect(
-        missing,
-        [
-          for (final f in RegistrationField.values)
-            if (missing.contains(f)) f,
-        ],
-        reason: 'order must follow the stepper, not the enum alone',
-      );
+      expect(missing, [
+        for (final f in RegistrationField.values)
+          if (missing.contains(f)) f,
+      ], reason: 'order must follow the stepper, not the enum alone');
     });
   });
 
@@ -131,9 +124,7 @@ void main() {
     });
 
     test('missing fields with no loan binds them to the stepper', () {
-      final decision = evaluateRegistration(
-        profile: profile(incomeBand: null),
-      );
+      final decision = evaluateRegistration(profile: profile(incomeBand: null));
       expect(decision.action, RegistrationGateAction.completeRegistration);
       expect(decision.bindsToStepper, isTrue);
       expect(decision.missing, [RegistrationField.incomeBand]);

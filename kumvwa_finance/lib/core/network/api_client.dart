@@ -175,6 +175,22 @@ class ApiClient {
     return session;
   }
 
+  /// Console-style token responses deliberately omit the user projection.
+  /// Mobile lender sign-in fetches it once after email OTP succeeds.
+  Future<UserSession> adoptTokensAndFetchUser(Map<String, dynamic> data) async {
+    final access = data['accessToken'] as String?;
+    if (access == null || access.isEmpty) throw StateError('Missing access token');
+    setTokens(access, data['refreshToken'] as String?);
+    final me = await getA('/auth/me');
+    final session = _sessionFrom(
+      me.data as Map<String, dynamic>,
+      access,
+      data['refreshToken'] as String?,
+    );
+    await tokenStore.saveSession(session);
+    return session;
+  }
+
   UserSession _sessionFrom(
     Map<String, dynamic> user,
     String? access,
@@ -239,8 +255,11 @@ class ApiClient {
 
   // ---- public endpoints (no bearer) ----
 
-  Future<Response<dynamic>> postPublic(String path, {Object? data}) =>
-      _bare.post(path, data: data);
+  Future<Response<dynamic>> postPublic(
+    String path, {
+    Object? data,
+    Map<String, dynamic>? headers,
+  }) => _bare.post(path, data: data, options: Options(headers: headers));
 
   Future<Response<dynamic>> getPublic(String path) => _bare.get(path);
 }

@@ -15,6 +15,7 @@ import type { TokenClaims } from '../../common/crypto/token.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/guards/roles.decorator';
 import { AuditService } from '../audit/audit.service';
+import { AuthService } from '../auth/auth.service';
 import { parseNrcSide } from '../clients/clients.service';
 import { AdminService } from './admin.service';
 import {
@@ -36,7 +37,7 @@ class PublishPlatformTermsDto {
 @Roles('platform_admin')
 @Controller('admin/tenants')
 export class AdminTenantsController {
-  constructor(private readonly admin: AdminService) {}
+  constructor(private readonly admin: AdminService, private readonly auth: AuthService) {}
 
   // Literal before parameterised — `stats` must not be captured by `:id`.
   @Get('stats')
@@ -75,6 +76,11 @@ export class AdminTenantsController {
   @Get(':id')
   detail(@CurrentUser() u: TokenClaims, @Param('id') id: string) {
     return this.admin.tenantDetail(id, u.sub);
+  }
+
+  @Post(':id/mobile-access-code')
+  mobileAccessCode(@CurrentUser() u: TokenClaims, @Param('id') id: string) {
+    return this.auth.createLenderMobileAccessCodeForTenant(u.sub, id);
   }
 }
 
@@ -186,19 +192,32 @@ export class AdminClientsController {
 export class AdminAuditController {
   constructor(private readonly audit: AuditService) {}
 
+  // Literal routes before parameterised /:id
+  @Get('stats')
+  stats() {
+    return this.audit.stats();
+  }
+
   @Get()
   list(
+    @Query('severity') severity?: string,
     @Query('action') action?: string,
     @Query('entity') entity?: string,
     @Query('tenantId') tenantId?: string,
-    @Query('take') take?: string,
+    @Query('limit') limit?: string,
   ) {
-    const parsed = take ? Number.parseInt(take, 10) : 100;
-    return this.audit.listFiltered({
+    const take = limit ? Number.parseInt(limit, 10) : 100;
+    return this.audit.listAdminConsole({
+      severity: severity?.trim() || undefined,
       action: action?.trim() || undefined,
       entity: entity?.trim() || undefined,
       tenantId: tenantId?.trim() || undefined,
-      take: Number.isFinite(parsed) ? parsed : 100,
+      take: Number.isFinite(take) ? take : 100,
     });
+  }
+
+  @Get(':id')
+  getOne(@Param('id') id: string) {
+    return this.audit.getOne(id);
   }
 }

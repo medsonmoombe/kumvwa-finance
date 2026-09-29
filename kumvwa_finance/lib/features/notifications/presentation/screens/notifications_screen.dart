@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:kumvwa_finance/core/theme/app_colors.dart';
+import 'package:kumvwa_finance/core/widgets/client_dome_header.dart';
+import 'package:kumvwa_finance/core/theme/app_effects.dart';
+import 'package:kumvwa_finance/core/theme/app_text.dart';
 import 'package:kumvwa_finance/core/utils/format.dart';
 import 'package:kumvwa_finance/core/widgets/skeleton.dart';
 import 'package:kumvwa_finance/features/notifications/data/notifications_repository.dart';
@@ -39,17 +42,16 @@ class NotificationsScreen extends ConsumerWidget {
           SkeletonCard(),
         ],
       ),
-      error: (_, _) =>
-          const Center(child: Text('Could not load notifications')),
+      error: (err, _) {
+        // When embedded as a tab, any failure (including 403 role errors)
+        // shows the empty state — a tab should never show a hard error screen.
+        if (embedded) return _EmptyNotifications(role: role);
+        return _NotifErrorBody(
+          onRetry: () => ref.invalidate(notificationsProvider(role)),
+        );
+      },
       data: (items) {
-        if (items.isEmpty) {
-          return const Center(
-            child: Text(
-              'No notifications yet',
-              style: TextStyle(color: AppColors.muted),
-            ),
-          );
-        }
+        if (items.isEmpty) return _EmptyNotifications(role: role);
         final today = _isToday(items.first.time);
         return ListView.builder(
           padding: EdgeInsets.fromLTRB(
@@ -106,21 +108,34 @@ class NotificationsScreen extends ConsumerWidget {
     if (embedded) return body;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Notifications'),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              await ref
-                  .read(notificationsRepositoryProvider)
-                  .markAllRead(role: role);
-              ref.invalidate(notificationsProvider(role));
-            },
-            child: const Text('Mark all read'),
-          ),
-        ],
+      backgroundColor: AppColors.bg,
+      body: SafeArea(
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: ClientDomeHeader(
+                title: 'Notifications',
+                subtitle: 'Your activity feed',
+                trailing: GestureDetector(
+                  onTap: () async {
+                    await ref
+                        .read(notificationsRepositoryProvider)
+                        .markAllRead(role: role);
+                    ref.invalidate(notificationsProvider(role));
+                  },
+                  child: Text(
+                    'Mark all read',
+                    style: AppText.linkLabel.copyWith(
+                      color: Colors.white.withValues(alpha: 0.85),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            SliverFillRemaining(child: body),
+          ],
+        ),
       ),
-      body: SafeArea(child: body),
     );
   }
 
@@ -141,7 +156,9 @@ class NotificationsScreen extends ConsumerWidget {
 
     final requestId = notification.data['requestId'] as String?;
     if (requestId != null && requestId.isNotEmpty) {
-      if (context.mounted) unawaited(context.push('/c/request-status/$requestId'));
+      if (context.mounted) {
+        unawaited(context.push('/c/request-status/$requestId'));
+      }
       return;
     }
 
@@ -152,8 +169,175 @@ class NotificationsScreen extends ConsumerWidget {
     }
 
     if (context.mounted) {
-      unawaited(context.push('/c/notification/${notification.id}', extra: notification));
+      unawaited(
+        context.push('/c/notification/${notification.id}', extra: notification),
+      );
     }
+  }
+}
+
+class _NotifErrorBody extends StatelessWidget {
+  const _NotifErrorBody({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 68,
+              height: 68,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppColors.red50,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.redLine, width: 1.5),
+              ),
+              child: const Icon(
+                Icons.cloud_off_rounded,
+                size: 30,
+                color: AppColors.red,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Could not load notifications',
+              style: AppText.cardTitle,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Check your connection and try again.',
+              style: AppText.paragraph.copyWith(color: AppColors.muted),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: const Text('Retry'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.blue600,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadii.button),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyNotifications extends StatelessWidget {
+  const _EmptyNotifications({required this.role});
+
+  final String role;
+
+  @override
+  Widget build(BuildContext context) {
+    final isLender = role == 'lender' || role == 'business';
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Icon disc
+            Container(
+              width: 68,
+              height: 68,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppColors.blue50,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.blueLine, width: 1.5),
+              ),
+              child: const Icon(
+                Icons.notifications_none_rounded,
+                size: 32,
+                color: AppColors.blue600,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'All caught up',
+              style: AppText.cardTitle.copyWith(fontSize: 16),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isLender
+                  ? 'Loan requests, approvals and client activity will appear here.'
+                  : 'Payment reminders, loan updates and account activity will appear here.',
+              style: AppText.paragraph.copyWith(color: AppColors.muted),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            // Hint chips
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              alignment: WrapAlignment.center,
+              children: [
+                _HintChip(
+                  icon: isLender
+                      ? Icons.pending_actions_outlined
+                      : Icons.payment_rounded,
+                  label: isLender ? 'Loan requests' : 'Payment due',
+                ),
+                _HintChip(
+                  icon: isLender
+                      ? Icons.verified_outlined
+                      : Icons.check_circle_outline_rounded,
+                  label: isLender ? 'Approvals' : 'Loan updates',
+                ),
+                _HintChip(
+                  icon: Icons.info_outline_rounded,
+                  label: 'System alerts',
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HintChip extends StatelessWidget {
+  const _HintChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.neutral,
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+        border: Border.all(color: AppColors.line2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: AppColors.muted),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: AppText.caption.copyWith(fontSize: 11),
+          ),
+        ],
+      ),
+    );
   }
 }
 

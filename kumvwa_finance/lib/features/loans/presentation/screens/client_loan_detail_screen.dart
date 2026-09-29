@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 
 import 'package:kumvwa_finance/core/domain/loan_status.dart';
 import 'package:kumvwa_finance/core/theme/app_colors.dart';
+import 'package:kumvwa_finance/core/theme/app_effects.dart';
+import 'package:kumvwa_finance/core/theme/app_text.dart';
 import 'package:kumvwa_finance/core/utils/format.dart';
-import 'package:kumvwa_finance/core/widgets/app_badge.dart';
-import 'package:kumvwa_finance/core/widgets/amount_text.dart';
+import 'package:kumvwa_finance/core/widgets/app_button.dart';
+import 'package:kumvwa_finance/core/widgets/dome_header.dart';
 import 'package:kumvwa_finance/core/widgets/due_chip.dart';
-import 'package:kumvwa_finance/core/widgets/section_card.dart';
 import 'package:kumvwa_finance/core/widgets/skeleton.dart';
-import 'package:kumvwa_finance/features/auth/presentation/lender_branding.dart';
 import 'package:kumvwa_finance/features/loans/data/loans_repository.dart';
 import 'package:kumvwa_finance/features/loans/domain/loan.dart';
 import 'package:kumvwa_finance/features/loans/presentation/widgets/pay_sheet.dart';
@@ -24,393 +27,484 @@ class ClientLoanDetailScreen extends ConsumerWidget {
     final async = ref.watch(loanByIdProvider(loanId));
 
     return Scaffold(
-      appBar: AppBar(
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Loan'),
-            Text(
-              // Human reference (LN-2026-00001) when the loan has one; the raw
-              // id is only the fallback for loans that predate references.
-              async.valueOrNull?.loanRef ?? loanId,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w400,
-                color: AppColors.muted,
-              ),
-            ),
-          ],
-        ),
-      ),
+      backgroundColor: AppColors.bg,
       body: SafeArea(
         child: async.when(
-          loading: () => const Padding(
-            padding: EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Skeleton(width: double.infinity, height: 140, radius: 20),
-                SizedBox(height: 11),
-                Skeleton(width: double.infinity, height: 190, radius: 16),
-              ],
-            ),
-          ),
+          loading: () => const _LoadingSkeleton(),
           error: (_, _) => const Center(child: Text('Loan not found')),
-          data: (loan) => _Body(loan: loan),
+          data: (loan) => _DetailScaffold(loan: loan),
         ),
       ),
     );
   }
 }
 
-class _Body extends ConsumerWidget {
-  const _Body({required this.loan});
+// ─────────────────────────────────────────────────────────────────────────────
+// Scaffold: dome header + scrolling body
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DetailScaffold extends ConsumerWidget {
+  const _DetailScaffold({required this.loan});
 
   final Loan loan;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Contextual white-label — the lender's colors on THEIR header.
-    final theme = lenderTheme(ref, loan.tenantId);
-
-    // Rollover rows are extension FEES, not installments: they record the
-    // deadline being moved, so they render in their own section instead of
-    // turning "3 installments" into 5.
-    final rollovers = loan.schedule.where((i) => i.rolloverFee).toList();
-    final planned = loan.schedule.where((i) => !i.rolloverFee).toList();
+    final isActive = loan.status != LoanStatus.cleared;
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      padding: EdgeInsets.zero,
       children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Container(
-            padding: const EdgeInsets.fromLTRB(17, 15, 17, 15),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: theme.gradient,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        if (theme.logoUrl != null)
-                          ClipOval(
-                            child: Image.network(
-                              theme.logoUrl!,
-                              width: 24,
-                              height: 24,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) =>
-                                  const SizedBox.shrink(),
-                            ),
-                          )
-                        else
-                          Text(
-                            Fmt.initials(loan.lenderName),
-                            style: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                        const SizedBox(width: 7),
-                        Text(
-                          loan.lenderName,
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
-                    switch (loan.status) {
-                      LoanStatus.active => const AppBadge(
-                        'Active',
-                        variant: BadgeVariant.green,
-                      ),
-                      LoanStatus.overdue => const AppBadge(
-                        'Overdue',
-                        variant: BadgeVariant.red,
-                      ),
-                      LoanStatus.cleared => const AppBadge(
-                        'Cleared',
-                        variant: BadgeVariant.blue,
-                      ),
-                    },
-                  ],
-                ),
-                const SizedBox(height: 8),
-                // A settled loan leading with "Balance outstanding: K 0" is
-                // true and emotionally flat — the cleared state gets its own
-                // copy, matching the history card's "Repaid in full".
-                Text(
-                  loan.status == LoanStatus.cleared
-                      ? 'Loan repaid'
-                      : 'Balance outstanding',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFFAFC3EE),
-                  ),
-                ),
-                AmountText(
-                  loan.status == LoanStatus.cleared
-                      ? loan.amountPaid
-                      : loan.outstanding,
-                  fontSize: 26,
-                  color: Colors.white,
-                  fontWeight: FontWeight.w800,
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  loan.status == LoanStatus.cleared
-                      ? 'Fully settled · thank you'
-                      : 'of ${Fmt.money(loan.totalDue)} total · '
-                            '${loan.termInstallments} mo plan'
-                            '${loan.rolloverCount > 0 ? ' · extended ${loan.rolloverCount}×' : ''}'
-                            ' · ${loan.interestRatePct.toStringAsFixed(0)}%',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFFC6D4F2),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Repaid ${Fmt.money(loan.amountPaid)}',
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        color: Color(0xFFAFC3EE),
-                      ),
-                    ),
-                    Text(
-                      '${(loan.progress * 100).toStringAsFixed(0)}%',
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF7FF0B0),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(99),
-                  child: SizedBox(
-                    height: 6,
-                    child: Stack(
-                      children: [
-                        Container(color: Colors.white.withValues(alpha: .18)),
-                        FractionallySizedBox(
-                          widthFactor: loan.progress,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [AppColors.green500, Color(0xFF7FF0B0)],
-                              ),
-                              borderRadius: BorderRadius.circular(99),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+        DomeHeader(
+          small: true,
+          child: DomeTitle(
+            title: loan.lenderName,
+            subtitle: '${loan.loanRef ?? loan.id} · ${loan.termInstallments} months',
+            onBack: () => context.pop(),
+            trailing: _StatusChip(status: loan.status),
           ),
         ),
-        const SizedBox(height: 11),
-        // Never offer payment on a settled loan. Even with clean data this is
-        // the guard that stops a "Cleared" header pairing with a pay button.
-        if (loan.nextInstallment != null &&
-            loan.status != LoanStatus.cleared &&
-            loan.outstanding > 0)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 11),
-            child: ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.green500,
-                minimumSize: const Size.fromHeight(50),
-              ),
-              onPressed: () => showPaySheet(context, ref, loan),
-              child: Text(
-                'Pay ${Fmt.money(loan.nextInstallment!.amount, decimals: 2)}'
-                ' · ${loan.daysUntilDue! < 0 ? 'overdue' : 'due in ${loan.daysUntilDue} days'}',
-              ),
-            ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppInsets.page,
+            14,
+            AppInsets.page,
+            AppInsets.aboveNav,
           ),
-        SectionCard(
-          title: 'Repayment Schedule',
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (final inst in planned)
+              _AmountBox(loan: loan),
+              const SizedBox(height: 11),
+              if (isActive &&
+                  loan.nextInstallment != null &&
+                  loan.outstanding > 0)
                 Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 31,
-                        height: 31,
-                        decoration: BoxDecoration(
-                          color: inst.status == InstallmentStatus.paid
-                              ? AppColors.green50
-                              : inst.status == InstallmentStatus.overdue
-                              ? AppColors.red50
-                              : AppColors.blue50,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(
-                          inst.status == InstallmentStatus.paid
-                              ? Icons.check
-                              : Icons.schedule,
-                          size: 15,
-                          color: inst.status == InstallmentStatus.paid
-                              ? AppColors.green700
-                              : inst.status == InstallmentStatus.overdue
-                              ? AppColors.red
-                              : AppColors.blue600,
-                        ),
-                      ),
-                      const SizedBox(width: 11),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Installment ${inst.number} · '
-                              '${switch (inst.status) {
-                                InstallmentStatus.paid => 'Paid',
-                                InstallmentStatus.due => 'Due',
-                                InstallmentStatus.overdue => 'Overdue',
-                                InstallmentStatus.upcoming => 'Upcoming',
-                              }}',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.ink,
-                              ),
-                            ),
-                            Row(
-                              children: [
-                                Text(
-                                  Fmt.date(inst.dueDate),
-                                  style: const TextStyle(
-                                    fontSize: 10.5,
-                                    color: AppColors.muted,
-                                  ),
-                                ),
-                                if (inst.status != InstallmentStatus.paid) ...[
-                                  const SizedBox(width: 6),
-                                  DueChip(dueDate: inst.dueDate),
-                                ],
-                              ],
-                            ),
-                            // Accrued late penalty — shown in red so the
-                            // borrower sees exactly why the balance grew.
-                            if (inst.penalty > 0)
-                              Text(
-                                '+ penalty ${Fmt.money(inst.penalty, decimals: 2)}',
-                                style: const TextStyle(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.red,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      AmountText(
-                        inst.amount,
-                        // 2 dp: the ngwee are what let a client add the
-                        // schedule up and get the loan total back.
-                        decimals: 2,
-                        fontSize: 12,
-                        color: inst.status == InstallmentStatus.paid
-                            ? AppColors.green700
-                            : AppColors.ink,
-                      ),
-                    ],
+                  padding: const EdgeInsets.only(bottom: 11),
+                  child: AppButton(
+                    tone: AppButtonTone.green,
+                    label: 'Repay now · '
+                        '${Fmt.money(loan.nextInstallment!.remaining, decimals: 2)}'
+                        ' due in ${loan.daysUntilDue ?? 0} days',
+                    onPressed: () => showPaySheet(context, ref, loan),
                   ),
                 ),
+              _ScheduleCard(loan: loan),
+              if (loan.rolloverCount > 0) ...[
+                const SizedBox(height: 11),
+                _ExtensionsCard(loan: loan),
+              ],
             ],
           ),
         ),
-        // Extensions get their own ledger. A fee paid to move a deadline is a
-        // different fact from "installment 4 of 3", so these rows never
-        // inflate the plan above.
-        if (rollovers.isNotEmpty) ...[
-          const SizedBox(height: 11),
-          SectionCard(
-            title: 'Extensions (${rollovers.length})',
-            child: Column(
-              children: [for (final inst in rollovers) _extensionRow(inst)],
-            ),
-          ),
-        ],
       ],
     );
   }
+}
 
-  /// One rollover: the fee paid to move a deadline — NOT an installment.
-  Widget _extensionRow(Installment inst) {
-    final paid = inst.status == InstallmentStatus.paid;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
+// ─────────────────────────────────────────────────────────────────────────────
+// Amount box — matches HTML .amtbox with progress bar
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _AmountBox extends StatelessWidget {
+  const _AmountBox({required this.loan});
+
+  final Loan loan;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCleared = loan.status == LoanStatus.cleared;
+    final displayAmount = isCleared ? loan.amountPaid : loan.outstanding;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(15, 13, 15, 15),
+      decoration: BoxDecoration(
+        color: AppColors.blue50,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        border: Border.all(color: AppColors.blueLine),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 31,
-            height: 31,
-            decoration: BoxDecoration(
-              color: paid ? AppColors.green50 : AppColors.blue50,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              paid ? Icons.check_rounded : Icons.update_rounded,
-              size: 15,
-              color: paid ? AppColors.green700 : AppColors.blue600,
-            ),
+          // Label — matches HTML .amtbox span
+          Text(
+            (isCleared ? 'Total repaid' : 'Balance outstanding').toUpperCase(),
+            style: AppText.eyebrowTiny,
           ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          const SizedBox(height: 4),
+          // Big figure — matches HTML .amtbox b
+          Text.rich(
+            TextSpan(
               children: [
-                Text(
-                  'Extension · ${paid ? 'Paid' : 'Pending'}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.ink,
+                TextSpan(
+                  text: 'K ',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.blue900.withValues(alpha: 0.7),
+                    fontFeatures: AppText.tabular,
                   ),
                 ),
-                Text(
-                  'Deadline moved to ${Fmt.date(inst.dueDate)}',
-                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
+                TextSpan(
+                  text: NumberFormat.decimalPattern()
+                      .format(displayAmount),
+                  style: GoogleFonts.poppins(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.blue900,
+                    fontFeatures: AppText.tabular,
+                  ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          AmountText(
-            inst.amount,
-            decimals: 2,
-            fontSize: 12,
-            color: paid ? AppColors.green700 : AppColors.ink,
+          const SizedBox(height: 4),
+          // Sub-line
+          Text(
+            isCleared
+                ? 'Fully settled · thank you'
+                : 'of ${Fmt.money(loan.totalDue)} total · '
+                    '${loan.termInstallments} mo plan'
+                    '${loan.rolloverCount > 0 ? ' · extended ${loan.rolloverCount}×' : ''}'
+                    ' · ${loan.interestRatePct.toStringAsFixed(0)}%/mo',
+            style: AppText.rowSub.copyWith(color: AppColors.blue600),
+          ),
+          const SizedBox(height: 12),
+          // Progress row
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Repaid ${Fmt.money(loan.amountPaid)}',
+                style: AppText.rowSub,
+              ),
+              Text(
+                '${(loan.progress * 100).toStringAsFixed(0)}%',
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.green700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Progress bar
+          ClipRRect(
+            borderRadius: BorderRadius.circular(99),
+            child: SizedBox(
+              height: 6,
+              child: Stack(
+                children: [
+                  Container(color: AppColors.blueLine),
+                  FractionallySizedBox(
+                    widthFactor: loan.progress.clamp(0.0, 1.0),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        gradient: AppGradients.green,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Schedule card — matches HTML .trow pattern inside a SectionCard
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ScheduleCard extends StatelessWidget {
+  const _ScheduleCard({required this.loan});
+
+  final Loan loan;
+
+  @override
+  Widget build(BuildContext context) {
+    final planned = loan.schedule.where((i) => !i.rolloverFee).toList();
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(15, 13, 15, 4),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Repayment Schedule', style: AppText.sectionTitle),
+          const SizedBox(height: 8),
+          for (final inst in planned)
+            _ScheduleRow(inst: inst, isLast: inst == planned.last),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScheduleRow extends StatelessWidget {
+  const _ScheduleRow({required this.inst, required this.isLast});
+
+  final Installment inst;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    final isPaid = inst.status == InstallmentStatus.paid;
+    final isOverdue = inst.status == InstallmentStatus.overdue;
+
+    // Icon tile colors — matches HTML .tico .t-g / .t-r / .t-b
+    final (Color tileBg, Color tileFg) = isPaid
+        ? (AppColors.green50, AppColors.green700)
+        : isOverdue
+        ? (AppColors.red50, AppColors.redInk)
+        : (AppColors.blue50, AppColors.blue600);
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            children: [
+              // Circular icon tile — matches HTML .tico
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: tileBg,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isPaid ? Icons.check_rounded : Icons.schedule_rounded,
+                  size: 16,
+                  color: tileFg,
+                ),
+              ),
+              const SizedBox(width: 11),
+              // Title + sub — matches HTML .tr-m
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Installment ${inst.number} · '
+                      '${switch (inst.status) {
+                        InstallmentStatus.paid => 'Paid',
+                        InstallmentStatus.due => 'Due',
+                        InstallmentStatus.overdue => 'Overdue',
+                        InstallmentStatus.upcoming => 'Upcoming',
+                      }}',
+                      style: AppText.rowTitle,
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Text(Fmt.date(inst.dueDate), style: AppText.rowSub),
+                        if (inst.status != InstallmentStatus.paid) ...[
+                          const SizedBox(width: 6),
+                          DueChip(dueDate: inst.dueDate),
+                        ],
+                      ],
+                    ),
+                    if (inst.penalty > 0)
+                      Text(
+                        '+ penalty ${Fmt.money(inst.penalty, decimals: 2)}',
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.redInk,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Amount — matches HTML .amt
+              Text(
+                Fmt.money(inst.remaining, decimals: 2),
+                style: AppText.rowAmount.copyWith(
+                  color: isPaid ? AppColors.green700 : AppColors.blue600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (!isLast)
+          const Divider(height: 1, color: AppColors.line2),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Extensions card — rollover fees in their own section
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ExtensionsCard extends StatelessWidget {
+  const _ExtensionsCard({required this.loan});
+
+  final Loan loan;
+
+  @override
+  Widget build(BuildContext context) {
+    final rollovers = loan.schedule.where((i) => i.rolloverFee).toList();
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(15, 13, 15, 4),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(AppRadii.card),
+        border: Border.all(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Extensions (${loan.rolloverCount})', style: AppText.sectionTitle),
+          const SizedBox(height: 8),
+          if (rollovers.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                'Interest was paid to extend this bullet-loan maturity. The updated due date is shown in the repayment schedule.',
+                style: AppText.rowSub,
+              ),
+            )
+          else
+            for (final inst in rollovers)
+              _ExtensionRow(inst: inst, isLast: inst == rollovers.last),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExtensionRow extends StatelessWidget {
+  const _ExtensionRow({required this.inst, required this.isLast});
+
+  final Installment inst;
+  final bool isLast;
+
+  @override
+  Widget build(BuildContext context) {
+    final isPaid = inst.status == InstallmentStatus.paid;
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: isPaid ? AppColors.green50 : AppColors.amber50,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isPaid ? Icons.check_rounded : Icons.update_rounded,
+                  size: 16,
+                  color: isPaid ? AppColors.green700 : AppColors.amberInk,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Extension · ${isPaid ? 'Paid' : 'Pending'}',
+                      style: AppText.rowTitle,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Deadline moved to ${Fmt.date(inst.dueDate)}',
+                      style: AppText.rowSub,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                Fmt.money(inst.amount, decimals: 2),
+                style: AppText.rowAmount.copyWith(
+                  color: isPaid ? AppColors.green700 : AppColors.blue600,
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (!isLast)
+          const Divider(height: 1, color: AppColors.line2),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Status chip — matches HTML .chip
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.status});
+
+  final LoanStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final (Color bg, Color fg, String label) = switch (status) {
+      LoanStatus.active => (AppColors.green50, AppColors.green700, 'Active'),
+      LoanStatus.overdue => (AppColors.red50, AppColors.redInk, 'Overdue'),
+      LoanStatus.cleared => (AppColors.blue50, AppColors.blue600, 'Cleared'),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadii.pill),
+      ),
+      child: Text(
+        label,
+        style: AppText.chipLabel.copyWith(color: fg),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Loading skeleton
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _LoadingSkeleton extends StatelessWidget {
+  const _LoadingSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Dome skeleton
+        const Skeleton(width: double.infinity, height: 110, radius: 0),
+        Padding(
+          padding: const EdgeInsets.all(AppInsets.page),
+          child: Column(
+            children: const [
+              Skeleton(width: double.infinity, height: 120, radius: AppRadii.card),
+              SizedBox(height: 11),
+              Skeleton(width: double.infinity, height: 50, radius: AppRadii.button),
+              SizedBox(height: 11),
+              Skeleton(width: double.infinity, height: 200, radius: AppRadii.card),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

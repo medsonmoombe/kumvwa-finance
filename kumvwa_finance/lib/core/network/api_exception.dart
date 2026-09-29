@@ -43,3 +43,18 @@ class ApiException implements Exception {
   @override
   String toString() => message;
 }
+
+/// One line naming *why* a screen could not load, for the error state itself.
+///
+/// The friendly headline ('Could not load your account') hides the only useful
+/// part — the status code and the server's own message, or the parse error when
+/// the response shape is what broke. Rendering it small and muted turns a
+/// screenshot of the app into a diagnosis instead of an unreproducible report.
+String describeApiError(Object error) {
+  if (error is ApiException) {
+    return error.statusCode == null
+        ? error.message
+        : '${error.statusCode} · ${error.message}';
+  }
+  return error.toString();
+}

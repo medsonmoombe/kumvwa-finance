@@ -126,6 +126,7 @@ export class LoanRequestsService {
     await this.audit.record({
       actorId: clientId,
       action: 'loan_request.create',
+      description: `Client submitted a loan request for K${minorToKwacha(amountMinor)} over ${dto.termCount} months`,
       entity: 'LoanRequest',
       entityId: request.id,
       tenantId: dto.lenderId,
@@ -163,7 +164,11 @@ export class LoanRequestsService {
     const rows = await this.prisma.loanRequest.findMany({
       where,
       include: {
-        client: { select: { firstName: true, lastName: true, phone: true } },
+        client: { select: {
+          firstName: true, lastName: true, phone: true,
+          profileCompletedAt: true, employmentStatus: true, educationLevel: true,
+          incomeBand: true, kinName: true, kinPhone: true,
+        } },
         tenant: { select: { name: true } },
         loan: { select: { id: true } },
       },
@@ -203,7 +208,12 @@ export class LoanRequestsService {
   private toJson(r: {
     id: string;
     clientId: string;
-    client: { firstName: string; lastName: string; phone: string };
+    client: {
+      firstName: string; lastName: string; phone: string;
+      profileCompletedAt?: Date | null; employmentStatus?: string | null;
+      educationLevel?: string | null; incomeBand?: string | null;
+      kinName?: string | null; kinPhone?: string | null;
+    };
     tenantId: string;
     tenant: { name: string };
     amount: bigint;
@@ -220,6 +230,14 @@ export class LoanRequestsService {
       clientId: r.clientId,
       clientName: `${r.client.firstName} ${r.client.lastName}`.trim(),
       phone: r.client.phone,
+      clientProfile: {
+        completedAt: r.client.profileCompletedAt ?? null,
+        employmentStatus: r.client.employmentStatus ?? null,
+        educationLevel: r.client.educationLevel ?? null,
+        incomeBand: r.client.incomeBand ?? null,
+        nextOfKinName: r.client.kinName ?? null,
+        nextOfKinPhone: r.client.kinPhone ?? null,
+      },
       lenderId: r.tenantId,
       lenderName: r.tenant.name,
       amount: minorToKwacha(r.amount),
@@ -373,6 +391,7 @@ export class LoanRequestsService {
     await this.audit.record({
       actorId,
       action: 'loan_request.approve',
+      description: `Loan request approved — loan created at ${dto.rateBps / 100}% per month`,
       entity: 'LoanRequest',
       entityId: requestId,
       tenantId,
@@ -427,6 +446,7 @@ export class LoanRequestsService {
     await this.audit.record({
       actorId,
       action: 'loan_request.reject',
+      description: `Loan request declined: "${dto.feedback.trim()}"`,
       entity: 'LoanRequest',
       entityId: requestId,
       tenantId,

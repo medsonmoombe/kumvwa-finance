@@ -9,35 +9,28 @@ extension PayProviderX on PayProvider {
     PayProvider.airtel => 'Airtel Money',
     PayProvider.mtn => 'MTN MoMo',
     PayProvider.zamtel => 'Zamtel Kwacha',
-    PayProvider.bank => 'Bank transfer',
+    PayProvider.bank => 'Bank',
   };
 
-  /// Network brand marks. SWAP HERE if any of these die or you get official
-  /// press-kit assets — the UI falls back to branded tiles automatically on
-  /// failure, so a dead URL never breaks the screen. (Clearbit is free and
-  /// key-less, but has been wind-down-prone since the HubSpot acquisition:
-  /// prefer press kits / Wikimedia PNGs before store submission.)
   String get logoUrl => switch (this) {
     PayProvider.airtel => 'https://logo.clearbit.com/airtel.com',
     PayProvider.mtn => 'https://logo.clearbit.com/mtn.com',
     PayProvider.zamtel => 'https://logo.clearbit.com/zamtel.co.zm',
-    PayProvider.bank => 'https://logo.clearbit.com/zanaco.co.zm',
+    PayProvider.bank => 'https://logo.clearbit.com/absa.co.zm',
   };
-
-  // ── fallback tile styling (brand colors until logos load / if they 404) ──
 
   Color get fallbackColor => switch (this) {
     PayProvider.airtel => const Color(0xFFE40000),
     PayProvider.mtn => const Color(0xFFFFCB05),
     PayProvider.zamtel => const Color(0xFF00954C),
-    PayProvider.bank => const Color(0xFF003087),
+    PayProvider.bank => const Color(0xFF1A4FBF),
   };
 
   String get fallbackLabel => switch (this) {
-    PayProvider.airtel => 'airtel',
+    PayProvider.airtel => 'Airtel',
     PayProvider.mtn => 'MTN',
     PayProvider.zamtel => 'Zamtel',
-    PayProvider.bank => 'ZANACO',
+    PayProvider.bank => 'Bank',
   };
 
   Color get fallbackTextColor => switch (this) {

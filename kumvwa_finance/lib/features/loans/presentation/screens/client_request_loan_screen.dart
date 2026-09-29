@@ -57,34 +57,36 @@ class _LenderLimit {
 /// ladder is computed server-side; the app only displays it.
 final _applyLimitsProvider = FutureProvider.autoDispose
     .family<List<_LenderLimit>, String>((ref, clientId) async {
-  final lenders = await ref.watch(linkedLendersProvider(clientId).future);
-  final repo = ref.read(loanRequestsRepositoryProvider);
-  final out = <_LenderLimit>[];
-  for (final l in lenders) {
-    try {
-      final limit = await repo.creditLimit(clientId, lenderId: l.id);
-      final terms = await repo.productTerms(l.id);
-      out.add(
-        _LenderLimit(
-          id: l.id,
-          name: l.name,
-          limitKwacha: limit.limitKwacha,
-          tier: limit.tier,
-          maxTermMonths: limit.maxTermMonths,
-          blockedReason: limit.blockedReason,
-          ratePct: terms?.ratePct ?? 15,
-          feePct: terms?.feePct ?? 0,
-          productMaxTerm: terms?.maxTermMonths ?? 12,
-        ),
-      );
-    } on ApiException catch (e) {
-      out.add(_LenderLimit.failed(l.id, l.name, e.message));
-    } on DioException catch (e) {
-      out.add(_LenderLimit.failed(l.id, l.name, ApiException.fromDio(e).message));
-    }
-  }
-  return out;
-});
+      final lenders = await ref.watch(linkedLendersProvider(clientId).future);
+      final repo = ref.read(loanRequestsRepositoryProvider);
+      final out = <_LenderLimit>[];
+      for (final l in lenders) {
+        try {
+          final limit = await repo.creditLimit(clientId, lenderId: l.id);
+          final terms = await repo.productTerms(l.id);
+          out.add(
+            _LenderLimit(
+              id: l.id,
+              name: l.name,
+              limitKwacha: limit.limitKwacha,
+              tier: limit.tier,
+              maxTermMonths: limit.maxTermMonths,
+              blockedReason: limit.blockedReason,
+              ratePct: terms?.ratePct ?? 15,
+              feePct: terms?.feePct ?? 0,
+              productMaxTerm: terms?.maxTermMonths ?? 12,
+            ),
+          );
+        } on ApiException catch (e) {
+          out.add(_LenderLimit.failed(l.id, l.name, e.message));
+        } on DioException catch (e) {
+          out.add(
+            _LenderLimit.failed(l.id, l.name, ApiException.fromDio(e).message),
+          );
+        }
+      }
+      return out;
+    });
 
 class ClientRequestLoanScreen extends ConsumerStatefulWidget {
   const ClientRequestLoanScreen({super.key});
@@ -150,7 +152,9 @@ class _ClientRequestLoanScreenState
 
     setState(() => _submitting = true);
     try {
-      await ref.read(loanRequestsRepositoryProvider).create(
+      await ref
+          .read(loanRequestsRepositoryProvider)
+          .create(
             clientId: session.userId,
             clientName: session.displayName,
             lenderId: lender.id,
@@ -171,14 +175,14 @@ class _ClientRequestLoanScreenState
       context.pop();
     } on ApiException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.message)));
     } on DioException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ApiException.fromDio(e).message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(ApiException.fromDio(e).message)));
     } catch (e) {
       if (!mounted) return;
       final raw = e
@@ -227,15 +231,18 @@ class _ClientRequestLoanScreenState
             ),
           ),
           error: (_, _) => Center(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Text('Could not load your lenders'),
-              const SizedBox(height: 12),
-              ElevatedButton(
-                onPressed: () =>
-                    ref.invalidate(_applyLimitsProvider(session.userId)),
-                child: const Text('Retry'),
-              ),
-            ]),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Could not load your lenders'),
+                const SizedBox(height: 12),
+                ElevatedButton(
+                  onPressed: () =>
+                      ref.invalidate(_applyLimitsProvider(session.userId)),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
           ),
           data: (limits) => _buildForm(ref, limits),
         ),
@@ -315,13 +322,13 @@ class _ClientRequestLoanScreenState
                 onTap: l.blocked
                     ? null
                     : () => setState(() {
-                          _lenderId = l.id;
-                          final cap = _maxTermFor(l);
-                          _amount = _amount
-                              .clamp(_minAmount, l.limitKwacha)
-                              .toDouble();
-                          _termMonths = _termMonths > cap ? cap : _termMonths;
-                        }),
+                        _lenderId = l.id;
+                        final cap = _maxTermFor(l);
+                        _amount = _amount
+                            .clamp(_minAmount, l.limitKwacha)
+                            .toDouble();
+                        _termMonths = _termMonths > cap ? cap : _termMonths;
+                      }),
               ),
             ),
         ],
@@ -562,7 +569,11 @@ class _StepArrow extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Padding(
       padding: EdgeInsets.only(top: 6),
-      child: Icon(Icons.chevron_right_rounded, size: 14, color: Color(0xFFB9C6E8)),
+      child: Icon(
+        Icons.chevron_right_rounded,
+        size: 14,
+        color: Color(0xFFB9C6E8),
+      ),
     );
   }
 }
@@ -800,7 +811,11 @@ class _LenderCard extends StatelessWidget {
                 ),
               ),
               child: selected
-                  ? const Icon(Icons.check_rounded, size: 11, color: Colors.white)
+                  ? const Icon(
+                      Icons.check_rounded,
+                      size: 11,
+                      color: Colors.white,
+                    )
                   : null,
             ),
           ],
@@ -882,7 +897,11 @@ class _Breakdown extends StatelessWidget {
             color: const Color(0xFFFFFCF5),
             child: const Row(
               children: [
-                Icon(Icons.request_quote_rounded, size: 12, color: AppColors.amber),
+                Icon(
+                  Icons.request_quote_rounded,
+                  size: 12,
+                  color: AppColors.amber,
+                ),
                 SizedBox(width: 5),
                 Text(
                   'LOAN BREAKDOWN',

@@ -75,39 +75,39 @@ class ApiClientsRepository implements ClientsRepository {
 /// can compare the same response against the stepper's required fields
 /// without constructing a repository.
 ClientProfile clientProfileFromJson(Map<String, dynamic> d) {
-    final registration =
-        d['registration'] as Map<String, dynamic>? ?? const <String, dynamic>{};
-    return ClientProfile(
-      fullName: d['fullName'] as String? ?? '',
-      phone: d['phone'] as String? ?? '',
-      email: d['email'] as String?,
-      nrcMasked: d['nrcMasked'] as String?,
-      dateOfBirth: isoDate(d['dob']),
-      address: d['address'] as String?,
-      employmentStatus: d['employmentStatus'] as String?,
-      educationLevel: d['educationLevel'] as String?,
-      incomeBand: d['incomeBand'] as String?,
-      incomeSource: d['incomeSource'] as String?,
-      kinName: d['kinName'] as String?,
-      kinPhone: d['kinPhone'] as String?,
-      nrcPhotoFileId: d['nrcPhotoFileId'] as String?,
-      nrcBackPhotoFileId: d['nrcBackPhotoFileId'] as String?,
-      missingRegistrationFields:
-          (registration['missing'] as List<dynamic>?)
-              ?.whereType<String>()
-              .toList() ??
-          const <String>[],
-      registrationOpenLoanCount:
-          (registration['openLoanCount'] as num?)?.toInt() ?? 0,
-      registrationOpenTotal:
-          (registration['openTotalOutstanding'] as num?)?.toDouble() ?? 0,
-      profilePercent: (d['profilePercent'] as num?)?.toInt() ?? 100,
-      complete: (d['profileComplete'] as bool?) ?? true,
-      missing:
-          (d['missing'] as List<dynamic>?)?.whereType<String>().toList() ??
-          const <String>[],
-    );
-  }
+  final registration =
+      d['registration'] as Map<String, dynamic>? ?? const <String, dynamic>{};
+  return ClientProfile(
+    fullName: d['fullName'] as String? ?? '',
+    phone: d['phone'] as String? ?? '',
+    email: d['email'] as String?,
+    nrcMasked: d['nrcMasked'] as String?,
+    dateOfBirth: isoDate(d['dob']),
+    address: d['address'] as String?,
+    employmentStatus: d['employmentStatus'] as String?,
+    educationLevel: d['educationLevel'] as String?,
+    incomeBand: d['incomeBand'] as String?,
+    incomeSource: d['incomeSource'] as String?,
+    kinName: d['kinName'] as String?,
+    kinPhone: d['kinPhone'] as String?,
+    nrcPhotoFileId: d['nrcPhotoFileId'] as String?,
+    nrcBackPhotoFileId: d['nrcBackPhotoFileId'] as String?,
+    missingRegistrationFields:
+        (registration['missing'] as List<dynamic>?)
+            ?.whereType<String>()
+            .toList() ??
+        const <String>[],
+    registrationOpenLoanCount:
+        (registration['openLoanCount'] as num?)?.toInt() ?? 0,
+    registrationOpenTotal:
+        (registration['openTotalOutstanding'] as num?)?.toDouble() ?? 0,
+    profilePercent: (d['profilePercent'] as num?)?.toInt() ?? 100,
+    complete: (d['profileComplete'] as bool?) ?? true,
+    missing:
+        (d['missing'] as List<dynamic>?)?.whereType<String>().toList() ??
+        const <String>[],
+  );
+}
 
 /// Dev-mode stand-in: an already-complete profile, so the KYC wizard
 /// renders its done state without a backend.

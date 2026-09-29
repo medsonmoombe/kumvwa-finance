@@ -181,18 +181,18 @@ class MockLoansRepository implements LoansRepository {
         risk: null,
       ),
       _loan(
-           id: 'LN-2025-00836',
-           clientId: 'clt_002',
-           clientName: 'Chanda Nkhoma',
-           nrc: '318450/12/7',
-           principal: 3200,
-           ratePct: 12,
-           term: 2,
-           paidCount: 1,
-           status: LoanStatus.overdue,
-           // Drawn 3 months ago on a 2-month term: the second payment fell due
-           // last month, so the loan is genuinely behind.
-           startMonthsAgo: 3,
+        id: 'LN-2025-00836',
+        clientId: 'clt_002',
+        clientName: 'Chanda Nkhoma',
+        nrc: '318450/12/7',
+        principal: 3200,
+        ratePct: 12,
+        term: 2,
+        paidCount: 1,
+        status: LoanStatus.overdue,
+        // Drawn 3 months ago on a 2-month term: the second payment fell due
+        // last month, so the loan is genuinely behind.
+        startMonthsAgo: 3,
         lenderName: sacco,
         risk: CreditRisk(
           score: 610,
@@ -549,6 +549,19 @@ class ApiLoansRepository implements LoansRepository {
   final ApiClient _client;
   final String? role;
   final String? clientId;
+  final Map<String, String> _pendingOperationKeys = {};
+
+  String _operationKey(String operation) =>
+      _pendingOperationKeys.putIfAbsent(operation, () => const Uuid().v4());
+
+  void _completeOperation(String operation) => _pendingOperationKeys.remove(operation);
+
+  bool _isUncertainNetworkFailure(DioException error) =>
+      error.response == null ||
+      error.type == DioExceptionType.connectionTimeout ||
+      error.type == DioExceptionType.sendTimeout ||
+      error.type == DioExceptionType.receiveTimeout ||
+      error.type == DioExceptionType.connectionError;
 
   bool get _isClient => role == 'client';
 
@@ -637,13 +650,17 @@ class ApiLoansRepository implements LoansRepository {
     }
     // Idempotency-Key makes a retried POST safe (no double-crediting) —
     // the API replays the original repayment instead.
+    final operation = 'repayment:$loanId:${amount.toStringAsFixed(2)}';
+    final key = _operationKey(operation);
     try {
       await _client.postA(
         '/loans/$loanId/repayments',
         data: {'amount': amount, 'method': 'in_app'},
-        headers: {'Idempotency-Key': const Uuid().v4()},
+        headers: {'Idempotency-Key': key},
       );
+      _completeOperation(operation);
     } on DioException catch (e) {
+      if (!_isUncertainNetworkFailure(e)) _completeOperation(operation);
       // Wrap like rollover() does: callers then show the server's own message
       // ('Insufficient role') rather than DioException's multi-line dump.
       throw ApiException.fromDio(e);
@@ -653,13 +670,17 @@ class ApiLoansRepository implements LoansRepository {
 
   @override
   Future<Loan> rollover(String loanId) async {
+    final operation = 'rollover:$loanId';
+    final key = _operationKey(operation);
     try {
       await _client.postA(
         '/loans/$loanId/rollover',
-        headers: {'Idempotency-Key': const Uuid().v4()},
+        headers: {'Idempotency-Key': key},
       );
+      _completeOperation(operation);
       return getById(loanId);
     } on DioException catch (e) {
+      if (!_isUncertainNetworkFailure(e)) _completeOperation(operation);
       throw ApiException.fromDio(e);
     }
   }
@@ -669,8 +690,7 @@ class ApiLoansRepository implements LoansRepository {
   Loan _myLoan(Map<String, dynamic> item) => Loan(
     id: item['id'] as String? ?? '',
     loanRef: item['loanRef'] as String?,
-    repaymentStructure:
-        item['repaymentStructure'] as String? ?? 'bullet',
+    repaymentStructure: item['repaymentStructure'] as String? ?? 'bullet',
     clientId: clientId ?? '',
     clientName: '',
     lenderName: item['lenderName'] as String? ?? '',
@@ -691,8 +711,7 @@ class ApiLoansRepository implements LoansRepository {
       Loan(
         id: item['id'] as String? ?? '',
         loanRef: item['loanRef'] as String?,
-        repaymentStructure:
-            item['repaymentStructure'] as String? ?? 'bullet',
+        repaymentStructure: item['repaymentStructure'] as String? ?? 'bullet',
         clientId: clientById[item['clientPhone'] as String?] ?? '',
         clientName: item['clientName'] as String? ?? '',
         lenderName: '',
@@ -709,8 +728,7 @@ class ApiLoansRepository implements LoansRepository {
   Loan _detailLoan(Map<String, dynamic> item) => Loan(
     id: item['id'] as String? ?? '',
     loanRef: item['loanRef'] as String?,
-    repaymentStructure:
-        item['repaymentStructure'] as String? ?? 'bullet',
+    repaymentStructure: item['repaymentStructure'] as String? ?? 'bullet',
     clientId: item['clientId'] as String? ?? '',
     clientName: item['clientName'] as String? ?? '',
     lenderName: '',
@@ -737,6 +755,9 @@ class ApiLoansRepository implements LoansRepository {
             ? _num(i['amount'])
             : minorToKwacha(i['amountMinor']),
         penalty: minorToKwacha(i['penaltyMinor']),
+        paidAmount: _num(i['paid']) != 0
+            ? _num(i['paid'])
+            : minorToKwacha(i['paidMinor'] ?? i['paidAmountMinor']),
         status: toInstallmentStatus(i['status'] as String?, dueDate),
         rolloverFee: i['rolloverFee'] as bool? ?? false,
       );

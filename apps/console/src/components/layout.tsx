@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { IconType } from 'react-icons';
 import {
+  FiActivity,
   FiBarChart2,
   FiBell,
   FiFileText,
@@ -55,7 +56,14 @@ const NAV: { cap: string; items: NavItem[] }[] = [
     items: [
       { to: '/admin',           label: 'Overview',     icon: FiGrid,   roles: ['platform_admin'] },
       { to: '/admin/queue',     label: 'Verification', icon: FiShield, roles: ['platform_admin'] },
-      { to: '/admin/borrowers', label: 'Borrowers',    icon: FiUsers,  roles: ['platform_admin'] },
+      { to: '/admin/borrowers', label: 'Borrowers',    icon: FiUsers,    roles: ['platform_admin'] },
+      { to: '/admin/audit',     label: 'Audit Log',    icon: FiActivity, roles: ['platform_admin'] },
+    ],
+  },
+  {
+    cap: 'Compliance',
+    items: [
+      { to: '/audit', label: 'Audit Log', icon: FiActivity, roles: ['tenant_owner', 'tenant_staff'] },
     ],
   },
 ];

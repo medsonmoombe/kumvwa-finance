@@ -122,6 +122,51 @@ class AuthController extends Notifier<AuthState> {
     }
   }
 
+  Future<LenderSignInResult?> loginLender(String email, String password) async {
+    state = state.copyWith(isSubmitting: true, clearError: true);
+    try {
+      final result = await ref.read(authRepositoryProvider).loginLender(email: email, password: password);
+      if (result.session != null) state = AuthState.authenticated(result.session);
+      else state = state.copyWith(isSubmitting: false);
+      return result;
+    } on AuthException catch (e) {
+      state = state.copyWith(isSubmitting: false, errorMessage: e.message);
+    } on ApiException catch (e) {
+      state = state.copyWith(isSubmitting: false, errorMessage: e.message);
+    } catch (_) {
+      state = state.copyWith(isSubmitting: false, errorMessage: 'Something went wrong. Please try again.');
+    }
+    return null;
+  }
+
+  Future<void> verifyLenderOtp(String preToken, String code) async {
+    state = state.copyWith(isSubmitting: true, clearError: true);
+    try {
+      final session = await ref.read(authRepositoryProvider).verifyLenderOtp(preToken: preToken, code: code);
+      state = AuthState.authenticated(session);
+    } on AuthException catch (e) {
+      state = state.copyWith(isSubmitting: false, errorMessage: e.message);
+    } on ApiException catch (e) {
+      state = state.copyWith(isSubmitting: false, errorMessage: e.message);
+    } catch (_) {
+      state = state.copyWith(isSubmitting: false, errorMessage: 'Something went wrong. Please try again.');
+    }
+  }
+
+  Future<void> redeemLenderAccessCode(String code) async {
+    state = state.copyWith(isSubmitting: true, clearError: true);
+    try {
+      final session = await ref.read(authRepositoryProvider).redeemLenderAccessCode(code);
+      state = AuthState.authenticated(session);
+    } on AuthException catch (e) {
+      state = state.copyWith(isSubmitting: false, errorMessage: e.message);
+    } on ApiException catch (e) {
+      state = state.copyWith(isSubmitting: false, errorMessage: e.message);
+    } catch (_) {
+      state = state.copyWith(isSubmitting: false, errorMessage: 'Something went wrong. Please try again.');
+    }
+  }
+
   Future<void> logout() async {
     await ref.read(authRepositoryProvider).logout();
     state = const AuthState.unauthenticated();

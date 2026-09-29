@@ -132,17 +132,21 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
     if (result.isEmpty) return;
     final file = result.first;
 
-    setState(() { _uploadingNrc = true; _error = null; });
+    setState(() {
+      _uploadingNrc = true;
+      _error = null;
+    });
     try {
       final bytes = await file.readAsBytes();
       final api = ref.read(apiClientProvider);
-      final mime = file.extension?.toLowerCase() == 'png' ? 'image/png' : 'image/jpeg';
+      final mime = file.extension?.toLowerCase() == 'png'
+          ? 'image/png'
+          : 'image/jpeg';
 
-      final urlRes = await api.postA('/files/client/upload-url', data: {
-        'kind': 'nrc_photo',
-        'mime': mime,
-        'size': bytes.length,
-      });
+      final urlRes = await api.postA(
+        '/files/client/upload-url',
+        data: {'kind': 'nrc_photo', 'mime': mime, 'size': bytes.length},
+      );
       final urlData = urlRes.data as Map<String, dynamic>;
       final fileId = urlData['fileId'] as String;
       final uploadUrl = urlData['uploadUrl'] as String;
@@ -150,10 +154,9 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
       await Dio().put<void>(
         uploadUrl,
         data: bytes,
-        options: Options(headers: {
-          'Content-Type': mime,
-          'Content-Length': bytes.length,
-        }),
+        options: Options(
+          headers: {'Content-Type': mime, 'Content-Length': bytes.length},
+        ),
       );
 
       await api.postA('/files/client/$fileId/confirm');
@@ -186,7 +189,12 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
         });
       }
     } catch (_) {
-      if (mounted) setState(() { _uploadingNrc = false; _error = 'Could not upload photo. Please try again.'; });
+      if (mounted) {
+        setState(() {
+          _uploadingNrc = false;
+          _error = 'Could not upload photo. Please try again.';
+        });
+      }
     }
   }
 
@@ -203,41 +211,52 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
   }
 
   Future<void> _submit() async {
-    setState(() { _submitting = true; _error = null; });
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
 
     final email = _emailCtrl.text.trim().isNotEmpty
         ? _emailCtrl.text.trim()
         : (ref.read(clientMeProvider).valueOrNull?.email ?? '');
 
     if (email.isEmpty) {
-      setState(() { _submitting = false; _error = 'Please enter your email address.'; });
+      setState(() {
+        _submitting = false;
+        _error = 'Please enter your email address.';
+      });
       return;
     }
 
     final String? incomeSource;
     if (_employment == 'formal_employment' && _sector != null) {
       incomeSource = _sector;
-    } else if (_employment == 'other' && _otherEmploymentCtrl.text.trim().isNotEmpty) {
+    } else if (_employment == 'other' &&
+        _otherEmploymentCtrl.text.trim().isNotEmpty) {
       incomeSource = _otherEmploymentCtrl.text.trim();
     } else {
       incomeSource = null;
     }
 
     try {
-      await ref.read(apiClientProvider).putA(
-        '/clients/me/profile',
-        data: {
-          'email': email,
-          'employmentStatus': ?_employment,
-          'educationLevel': ?_education,
-          'incomeBand': ?_income,
-          'incomeSource': ?incomeSource,
-          if (_kinNameCtrl.text.trim().isNotEmpty) 'kinName': _kinNameCtrl.text.trim(),
-          if (_kinPhoneCtrl.text.trim().isNotEmpty) 'kinPhone': _kinPhoneCtrl.text.trim(),
-          'nrcPhotoFileId': ?_nrcPhotoFileId,
-          'nrcBackPhotoFileId': ?_nrcBackFileId,
-        },
-      );
+      await ref
+          .read(apiClientProvider)
+          .putA(
+            '/clients/me/profile',
+            data: {
+              'email': email,
+              'employmentStatus': ?_employment,
+              'educationLevel': ?_education,
+              'incomeBand': ?_income,
+              'incomeSource': ?incomeSource,
+              if (_kinNameCtrl.text.trim().isNotEmpty)
+                'kinName': _kinNameCtrl.text.trim(),
+              if (_kinPhoneCtrl.text.trim().isNotEmpty)
+                'kinPhone': _kinPhoneCtrl.text.trim(),
+              'nrcPhotoFileId': ?_nrcPhotoFileId,
+              'nrcBackPhotoFileId': ?_nrcBackFileId,
+            },
+          );
       ref.invalidate(clientGateProvider);
       ref.invalidate(clientMeProvider);
     } catch (e) {
@@ -254,14 +273,21 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
           }
         }
       }
-      setState(() { _submitting = false; _error = msg; });
+      setState(() {
+        _submitting = false;
+        _error = msg;
+      });
     }
   }
 
   static String? _validateEmail(String? v, String? onFile) {
     final email = v?.trim() ?? '';
-    if (email.isEmpty) return (onFile == null || onFile.isEmpty) ? 'Email is required' : null;
-    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) return 'Enter a valid email';
+    if (email.isEmpty) {
+      return (onFile == null || onFile.isEmpty) ? 'Email is required' : null;
+    }
+    if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)) {
+      return 'Enter a valid email';
+    }
     return null;
   }
 
@@ -270,7 +296,9 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
   /// employment / sector / education / income until they're all filled.
   String? _missingStep0() {
     if (_employment == null) return 'Select your employment status';
-    if (_employment == 'formal_employment' && _sector == null) return 'Select your employment sector';
+    if (_employment == 'formal_employment' && _sector == null) {
+      return 'Select your employment sector';
+    }
     if (_education == null) return 'Select your education level';
     if (_income == null) return 'Select your income range';
     return null;
@@ -279,7 +307,9 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
   /// Step 2 required fields (next of kin) — same binding rule as step 0.
   String? _missingStep2() {
     if (_kinNameCtrl.text.trim().isEmpty) return 'Enter your next of kin name';
-    if (_kinPhoneCtrl.text.trim().isEmpty) return 'Enter your next of kin phone';
+    if (_kinPhoneCtrl.text.trim().isEmpty) {
+      return 'Enter your next of kin phone';
+    }
     return null;
   }
 
@@ -307,7 +337,11 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
               if (_step == 0) ...[
                 const Text(
                   'We need a few details for your lender to assess your applications.',
-                  style: TextStyle(fontSize: 12.5, color: AppColors.muted, height: 1.5),
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.muted,
+                    height: 1.5,
+                  ),
                 ),
                 const SizedBox(height: 18),
                 AppTextField(
@@ -331,10 +365,19 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: employments.entries.map((e) => _chip(
-                    e.value, _employment == e.key,
-                    () => setState(() { _employment = e.key; _sector = null; _otherEmploymentCtrl.clear(); }),
-                  )).toList(),
+                  children: employments.entries
+                      .map(
+                        (e) => _chip(
+                          e.value,
+                          _employment == e.key,
+                          () => setState(() {
+                            _employment = e.key;
+                            _sector = null;
+                            _otherEmploymentCtrl.clear();
+                          }),
+                        ),
+                      )
+                      .toList(),
                 ),
                 if (_employment == 'formal_employment') ...[
                   const SizedBox(height: 14),
@@ -343,7 +386,9 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
                   _dropdown(
                     value: _sector,
                     hint: 'Select your sector',
-                    items: sectors.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+                    items: sectors
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+                        .toList(),
                     onChanged: (v) => setState(() => _sector = v),
                   ),
                 ],
@@ -363,7 +408,12 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
                   value: _education,
                   hint: 'Select education level',
                   items: educationLevels.entries
-                      .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e.key,
+                          child: Text(e.value),
+                        ),
+                      )
                       .toList(),
                   onChanged: (v) => setState(() => _education = v),
                 ),
@@ -374,19 +424,27 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
                   value: _income,
                   hint: 'Select income range',
                   items: incomes.entries
-                      .map((e) => DropdownMenuItem(value: e.key, child: Text(e.value)))
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e.key,
+                          child: Text(e.value),
+                        ),
+                      )
                       .toList(),
                   onChanged: (v) => setState(() => _income = v),
                 ),
               ]
-
               // ── Step 1: NRC photo (both faces) ──
               else if (_step == 1) ...[
                 _fieldLabel('NRC photos'),
                 const SizedBox(height: 6),
                 const Text(
                   'Upload clear photos of both sides of your National Registration Card. JPEG or PNG only.',
-                  style: TextStyle(fontSize: 12, color: AppColors.muted, height: 1.5),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.muted,
+                    height: 1.5,
+                  ),
                 ),
                 const SizedBox(height: 14),
                 Row(
@@ -427,7 +485,6 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
                   style: TextStyle(fontSize: 11, color: AppColors.muted),
                 ),
               ]
-
               // ── Step 2: next of kin ──
               else ...[
                 _fieldLabel('Next of kin name'),
@@ -453,7 +510,11 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
                 const SizedBox(height: 10),
                 const Text(
                   'Your next of kin may be contacted if we cannot reach you about your loan.',
-                  style: TextStyle(fontSize: 11.5, color: AppColors.muted, height: 1.5),
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: AppColors.muted,
+                    height: 1.5,
+                  ),
                 ),
               ],
 
@@ -462,33 +523,57 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
                 Text(
                   _error!,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 12.5, color: AppColors.red, height: 1.4),
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: AppColors.red,
+                    height: 1.4,
+                  ),
                 ),
               ],
               const SizedBox(height: 22),
               ElevatedButton(
-                onPressed: _submitting ? null : () {
-                  if (_step == 0) {
-                    final emailOk = _formKey.currentState?.validate() ?? false;
-                    final missing = _missingStep0();
-                    if (emailOk && missing == null) {
-                      setState(() { _error = null; _step = 1; });
-                    } else {
-                      setState(() => _error = missing ?? 'Please fix the highlighted fields.');
-                    }
-                  } else if (_step == 1) {
-                    setState(() { _error = null; _step = 2; });
-                  } else {
-                    final err = _missingStep2();
-                    if (err == null) {
-                      _submit();
-                    } else {
-                      setState(() => _error = err);
-                    }
-                  }
-                },
+                onPressed: _submitting
+                    ? null
+                    : () {
+                        if (_step == 0) {
+                          final emailOk =
+                              _formKey.currentState?.validate() ?? false;
+                          final missing = _missingStep0();
+                          if (emailOk && missing == null) {
+                            setState(() {
+                              _error = null;
+                              _step = 1;
+                            });
+                          } else {
+                            setState(
+                              () => _error =
+                                  missing ??
+                                  'Please fix the highlighted fields.',
+                            );
+                          }
+                        } else if (_step == 1) {
+                          setState(() {
+                            _error = null;
+                            _step = 2;
+                          });
+                        } else {
+                          final err = _missingStep2();
+                          if (err == null) {
+                            _submit();
+                          } else {
+                            setState(() => _error = err);
+                          }
+                        }
+                      },
                 child: _submitting
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.4, color: Colors.white))
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.4,
+                          color: Colors.white,
+                        ),
+                      )
                     : Text(_step == 2 ? 'Submit Profile' : 'Continue'),
               ),
             ],
@@ -500,7 +585,11 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
 
   Widget _fieldLabel(String text) => Text(
     text,
-    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.ink),
+    style: const TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w600,
+      color: AppColors.ink,
+    ),
   );
   Widget _chip(String label, bool on, VoidCallback onTap) {
     return GestureDetector(
@@ -540,9 +629,15 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           value: value,
-          hint: Text(hint, style: const TextStyle(fontSize: 13.5, color: AppColors.muted)),
+          hint: Text(
+            hint,
+            style: const TextStyle(fontSize: 13.5, color: AppColors.muted),
+          ),
           isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.muted),
+          icon: const Icon(
+            Icons.keyboard_arrow_down_rounded,
+            color: AppColors.muted,
+          ),
           style: const TextStyle(fontSize: 13.5, color: AppColors.ink),
           items: items,
           onChanged: _submitting ? null : onChanged,
@@ -767,7 +862,8 @@ class _NrcPhotoDialogState extends ConsumerState<_NrcPhotoDialog> {
                     url,
                     height: 320,
                     fit: BoxFit.contain,
-                    loadingBuilder: (context, child, progress) => progress == null
+                    loadingBuilder: (context, child, progress) =>
+                        progress == null
                         ? child
                         : const SizedBox(
                             height: 320,
@@ -775,7 +871,9 @@ class _NrcPhotoDialogState extends ConsumerState<_NrcPhotoDialog> {
                               child: SizedBox(
                                 width: 22,
                                 height: 22,
-                                child: CircularProgressIndicator(strokeWidth: 2.4),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.4,
+                                ),
                               ),
                             ),
                           ),

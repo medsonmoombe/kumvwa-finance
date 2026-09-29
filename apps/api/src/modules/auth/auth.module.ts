@@ -16,6 +16,6 @@ import { AuthService } from './auth.service';
   providers: [AuthService, EmailService, PasswordService, TokenService, NrcCryptoService],
   // NrcCryptoService is exported for the verification/compliance modules,
   // which decrypt tenant-owner NRCs under audit.
-  exports: [TokenService, PasswordService, NrcCryptoService],
+  exports: [AuthService, TokenService, PasswordService, NrcCryptoService],
 })
 export class AuthModule {}

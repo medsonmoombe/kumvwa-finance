@@ -29,7 +29,7 @@ class ClientShell extends StatelessWidget {
         child: SafeArea(
           top: false,
           child: SizedBox(
-            height: 58,
+            height: 62,
             child: Row(
               children: [
                 _navItem(context, 0, Icons.home_rounded, 'Home'),
@@ -44,34 +44,45 @@ class ClientShell extends StatelessWidget {
     );
   }
 
-  Widget _navItem(BuildContext context, int index, IconData icon, String label) {
+  Widget _navItem(
+    BuildContext context,
+    int index,
+    IconData icon,
+    String label,
+  ) {
     final active = shell.currentIndex == index;
-    final color = active ? AppColors.blue600 : AppColors.muted;
+    final color = active ? AppColors.blue600 : const Color(0xFF9AA1B2);
     return Expanded(
       child: InkWell(
         onTap: () => _go(index),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 62,
-              height: 32,
-              alignment: Alignment.center,
+            // Top bar indicator — matches .nv.on::before in the HTML
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              height: 3,
+              width: active ? 26 : 0,
               decoration: BoxDecoration(
-                color: active ? AppColors.blue50 : Colors.transparent,
-                borderRadius: BorderRadius.circular(18),
+                color: AppColors.blue600,
+                borderRadius: const BorderRadius.only(
+                  bottomLeft: Radius.circular(3),
+                  bottomRight: Radius.circular(3),
+                ),
               ),
-              child: Icon(icon, size: 18, color: color),
             ),
+            const SizedBox(height: 4),
+            Icon(icon, size: 20, color: color),
             const SizedBox(height: 3),
             Text(
               label,
               style: GoogleFonts.poppins(
-                fontSize: 9,
+                fontSize: 9.5,
                 fontWeight: active ? FontWeight.w700 : FontWeight.w600,
                 color: color,
               ),
             ),
+            const SizedBox(height: 4),
           ],
         ),
       ),

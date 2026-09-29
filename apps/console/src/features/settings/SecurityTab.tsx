@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { FiMonitor, FiShield } from 'react-icons/fi';
+import { FiKey, FiMonitor, FiShield } from 'react-icons/fi';
 
 import { ErrorBox } from '../../components/ui';
 import { ConfirmDialog, Pill, Sk } from '../../components/kit';
@@ -21,6 +21,8 @@ export function SecurityTab({
   const [revoking, setRevoking] = useState<Device | null>(null);
   const [busy, setBusy] = useState(false);
   const [toggling, setToggling] = useState(false);
+  const [mobileCode, setMobileCode] = useState<{ code: string; expiresAt: string } | null>(null);
+  const [generatingCode, setGeneratingCode] = useState(false);
 
   useEffect(() => {
     api.get<Device[]>('/auth/devices')
@@ -59,6 +61,17 @@ export function SecurityTab({
     } finally {
       setBusy(false); setRevoking(null);
     }
+  }
+
+  async function generateMobileCode() {
+    setGeneratingCode(true); setError('');
+    try {
+      const res = await api.post<{ code: string; expiresAt: string }>('/auth/mobile/lender/access-code');
+      setMobileCode(res.data);
+      onFlash('One-time mobile access code created');
+    } catch (e) {
+      const msg = apiError(e); setError(msg); onError(msg);
+    } finally { setGeneratingCode(false); }
   }
 
   return (
@@ -109,6 +122,18 @@ export function SecurityTab({
       </div>
 
       {/* ── trusted devices ── */}
+      <div className="mb-4 overflow-hidden rounded-card border border-line bg-white">
+        <div className="flex items-center justify-between border-b border-line bg-[#FAFBFD] px-3 py-2">
+          <span className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-ink-muted">Mobile Access Code</span>
+        </div>
+        <div className="flex items-center gap-4 p-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[3px] border border-line bg-surface text-ink-2"><FiKey size={18} /></div>
+          <div className="min-w-0 flex-1"><b className="block text-[13px] font-semibold text-ink">Sign in without email delivery</b><p className="mt-0.5 text-[11px] text-ink-muted">Create a high-entropy code for your own lender app sign-in. It expires in 10 minutes and works once.</p></div>
+          <Pill tone="primary" onClick={generateMobileCode} disabled={generatingCode}>{generatingCode ? 'Creating...' : 'Generate code'}</Pill>
+        </div>
+        {mobileCode && <div className="border-t border-line bg-surface px-4 py-3"><div className="font-mono text-[16px] font-bold tracking-[0.08em] text-ink">{mobileCode.code}</div><p className="mt-1 text-[10.5px] text-ink-muted">Share it directly with the account holder. It expires {date(mobileCode.expiresAt)} and is never shown again.</p></div>}
+      </div>
+
       <div className="overflow-hidden rounded-card border border-line bg-white">
         <div className="flex items-center justify-between border-b border-line bg-[#FAFBFD] px-3 py-2">
           <span className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-ink-muted">

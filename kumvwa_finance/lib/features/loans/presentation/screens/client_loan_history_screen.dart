@@ -3,8 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:kumvwa_finance/core/domain/loan_status.dart';
+import 'package:kumvwa_finance/core/network/api_exception.dart';
 import 'package:kumvwa_finance/core/theme/app_colors.dart';
+import 'package:kumvwa_finance/core/theme/app_effects.dart';
 import 'package:kumvwa_finance/core/utils/format.dart';
+import 'package:kumvwa_finance/core/widgets/client_dome_header.dart';
 import 'package:kumvwa_finance/core/widgets/skeleton.dart';
 import 'package:kumvwa_finance/features/auth/presentation/auth_controller.dart';
 import 'package:kumvwa_finance/features/loans/data/loan_requests_repository.dart';
@@ -15,54 +18,136 @@ import 'package:kumvwa_finance/features/loans/presentation/widgets/history_tile.
 
 /// Borrowing record as a compact, grouped list. Home carries hero surfaces;
 /// History keeps loan and application events dense and easy to scan.
-class ClientLoanHistoryScreen extends ConsumerWidget {
+class ClientLoanHistoryScreen extends ConsumerStatefulWidget {
   const ClientLoanHistoryScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ClientLoanHistoryScreen> createState() =>
+      _ClientLoanHistoryScreenState();
+}
+
+class _ClientLoanHistoryScreenState
+    extends ConsumerState<ClientLoanHistoryScreen> {
+  int _tab = 0; // 0 = Loans, 1 = Applications
+
+  @override
+  Widget build(BuildContext context) {
     final clientId = ref.watch(authControllerProvider).session?.userId ?? '';
     final loansAsync = ref.watch(clientLoansProvider);
     final requestsAsync = ref.watch(loanRequestsByClientProvider(clientId));
 
     return Scaffold(
-      appBar: AppBar(title: const Text('History')),
+      backgroundColor: AppColors.bg,
       body: SafeArea(
         child: RefreshIndicator(
+          color: AppColors.blue600,
           onRefresh: () async {
             ref.invalidate(clientLoansProvider);
             ref.invalidate(loanRequestsByClientProvider(clientId));
           },
           child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(16, 6, 16, 90),
+            padding: EdgeInsets.zero,
             children: [
-              loansAsync.when(
-                loading: () => const Skeleton(
-                  width: double.infinity,
-                  height: 58,
-                  radius: 13,
+              // Dome scrolls with content
+              ClientDomeHeader(
+                title: 'History',
+                subtitle: '${loansAsync.valueOrNull?.length ?? 0} loans · '
+                    '${requestsAsync.valueOrNull?.length ?? 0} applications',
+                bottom: Container(
+                  height: 44,
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(AppRadii.input),
+                  ),
+                  child: Row(
+                    children: [
+                      _SegBtn(
+                        label: 'Loans',
+                        active: _tab == 0,
+                        onTap: () => setState(() => _tab = 0),
+                        onDome: true,
+                      ),
+                      _SegBtn(
+                        label: 'Applications',
+                        active: _tab == 1,
+                        onTap: () => setState(() => _tab = 1),
+                        onDome: true,
+                      ),
+                    ],
+                  ),
                 ),
-                error: (_, _) => _ErrorHint(
-                  label: 'Could not load your loans',
-                  onRetry: () => ref.invalidate(clientLoansProvider),
-                ),
-                data: (loans) => _LoansSection(loans: loans),
               ),
-              const SizedBox(height: 16),
-              requestsAsync.when(
-                loading: () => const Skeleton(
-                  width: double.infinity,
-                  height: 134,
-                  radius: 15,
-                ),
-                error: (_, _) => _ErrorHint(
-                  label: 'Could not load your applications',
-                  onRetry: () =>
-                      ref.invalidate(loanRequestsByClientProvider(clientId)),
-                ),
-                data: (requests) => _ApplicationsSection(requests: requests),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 90),
+                child: _tab == 0
+                    ? loansAsync.when(
+                        loading: () => const Skeleton(width: double.infinity, height: 58, radius: 13),
+                        error: (e, _) => _ErrorHint(
+                          label: 'Could not load your loans',
+                          detail: describeApiError(e),
+                          onRetry: () => ref.invalidate(clientLoansProvider),
+                        ),
+                        data: (loans) => _LoansSection(loans: loans),
+                      )
+                    : requestsAsync.when(
+                        loading: () => const Skeleton(width: double.infinity, height: 134, radius: 15),
+                        error: (e, _) => _ErrorHint(
+                          label: 'Could not load your applications',
+                          detail: describeApiError(e),
+                          onRetry: () => ref.invalidate(loanRequestsByClientProvider(clientId)),
+                        ),
+                        data: (requests) => _ApplicationsSection(requests: requests),
+                      ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Segmented control button — matches HTML .seg button
+class _SegBtn extends StatelessWidget {
+  const _SegBtn({
+    required this.label,
+    required this.active,
+    required this.onTap,
+    this.onDome = false,
+  });
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  final bool onDome;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: active
+                ? (onDome
+                    ? Colors.white.withValues(alpha: 0.25)
+                    : Colors.white)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(AppRadii.xs),
+            boxShadow: active && !onDome ? AppShadows.shSeg : null,
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+              color: onDome
+                  ? Colors.white
+                  : (active ? AppColors.ink : AppColors.muted),
+            ),
           ),
         ),
       ),
@@ -79,7 +164,9 @@ class _LoansSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final borrowed = loans.fold<double>(0, (sum, loan) => sum + loan.principal);
     final repaid = loans.fold<double>(0, (sum, loan) => sum + loan.amountPaid);
-    final cleared = loans.where((loan) => loan.status == LoanStatus.cleared).length;
+    final cleared = loans
+        .where((loan) => loan.status == LoanStatus.cleared)
+        .length;
 
     return Column(
       children: [
@@ -332,9 +419,13 @@ class _EmptyHint extends StatelessWidget {
 }
 
 class _ErrorHint extends StatelessWidget {
-  const _ErrorHint({required this.label, required this.onRetry});
+  const _ErrorHint({required this.label, required this.onRetry, this.detail});
   final String label;
   final VoidCallback onRetry;
+
+  /// Why it failed — status code + server message, or the parse error. Shown
+  /// muted so a screenshot says which endpoint rejected the call.
+  final String? detail;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -346,6 +437,14 @@ class _ErrorHint extends StatelessWidget {
     child: Column(
       children: [
         Text(label, style: const TextStyle(fontSize: 12, color: AppColors.red)),
+        if (detail != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            detail!,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 11, color: AppColors.muted),
+          ),
+        ],
         const SizedBox(height: 8),
         TextButton(onPressed: onRetry, child: const Text('Retry')),
       ],
@@ -356,7 +455,9 @@ class _ErrorHint extends StatelessWidget {
 String _loanSubtitle(Loan loan) {
   if (loan.status == LoanStatus.cleared) {
     final date = loan.schedule.isEmpty ? null : loan.schedule.last.dueDate;
-    return date == null ? 'Repaid in full' : 'Repaid in full · ${Fmt.date(date)}';
+    return date == null
+        ? 'Repaid in full'
+        : 'Repaid in full · ${Fmt.date(date)}';
   }
   final due = loan.nextInstallment?.dueDate;
   return due == null

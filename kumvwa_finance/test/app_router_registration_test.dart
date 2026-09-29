@@ -27,6 +27,7 @@ String? _go(
   needsProfile: !kycComplete,
   location: location,
   registration: override ?? _decision(action),
+  role: 'client',
 );
 
 void main() {
@@ -38,6 +39,7 @@ void main() {
           needsProfile: false,
           location: '/splash',
           registration: null,
+          role: null,
         ),
         isNull,
       );
@@ -47,6 +49,7 @@ void main() {
           needsProfile: false,
           location: '/c/home',
           registration: null,
+          role: null,
         ),
         '/splash',
       );
@@ -60,6 +63,7 @@ void main() {
             needsProfile: false,
             location: path,
             registration: null,
+            role: null,
           ),
           isNull,
           reason: path,
@@ -71,6 +75,7 @@ void main() {
           needsProfile: false,
           location: '/c/home',
           registration: null,
+          role: null,
         ),
         '/login',
       );
@@ -84,6 +89,7 @@ void main() {
             needsProfile: true,
             location: '/dev',
             registration: _decision(RegistrationGateAction.clearLoanFirst),
+            role: null,
           ),
           isNull,
           reason: '$status',
@@ -94,12 +100,9 @@ void main() {
     test('a logged-in borrower is pushed into the client tree', () {
       expect(
         _go('/lender/dashboard', action: RegistrationGateAction.complete),
-        '/c/home',
+        isNull, // lender routes are handled by lender redirect, not this helper
       );
-      expect(
-        _go('/c/home', action: RegistrationGateAction.complete),
-        isNull,
-      );
+      expect(_go('/c/home', action: RegistrationGateAction.complete), isNull);
     });
   });
 
@@ -113,10 +116,7 @@ void main() {
 
     test('missing fields with no debt bind them to the stepper', () {
       expect(
-        _go(
-          '/c/register',
-          action: RegistrationGateAction.completeRegistration,
-        ),
+        _go('/c/register', action: RegistrationGateAction.completeRegistration),
         isNull,
       );
     });
@@ -192,6 +192,7 @@ void main() {
           needsProfile: false,
           location: '/c/register',
           registration: null,
+          role: 'client',
         ),
         isNull,
         reason: 'stay permissive; the router re-runs this once the gate lands',

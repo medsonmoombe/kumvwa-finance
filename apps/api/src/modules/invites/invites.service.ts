@@ -100,6 +100,7 @@ export class InvitesService {
     await this.audit.record({
       actorId,
       action: 'invite.create',
+      description: `Invite sent to ${dto.clientName.trim()} (${phone})`,
       entity: 'Invite',
       entityId: invite.id,
       tenantId,
@@ -240,6 +241,7 @@ export class InvitesService {
       await this.audit.record({
         actorId: phoneTaken.id,
         action: 'invite.complete_existing_client',
+        description: 'Existing client accepted invite and was linked to a new lender',
         entity: 'Invite',
         entityId: invite.id,
         tenantId: invite.tenantId,
@@ -293,6 +295,7 @@ export class InvitesService {
     await this.audit.record({
       actorId: clientId,
       action: 'invite.complete_account_created',
+      description: 'New client account created and linked to lender via invite',
       entity: 'Client',
       entityId: clientId,
       tenantId: invite.tenantId,
@@ -361,6 +364,7 @@ export class InvitesService {
     await this.audit.record({
       actorId,
       action: 'invite.resend',
+      description: `Invite resent to ${invite.clientName} with a fresh code`,
       entity: 'Invite',
       entityId: invite.id,
       tenantId,

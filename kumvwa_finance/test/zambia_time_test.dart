@@ -49,21 +49,30 @@ void main() {
     test('counts a one-month loan as 30 days from the 27th', () {
       // The reported case: drawn 27 Sept, due 27 Oct.
       expect(
-        daysUntilZambianDate(DateTime(2026, 10, 27), DateTime.utc(2026, 9, 27, 11)),
+        daysUntilZambianDate(
+          DateTime(2026, 10, 27),
+          DateTime.utc(2026, 9, 27, 11),
+        ),
         30,
       );
     });
 
     test('is 0 on the due date, not 1', () {
       expect(
-        daysUntilZambianDate(DateTime(2026, 10, 27), DateTime.utc(2026, 10, 27, 8)),
+        daysUntilZambianDate(
+          DateTime(2026, 10, 27),
+          DateTime.utc(2026, 10, 27, 8),
+        ),
         0,
       );
     });
 
     test('goes negative once the day has passed', () {
       expect(
-        daysUntilZambianDate(DateTime(2026, 10, 27), DateTime.utc(2026, 10, 28, 8)),
+        daysUntilZambianDate(
+          DateTime(2026, 10, 27),
+          DateTime.utc(2026, 10, 28, 8),
+        ),
         -1,
       );
     });

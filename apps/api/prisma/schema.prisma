@@ -216,6 +216,7 @@ model User {
   staffRole      Role?             @relation(fields: [roleId], references: [id])
   refreshTokens  RefreshToken[]
   notifications  Notification[]
+  mobileAccessCodes MobileAccessCode[]
   devices        DevicePushToken[]
   trustedDevices TrustedDevice[]
 
@@ -412,6 +413,7 @@ model Repayment {
   loanId         String
   tenantId       String
   amount         BigInt
+  kind           String          @default("repayment") // repayment | rollover_interest
   method         RepaymentMethod
   reference      String?
   idempotencyKey String          @unique
@@ -539,16 +541,17 @@ model RefreshToken {
 }
 
 model AuditLog {
-  id        String   @id @default(cuid())
-  actorId   String? // loose ref (no FK) — log survives user deletion
-  action    String // auth.login | loan.approve | pii.read | ...
-  entity    String?
-  entityId  String?
-  tenantId  String?
-  diff      Json?
-  ip        String?
-  userAgent String?
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  actorId     String? // loose ref (no FK) — log survives user deletion
+  action      String // auth.login | loan.approve | pii.read | ...
+  description String? // brief human-readable summary of what happened
+  entity      String?
+  entityId    String?
+  tenantId    String?
+  diff        Json?
+  ip          String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
 
   @@index([entity, entityId])
   @@index([actorId, createdAt])
@@ -627,6 +630,22 @@ model EmailOutbox {
   createdAt DateTime  @default(now())
 
   @@index([status, createdAt])
+}
+
+model MobileAccessCode {
+  id          String   @id @default(cuid())
+  codeHash    String   @unique
+  userId      String
+  tenantId    String
+  generatedBy String
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([tenantId, createdAt])
 }
 
 // ── M5: per-tenant lending rules (the credit ladder) ──

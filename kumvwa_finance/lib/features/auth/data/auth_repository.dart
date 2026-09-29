@@ -15,11 +15,27 @@ class AuthException implements Exception {
   final String message;
 }
 
+class LenderSignInResult {
+  const LenderSignInResult.session(this.session)
+      : preToken = null,
+        devCode = null;
+  const LenderSignInResult.otp(this.preToken, {this.devCode}) : session = null;
+
+  final UserSession? session;
+  final String? preToken;
+  final String? devCode;
+  bool get needsOtp => preToken != null;
+}
+
 abstract class AuthRepository {
   /// Returns the restored session, or null if not logged in.
   Future<UserSession?> restoreSession();
 
   Future<UserSession> login({required String phone, required String password});
+
+  Future<LenderSignInResult> loginLender({required String email, required String password});
+  Future<UserSession> verifyLenderOtp({required String preToken, required String code});
+  Future<UserSession> redeemLenderAccessCode(String code);
 
   Future<void> logout();
 }
@@ -102,6 +118,21 @@ class MockAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<LenderSignInResult> loginLender({required String email, required String password}) async {
+    throw const AuthException('Lender sign-in requires the live Kumvwa service.');
+  }
+
+  @override
+  Future<UserSession> verifyLenderOtp({required String preToken, required String code}) async {
+    throw const AuthException('Lender sign-in requires the live Kumvwa service.');
+  }
+
+  @override
+  Future<UserSession> redeemLenderAccessCode(String code) async {
+    throw const AuthException('Lender sign-in requires the live Kumvwa service.');
+  }
+
+  @override
   Future<void> logout() => _tokenStore.clear();
 }
 
@@ -165,6 +196,54 @@ class ApiAuthRepository implements AuthRepository {
       if (e.response?.statusCode == 401) {
         throw const AuthException('Invalid phone number or password');
       }
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  @override
+  Future<LenderSignInResult> loginLender({required String email, required String password}) async {
+    try {
+      final device = await tokenStore.readLenderDeviceToken();
+      final res = await client.postPublic(
+        '/auth/mobile/lender/login',
+        data: {'email': email.trim(), 'password': password},
+        headers: device == null ? null : {'X-Device-Token': device},
+      );
+      final data = res.data as Map<String, dynamic>;
+      if (data['stage'] == '2fa' && data['preToken'] is String) {
+        return LenderSignInResult.otp(data['preToken'] as String, devCode: data['devCode'] as String?);
+      }
+      return LenderSignInResult.session(await client.adoptTokensAndFetchUser(data));
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) throw const AuthException('Invalid email or password');
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  @override
+  Future<UserSession> verifyLenderOtp({required String preToken, required String code}) async {
+    try {
+      final res = await client.postPublic(
+        '/auth/mobile/lender/verify-2fa',
+        data: {'preToken': preToken, 'code': code, 'rememberDevice': true},
+      );
+      final data = res.data as Map<String, dynamic>;
+      final device = data['deviceToken'] as String?;
+      if (device != null && device.isNotEmpty) await tokenStore.saveLenderDeviceToken(device);
+      return client.adoptTokensAndFetchUser(data);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) throw const AuthException('Incorrect or expired sign-in code');
+      throw ApiException.fromDio(e);
+    }
+  }
+
+  @override
+  Future<UserSession> redeemLenderAccessCode(String code) async {
+    try {
+      final res = await client.postPublic('/auth/mobile/lender/access-code/redeem', data: {'code': code.trim()});
+      return client.adoptTokensAndFetchUser(res.data as Map<String, dynamic>);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) throw const AuthException('This access code is invalid, expired, or already used.');
       throw ApiException.fromDio(e);
     }
   }

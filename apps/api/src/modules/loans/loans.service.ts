@@ -53,7 +53,10 @@ export class LoansService {
     return {
       items: loans
         .map((l) => {
-          const outstanding = l.totalDue - l.paidAmount;
+          const outstanding = l.installments.reduce((sum, installment) => {
+            const owed = installment.amount + installment.penaltyMinor - installment.paidAmount;
+            return sum + (owed > 0n ? owed : 0n);
+          }, 0n);
           const next = l.installments.find(
             (i) => i.status === 'overdue' || i.status === 'pending',
           );
@@ -143,11 +146,7 @@ export class LoansService {
       include: {
         client: { select: { firstName: true, lastName: true, phone: true } },
         // Only the next unpaid installment — that's all the list row shows.
-        installments: {
-          where: { status: { not: 'paid' } },
-          orderBy: { dueDate: 'asc' },
-          take: 1,
-        },
+        installments: { orderBy: { dueDate: 'asc' } },
       },
       orderBy: { createdAt: 'desc' },
       take: 200,
@@ -170,7 +169,10 @@ export class LoansService {
       throw new NotFoundException('Loan not found');
     }
 
-    const outstanding = loan.totalDue - loan.paidAmount;
+    const outstanding = loan.installments.reduce((sum, installment) => {
+      const owed = installment.amount + installment.penaltyMinor - installment.paidAmount;
+      return sum + (owed > 0n ? owed : 0n);
+    }, 0n);
     return {
       id: loan.id,
       loanRef: loan.loanRef,
@@ -242,6 +244,7 @@ export class LoansService {
         id: r.id,
         amount: minorToKwacha(r.amount),
         amountMinor: r.amount.toString(),
+        kind: r.kind,
         method: r.method,
         reference: r.reference,
         recordedBy: r.recordedBy,
@@ -278,6 +281,10 @@ export class LoansService {
       return this.receiptFor(existing.id, loanId, true);
     }
 
+    const scaled = dto.amount * 100;
+    if (!Number.isSafeInteger(Math.round(scaled)) || Math.abs(scaled - Math.round(scaled)) > 1e-7) {
+      throw new BadRequestException('Amount must have no more than two decimal places');
+    }
     const amountMinor = kwachaToMinor(dto.amount);
     if (amountMinor <= 0n) {
       throw new BadRequestException('Amount must be greater than zero');
@@ -375,6 +382,7 @@ export class LoansService {
           loanId,
           tenantId: loan.tenantId,
           amount: amountMinor,
+          kind: 'repayment',
           method: dto.method,
           reference: dto.reference?.trim() || null,
           idempotencyKey: key,
@@ -409,6 +417,7 @@ export class LoansService {
     await this.audit.record({
       actorId,
       action: 'loan.repayment',
+      description: `Repayment of K${minorToKwacha(amountMinor)} recorded via ${dto.method}${result.cleared ? ' — loan fully cleared' : ''}`,
       entity: 'Loan',
       entityId: loanId,
       tenantId: result.tenantId,
@@ -595,6 +604,7 @@ export class LoansService {
           loanId,
           tenantId: loan.tenantId,
           amount: plan.paymentMinor,
+          kind: 'rollover_interest',
           method: 'mobile_money',
           idempotencyKey: key,
           recordedBy: actorId,
@@ -628,6 +638,7 @@ export class LoansService {
     await this.audit.record({
       actorId,
       action: 'loan.rollover',
+      description: `Loan extended — interest share of K${minorToKwacha(result.shareMinor)} collected and due dates shifted by one month`,
       entity: 'Loan',
       entityId: loanId,
       tenantId: result.tenantId,
@@ -643,7 +654,10 @@ export class LoansService {
       where: { id: loanId },
       include: { installments: { orderBy: { seq: 'asc' } } },
     });
-    const outstanding = loan.totalDue - loan.paidAmount;
+    const outstanding = loan.installments.reduce((sum, installment) => {
+      const owed = installment.amount + installment.penaltyMinor - installment.paidAmount;
+      return sum + (owed > 0n ? owed : 0n);
+    }, 0n);
     const next = loan.installments.find((i) => i.status !== 'paid');
     return {
       replayed,
@@ -660,21 +674,23 @@ export class LoansService {
     loanId: string,
     replayed: boolean,
   ) {
-    const [repayment, loan, next] = await Promise.all([
+    const [repayment, loan, installments] = await Promise.all([
       this.prisma.repayment.findUniqueOrThrow({ where: { id: repaymentId } }),
       this.prisma.loan.findUniqueOrThrow({ where: { id: loanId } }),
-      this.prisma.installment.findFirst({
-        where: { loanId, status: { not: 'paid' } },
-        orderBy: { dueDate: 'asc' },
-      }),
+      this.prisma.installment.findMany({ where: { loanId }, orderBy: { dueDate: 'asc' } }),
     ]);
 
-    const outstanding = loan.totalDue - loan.paidAmount;
+    const outstanding = installments.reduce((sum, installment) => {
+      const owed = installment.amount + installment.penaltyMinor - installment.paidAmount;
+      return sum + (owed > 0n ? owed : 0n);
+    }, 0n);
+    const next = installments.find((installment) => installment.status !== 'paid');
     return {
       id: repayment.id,
       replayed,
       amount: minorToKwacha(repayment.amount),
       amountMinor: repayment.amount.toString(),
+      kind: repayment.kind,
       method: repayment.method,
       reference: repayment.reference,
       createdAt: repayment.createdAt,
@@ -700,10 +716,13 @@ export class LoansService {
     totalDue: bigint;
     paidAmount: bigint;
     client: { firstName: string; lastName: string; phone: string };
-    installments: { dueDate: Date; amount: bigint }[];
+    installments: { dueDate: Date; amount: bigint; paidAmount: bigint; penaltyMinor: bigint; status: string }[];
   }) {
-    const outstanding = l.totalDue - l.paidAmount;
-    const next = l.installments[0];
+    const outstanding = l.installments.reduce((sum, installment) => {
+      const owed = installment.amount + installment.penaltyMinor - installment.paidAmount;
+      return sum + (owed > 0n ? owed : 0n);
+    }, 0n);
+    const next = l.installments.find((installment) => installment.status !== 'paid');
     return {
       id: l.id,
       loanRef: l.loanRef,

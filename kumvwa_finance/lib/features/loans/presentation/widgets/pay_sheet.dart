@@ -11,22 +11,43 @@ import 'package:kumvwa_finance/core/network/api_exception.dart';
 import 'package:kumvwa_finance/core/theme/app_colors.dart';
 import 'package:kumvwa_finance/core/utils/format.dart';
 import 'package:kumvwa_finance/core/widgets/provider_logo.dart';
+import 'package:kumvwa_finance/features/auth/presentation/auth_controller.dart';
 import 'package:kumvwa_finance/features/auth/presentation/client_gate.dart';
 import 'package:kumvwa_finance/features/auth/presentation/lender_branding.dart';
 import 'package:kumvwa_finance/features/loans/data/loans_repository.dart';
 import 'package:kumvwa_finance/features/loans/domain/loan.dart';
 
-enum _Stage { select, confirm, processing, success, bankDetails, bankSent, failed }
+enum _Stage {
+  select,
+  confirm,
+  processing,
+  success,
+  bankDetails,
+  bankSent,
+  failed,
+}
 
 enum _Method { airtel, mtn, zamtel, bank }
 
-/// The sheet tracks the method locally (it decides the flow) while the brand
-/// tile and copy need a [PayProvider] — the two are 1:1 by name.
 extension _MethodX on _Method {
   PayProvider get provider =>
       PayProvider.values.firstWhere((e) => e.name == name);
-
   String get label => provider.label;
+}
+
+/// 097/077/057 → Airtel, 096/056/076 → MTN, 095 → Zamtel, else → MTN.
+_Method _detectProvider(String phone) {
+  final digits = phone.replaceAll(RegExp(r'[^0-9]'), '');
+  final local = digits.startsWith('260') ? digits.substring(3) : digits;
+  if (local.startsWith('97') || local.startsWith('77') || local.startsWith('57')) return _Method.airtel;
+  if (local.startsWith('95')) return _Method.zamtel;
+  return _Method.mtn; // 96/56/76 and fallback
+}
+
+String _maskedPhone(String phone) {
+  final digits = phone.replaceAll(RegExp(r'[^0-9]'), '');
+  if (digits.length < 4) return phone;
+  return '+260 ···· ${digits.substring(digits.length - 4)}';
 }
 
 class _MethodRow {
@@ -36,12 +57,11 @@ class _MethodRow {
   final bool instant;
 }
 
-/// Staged payment sheet mirroring real mobile-money collection:
-/// select → confirm → push-processing (PIN on the phone) → receipt.
-/// When live collection lands, [_PaySheetState._send] swaps the simulated
-/// latency for provider-callback polling — the stages and widgets stay
-/// identical.
-Future<void> showPaySheet(BuildContext context, WidgetRef ref, Loan loan) async {
+Future<void> showPaySheet(
+  BuildContext context,
+  WidgetRef ref,
+  Loan loan,
+) async {
   final next = loan.nextInstallment;
   if (next == null) return;
 
@@ -55,7 +75,7 @@ Future<void> showPaySheet(BuildContext context, WidgetRef ref, Loan loan) async 
     backgroundColor: Colors.transparent,
     builder: (sheetCtx) => _PaySheet(
       loan: loan,
-      amount: next.amount,
+      amount: next.remaining,
       interestShare: interestShare,
       theme: theme,
     ),
@@ -89,7 +109,8 @@ class _PaySheet extends ConsumerStatefulWidget {
 
 class _PaySheetState extends ConsumerState<_PaySheet> {
   _Stage _stage = _Stage.select;
-  _Method _method = _Method.airtel;
+  late _Method _method;
+  late String _phone;
   late final TextEditingController _amountCtrl = TextEditingController(
     text: widget.amount.toStringAsFixed(2),
   );
@@ -98,16 +119,19 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
   int _secondsLeft = 60;
   bool _apiDone = false;
   bool _busy = false;
-
-  /// The server's own message when a payment/rollover fails — never a
-  /// DioException dump. Null falls back to the generic copy on [_failed].
   String? _failureMsg;
 
-  static const _rows = [
-    _MethodRow(_Method.airtel, '••• 2233 · PIN on your phone', instant: true),
-    _MethodRow(_Method.mtn, '••• 2233 · PIN on your phone', instant: true),
-    _MethodRow(_Method.zamtel, '••• 2233 · PIN on your phone', instant: true),
-    _MethodRow(_Method.bank, 'ZANACO ••4021 · lender confirms', instant: false),
+  @override
+  void initState() {
+    super.initState();
+    final session = ref.read(authControllerProvider).session;
+    _phone = session?.phone ?? '';
+    _method = _detectProvider(_phone);
+  }
+
+  List<_MethodRow> get _rows => [
+    _MethodRow(_method, '${_maskedPhone(_phone)} · PIN on your phone', instant: true),
+    const _MethodRow(_Method.bank, 'Bank transfer · lender confirms', instant: false),
   ];
 
   @override
@@ -384,7 +408,13 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
     required Widget text,
     _HintTone tone = _HintTone.amber,
   }) {
-    final (Color bg, Color border, Color fg, Color box, Color boxFg) = switch (tone) {
+    final (
+      Color bg,
+      Color border,
+      Color fg,
+      Color box,
+      Color boxFg,
+    ) = switch (tone) {
       _HintTone.amber => (
         AppColors.amber50,
         const Color(0xFFF3DCB3),
@@ -619,8 +649,12 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
               'Installment ${widget.loan.nextInstallment!.number} of '
                   '${widget.loan.termInstallments}',
             ),
-            _brow('Paying from', '${_provider.label} ••• 2233'),
-            _brow("You'll be asked to", 'Enter PIN on your phone', isLast: true),
+            _brow('Paying from', '${_provider.label} ${_maskedPhone(_phone)}'),
+            _brow(
+              "You'll be asked to",
+              'Enter PIN on your phone',
+              isLast: true,
+            ),
           ],
         ),
       ),
@@ -707,8 +741,8 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
                 borderRadius: BorderRadius.circular(99),
                 border: Border.all(color: AppColors.line),
               ),
-              child: const Text(
-                '+260 97 ••• 2233',
+              child: Text(
+                _maskedPhone(_phone),
                 style: TextStyle(fontSize: 12, color: AppColors.muted),
               ),
             ),
@@ -738,7 +772,8 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
                       style: const TextStyle(fontWeight: FontWeight.w800),
                     ),
                     const TextSpan(
-                      text: ' app or dial the mobile-money menu, then choose '
+                      text:
+                          ' app or dial the mobile-money menu, then choose '
                           '"Approve payment".',
                     ),
                   ],
@@ -842,7 +877,7 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
                     'Reference',
                     'KX-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
                   ),
-                  _brow('Method', '${_provider.label} ••• 2233'),
+                  _brow('Method', '${_provider.label} ${_maskedPhone(_phone)}'),
                   _brow('Date', Fmt.date(DateTime.now())),
                   _brow('Loan', widget.loan.id, isLast: true),
                 ],
@@ -852,11 +887,7 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
         ),
       ),
       const SizedBox(height: 16),
-      _primaryBtn(
-        'Done',
-        () => context.pop(),
-        color: AppColors.blue600,
-      ),
+      _primaryBtn('Done', () => context.pop(), color: AppColors.blue600),
       const SizedBox(height: 18),
     ],
   );
@@ -877,9 +908,9 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
         ),
         child: Column(
           children: [
-            _brow('Bank', 'ZANACO'),
+            _brow('Bank', 'Your bank'),
             _brow('Account name', widget.loan.lenderName),
-            _brow('Account no.', '01•• •••• 4021'),
+            _brow('Account no.', 'Provided by lender'),
             _brow('Branch', 'Cairo Road'),
             _brow(
               'Reference',
@@ -901,14 +932,19 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
                 style: TextStyle(fontWeight: FontWeight.w800),
               ),
               TextSpan(
-                text: " — it's how your lender matches your payment to "
+                text:
+                    " — it's how your lender matches your payment to "
                     'this loan.',
               ),
             ],
           ),
         ),
       ),
-      _primaryBtn("I've sent the money", _bankConfirm, color: AppColors.blue600),
+      _primaryBtn(
+        "I've sent the money",
+        _bankConfirm,
+        color: AppColors.blue600,
+      ),
       _textBtn('← Back', () => setState(() => _stage = _Stage.select)),
       const SizedBox(height: 18),
     ],

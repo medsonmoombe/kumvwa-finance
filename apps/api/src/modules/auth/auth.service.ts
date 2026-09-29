@@ -32,6 +32,7 @@ import {
   OtpRequestDto,
   OtpVerifyDto,
   RegisterTenantDto,
+  RedeemMobileAccessCodeDto,
   ResetPasswordDto,
 } from './dto/auth.dto';
 
@@ -44,6 +45,8 @@ const MAX_PENDING_OTPS = 3; // per phone+purpose within the TTL window
  */
 const MAX_LOGIN_FAILURES = 5;
 const LOCK_TTL_SEC = 900; // 15 minutes
+const MOBILE_ACCESS_CODE_TTL_MS = 10 * 60_000;
+const MOBILE_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 @Injectable()
 export class AuthService {
@@ -252,6 +255,7 @@ export class AuthService {
     await this.audit.record({
       actorId: user.id,
       action: 'auth.register_tenant',
+      description: `New lender "${dto.businessName.trim()}" registered and pending BOZ verification`,
       entity: 'Tenant',
       entityId: tenant.id,
       tenantId: tenant.id,
@@ -300,6 +304,7 @@ export class AuthService {
     await this.audit.record({
       actorId: user.id,
       action: 'auth.login',
+      description: `User signed in via mobile app`,
       entity: 'User',
       entityId: user.id,
       tenantId: user.tenantId ?? undefined,
@@ -331,6 +336,7 @@ export class AuthService {
       await this.registerFailure(`email:${email}`);
       await this.audit.record({
         action: 'auth.console.login_failed',
+        description: `Failed console login attempt for ${email}`,
         entity: 'User',
         ip: req.ip,
         userAgent: req.headers['user-agent'],
@@ -343,6 +349,7 @@ export class AuthService {
       await this.audit.record({
         actorId: user.id,
         action: 'auth.console.login_trusted_device',
+        description: `Console sign-in via trusted device (no 2FA required)`,
         entity: 'User',
         entityId: user.id,
         tenantId: user.tenantId ?? undefined,
@@ -379,6 +386,22 @@ export class AuthService {
     };
   }
 
+  /** Existing lender accounts use their  email/password on mobile too. */
+  async lenderMobileLogin(
+    dto: ConsoleLoginDto,
+    req: Request,
+    deviceToken?: string,
+  ) {
+    const email = dto.email.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user || !['tenant_owner', 'tenant_staff'].includes(user.role)) {
+      if (!user) await this.passwords.hash(dto.password);
+      await this.registerFailure(`email:${email}`);
+      throw new UnauthorizedException('Invalid email or password');
+    }
+    return this.consoleLogin(dto, req, deviceToken);
+  }
+
   /**
    * Public feature flag the console reads before login so it can hide the OTP
    * screen entirely when the flow is switched off (e.g. broken email delivery).
@@ -406,7 +429,7 @@ export class AuthService {
         where: { id: row.id },
         data: { attempts, ...(attempts >= this.env.OTP_MAX_ATTEMPTS ? { status: 'expired' } : {}) },
       });
-      await this.audit.record({ actorId: user.id, action: 'auth.console.2fa_failed', entity: 'User', entityId: user.id, ip: req.ip });
+      await this.audit.record({ actorId: user.id, action: 'auth.console.2fa_failed', description: 'Incorrect 2FA code entered during console sign-in', entity: 'User', entityId: user.id, ip: req.ip });
       throw new UnauthorizedException('Incorrect code');
     }
     await this.prisma.otpCode.update({ where: { id: row.id }, data: { status: 'consumed', consumedAt: new Date() } });
@@ -417,8 +440,67 @@ export class AuthService {
         data: { userId: user.id, tokenHash: this.deviceHash(deviceToken), label: req.headers['user-agent']?.slice(0, 120), expiresAt: new Date(Date.now() + this.env.TRUSTED_DEVICE_DAYS * 86_400_000) },
       });
     }
-    await this.audit.record({ actorId: user.id, action: 'auth.console.2fa_success', entity: 'User', entityId: user.id, tenantId: user.tenantId ?? undefined, ip: req.ip });
+    await this.audit.record({ actorId: user.id, action: 'auth.console.2fa_success', description: 'Console sign-in completed successfully after 2FA verification', entity: 'User', entityId: user.id, tenantId: user.tenantId ?? undefined, ip: req.ip });
     return { ...(await this.issueConsoleTokens(user, req)), deviceToken };
+  }
+
+  async lenderMobileVerify2fa(dto: ConsoleVerifyDto, req: Request) {
+    const claims = await this.tokens.verify(dto.preToken, 'pre2fa');
+    const user = await this.prisma.user.findUnique({ where: { id: claims.sub } });
+    if (!user || !['tenant_owner', 'tenant_staff'].includes(user.role)) {
+      throw new UnauthorizedException();
+    }
+    return this.consoleVerify2fa(dto, req);
+  }
+
+  async createOwnLenderMobileAccessCode(actorId: string) {
+    return this.createLenderMobileAccessCode(actorId, actorId, 'lender');
+  }
+
+  async createLenderMobileAccessCodeForTenant(adminId: string, tenantId: string) {
+    const owner = await this.prisma.user.findFirst({ where: { tenantId, role: 'tenant_owner', status: 'active' }, select: { id: true } });
+    if (!owner) throw new BadRequestException('This lender has no active owner account');
+    return this.createLenderMobileAccessCode(adminId, owner.id, 'platform_admin');
+  }
+
+  async redeemLenderMobileAccessCode(dto: RedeemMobileAccessCodeDto, req: Request) {
+    const hash = this.hashMobileAccessCode(dto.code);
+    let code;
+    try {
+      code = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "MobileAccessCode" WHERE "codeHash" = ${hash} FOR UPDATE`;
+        const rows = await tx.$queryRaw<Array<{ id: string; userId: string; tenantId: string; generatedBy: string; usedAt: Date | null; expiresAt: Date }>>`SELECT "id", "userId", "tenantId", "generatedBy", "usedAt", "expiresAt" FROM "MobileAccessCode" WHERE "codeHash" = ${hash}`;
+        const row = rows[0];
+        if (!row || row.usedAt || row.expiresAt <= new Date()) throw new UnauthorizedException('This access code is invalid or has expired');
+        const user = await tx.user.findUnique({ where: { id: row.userId } });
+        if (!user || user.status !== 'active' || !['tenant_owner', 'tenant_staff'].includes(user.role)) throw new UnauthorizedException('This access code is no longer valid');
+        const tenant = await tx.tenant.findUnique({ where: { id: row.tenantId }, select: { status: true } });
+        if (tenant?.status !== 'active') throw new UnauthorizedException('This lender is not approved for mobile access');
+        const used = await tx.$queryRaw<Array<{ id: string }>>`UPDATE "MobileAccessCode" SET "usedAt" = NOW() WHERE "id" = ${row.id} AND "usedAt" IS NULL AND "expiresAt" > NOW() RETURNING "id"`;
+        if (used.length !== 1) throw new UnauthorizedException('This access code is invalid or has expired');
+        return { ...row, user };
+      });
+    } catch (error) {
+      await this.audit.record({ action: 'auth.mobile_access_code_redeem_failed', description: 'Failed attempt to redeem a lender mobile access code', entity: 'MobileAccessCode', ip: req.ip, userAgent: req.headers['user-agent'] });
+      throw error;
+    }
+    await this.audit.record({ actorId: code.userId, action: 'auth.mobile_access_code_redeemed', description: 'Lender mobile access code redeemed — session issued', entity: 'MobileAccessCode', entityId: code.id, tenantId: code.tenantId, ip: req.ip, userAgent: req.headers['user-agent'], diff: { generatedBy: code.generatedBy } });
+    return this.issueTokens(code.user, req);
+  }
+
+  private async createLenderMobileAccessCode(actorId: string, targetUserId: string, source: 'lender' | 'platform_admin') {
+    const user = await this.prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!user || !user.tenantId || !['tenant_owner', 'tenant_staff'].includes(user.role) || user.status !== 'active') throw new BadRequestException('An active lender owner or staff account is required');
+    const tenant = await this.prisma.tenant.findUnique({ where: { id: user.tenantId }, select: { status: true } });
+    if (tenant?.status !== 'active') throw new BadRequestException('Only approved lender accounts can use mobile access codes');
+    const raw = this.newMobileAccessCode();
+    const expiresAt = new Date(Date.now() + MOBILE_ACCESS_CODE_TTL_MS);
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`UPDATE "MobileAccessCode" SET "usedAt" = NOW() WHERE "userId" = ${user.id} AND "usedAt" IS NULL AND "expiresAt" > NOW()`;
+      await tx.$executeRaw`INSERT INTO "MobileAccessCode" ("id", "codeHash", "userId", "tenantId", "generatedBy", "expiresAt", "createdAt") VALUES (${randomBytes(16).toString('hex')}, ${this.hashMobileAccessCode(raw)}, ${user.id}, ${user.tenantId}, ${actorId}, ${expiresAt}, NOW())`;
+    });
+    await this.audit.record({ actorId, action: 'auth.mobile_access_code_generated', description: `Mobile access code generated for lender by ${source === 'platform_admin' ? 'platform admin' : 'lender'}`, entity: 'User', entityId: user.id, tenantId: user.tenantId, diff: { source, expiresAt: expiresAt.toISOString() } });
+    return { code: `KML-${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}-${raw.slice(12)}`, expiresAt };
   }
 
   // ─────────────── Password recovery (OTP-gated) ───────────────
@@ -539,6 +621,7 @@ export class AuthService {
     await this.audit.record({
       actorId: user.id,
       action: 'auth.password_reset',
+      description: 'User password was reset via verified recovery flow',
       entity: 'User',
       entityId: user.id,
       tenantId: user.tenantId ?? undefined,
@@ -574,6 +657,7 @@ export class AuthService {
     await this.audit.record({
       actorId: userId,
       action: 'auth.password_change',
+      description: 'User changed their own password while signed in',
       entity: 'User',
       entityId: userId,
       tenantId: user.tenantId ?? undefined,
@@ -602,6 +686,7 @@ export class AuthService {
       await this.audit.record({
         actorId: claims.sub,
         action: 'auth.refresh_reuse_detected',
+        description: 'Refresh token reuse detected — entire session family revoked',
         entity: 'RefreshToken',
         entityId: stored.id,
         tenantId: stored.sessionId,
@@ -663,6 +748,7 @@ export class AuthService {
       await this.audit.record({
         actorId: stored.userId,
         action: 'auth.logout',
+        description: 'User signed out and session token revoked',
         ip: req.ip,
       });
     }
@@ -717,6 +803,7 @@ export class AuthService {
     await this.audit.record({
       actorId: userId,
       action: 'auth.console.trusted_device_revoked',
+      description: 'Trusted device removed — future sign-ins from this device will require 2FA',
       entity: 'TrustedDevice',
       entityId: device.id,
       ip: req.ip,
@@ -818,6 +905,16 @@ export class AuthService {
     return createHmac('sha256', this.env.JWT_REFRESH_SECRET)
       .update(raw)
       .digest('hex');
+  }
+
+  private hashMobileAccessCode(raw: string): string {
+    const normalized = raw.replaceAll(/[^A-Za-z0-9]/g, '').toUpperCase();
+    const code = normalized.startsWith('KML') ? normalized.slice(3) : normalized;
+    return createHmac('sha256', this.env.JWT_ACCESS_SECRET).update(code).digest('hex');
+  }
+
+  private newMobileAccessCode(): string {
+    return Array.from({ length: 16 }, () => MOBILE_CODE_ALPHABET[randomInt(0, MOBILE_CODE_ALPHABET.length)]).join('');
   }
 
   private deviceHash(raw: string): string {

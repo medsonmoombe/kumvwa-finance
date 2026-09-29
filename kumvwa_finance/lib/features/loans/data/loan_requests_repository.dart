@@ -425,9 +425,7 @@ class ApiLoanRequestsRepository implements LoanRequestsRepository {
     // Server-computed from the tenant's published credit policy (M5) — the
     // banner can't disagree with a submit rejection. Scoped per lender.
     final res = await _client.getA(
-      lenderId == null
-          ? '/credit-limit'
-          : '/credit-limit?lenderId=$lenderId',
+      lenderId == null ? '/credit-limit' : '/credit-limit?lenderId=$lenderId',
     );
     final data = res.data as Map<String, dynamic>;
     final nextRaw = data['nextTier'] as Map<String, dynamic>?;
@@ -545,12 +543,12 @@ final loanRequestsByClientProvider = FutureProvider.autoDispose
           ref.watch(loanRequestsRepositoryProvider).loadByClient(clientId),
     );
 
-final creditLimitProvider =
-    FutureProvider.autoDispose.family<CreditLimit, ({String clientId, String? lenderId})>(
-  (ref, key) => ref
-      .watch(loanRequestsRepositoryProvider)
-      .creditLimit(key.clientId, lenderId: key.lenderId),
-);
+final creditLimitProvider = FutureProvider.autoDispose
+    .family<CreditLimit, ({String clientId, String? lenderId})>(
+      (ref, key) => ref
+          .watch(loanRequestsRepositoryProvider)
+          .creditLimit(key.clientId, lenderId: key.lenderId),
+    );
 
 final loanRequestByIdProvider = FutureProvider.autoDispose
     .family<LoanRequest, String>(

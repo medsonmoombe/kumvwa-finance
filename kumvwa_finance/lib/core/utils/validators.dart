@@ -5,6 +5,7 @@ class Validators {
 
   static final RegExp _nrc = RegExp(r'^\d{6}/\d{2}/\d$');
   // Accepts 0971234567 / 0761234567 / +260971234567 / 260971234567
+  // Nine digits after the optional trunk/dial-code prefix.
   static final RegExp _zmPhone = RegExp(r'^(?:\+?260|0)?[97]\d{8}$');
 
   static String? required(String? value, {String field = 'This field'}) {
@@ -24,6 +25,15 @@ class Validators {
     if (v.isEmpty) return 'Phone number is required';
     if (!_zmPhone.hasMatch(v)) {
       return 'Enter a valid Zambian number (e.g. 0971234567)';
+    }
+    return null;
+  }
+
+  static String? email(String? value) {
+    final v = value?.trim() ?? '';
+    if (v.isEmpty) return 'Email is required';
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(v)) {
+      return 'Enter a valid email address.';
     }
     return null;
   }

@@ -1,0 +1,15 @@
+<svg width="100%" viewBox="0 0 200 170" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>Institution</title>
+  <path d="M18 52 L100 18 L182 52 Z" fill="#F4F8FF"/>
+  <circle cx="100" cy="38" r="5" fill="#4C7DF0"/>
+  <rect x="26" y="54" width="148" height="9" rx="3" fill="#fff"/>
+  <g fill="#fff">
+    <rect x="40" y="68" width="14" height="62"/>
+    <rect x="74" y="68" width="14" height="62"/>
+    <rect x="108" y="68" width="14" height="62"/>
+    <rect x="142" y="68" width="14" height="62"/>
+  </g>
+  <rect x="30" y="134" width="140" height="8" rx="2" fill="#EAF2FF"/>
+  <rect x="22" y="145" width="156" height="8" rx="2" fill="#fff"/>
+  <rect x="14" y="156" width="172" height="8" rx="2" fill="#EAF2FF"/>
+</svg>

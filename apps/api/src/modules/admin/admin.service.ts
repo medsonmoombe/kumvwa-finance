@@ -175,6 +175,9 @@ export class AdminService {
     await this.audit.record({
       actorId: adminId,
       action: approve ? 'tenant.verification_approve' : 'tenant.verification_reject',
+      description: approve
+        ? `BOZ verification approved for "${updated.name}"`
+        : `BOZ verification rejected for "${updated.name}": ${dto.reason}`,
       entity: 'Tenant',
       entityId: tenantId,
       tenantId,
@@ -205,6 +208,7 @@ export class AdminService {
     await this.audit.record({
       actorId: adminId,
       action: 'pii.read',
+      description: `Platform admin decrypted and viewed owner NRC for tenant "${tenant.name}"`,
       entity: 'Tenant',
       entityId: tenantId,
       tenantId,
@@ -242,7 +246,7 @@ export class AdminService {
         products: { select: { id: true, name: true, active: true, rateBps: true, maxTerm: true } },
         clientLinks: { select: { clientId: true } },
         loans: {
-          select: { id: true, loanRef: true, status: true, principal: true, totalDue: true, paidAmount: true, createdAt: true },
+          select: { id: true, loanRef: true, status: true, principal: true, totalDue: true, paidAmount: true, createdAt: true, installments: { select: { amount: true, paidAmount: true, penaltyMinor: true } } },
           orderBy: { createdAt: 'desc' },
           take: 100,
         },
@@ -260,14 +264,16 @@ export class AdminService {
     await this.audit.record({
       actorId,
       action: 'tenant.review_detail_read',
+      description: `Platform admin opened the full review document for tenant "${tenant.name}"`,
       entity: 'Tenant',
       entityId: tenantId,
       tenantId,
     });
-    const outstanding = tenant.loans.reduce((sum, loan) => {
-      const remaining = loan.totalDue - loan.paidAmount;
+    const loanOutstanding = (loan: { installments: Array<{ amount: bigint; paidAmount: bigint; penaltyMinor: bigint }> }) => loan.installments.reduce((sum, installment) => {
+      const remaining = installment.amount + installment.penaltyMinor - installment.paidAmount;
       return sum + (remaining > 0n ? remaining : 0n);
     }, 0n);
+    const outstanding = tenant.loans.reduce((sum, loan) => sum + loanOutstanding(loan), 0n);
     return {
       id: tenant.id,
       name: tenant.name,
@@ -295,17 +301,15 @@ export class AdminService {
       portfolio: {
         clientCount: tenant.clientLinks.length,
         loanCount: tenant.loans.length,
-        outstanding: minorToKwacha(outstanding),
+        outstandingMinor: outstanding.toString(),
         overdueCount: tenant.loans.filter((loan) => loan.status === 'overdue').length,
       },
       loans: tenant.loans.map((loan) => ({
         id: loan.id,
         loanRef: loan.loanRef,
         status: loan.status,
-        principal: minorToKwacha(loan.principal),
-        outstanding: minorToKwacha(
-          loan.totalDue - loan.paidAmount > 0n ? loan.totalDue - loan.paidAmount : 0n,
-        ),
+        principalMinor: loan.principal.toString(),
+        outstandingMinor: loanOutstanding(loan).toString(),
         createdAt: loan.createdAt,
       })),
     };
@@ -542,9 +546,10 @@ export class AdminService {
             totalDue: true,
             paidAmount: true,
             createdAt: true,
+            installments: { select: { amount: true, paidAmount: true, penaltyMinor: true } },
             tenant: { select: { id: true, name: true, status: true } },
             repayments: {
-              select: { id: true, amount: true, method: true, reference: true, createdAt: true },
+              select: { id: true, amount: true, kind: true, method: true, reference: true, createdAt: true },
               orderBy: { createdAt: 'desc' },
             },
           },
@@ -557,24 +562,29 @@ export class AdminService {
     await this.audit.record({
       actorId,
       action: 'pii.read',
+      description: `Platform admin viewed borrower profile and loan history`,
       entity: 'Client',
       entityId: id,
       diff: { context: 'admin.client_detail' },
     });
 
     const outstanding = client.loans.map((l) => {
-      const rest = l.totalDue - l.paidAmount;
+      const rest = l.installments.reduce((sum, installment) => {
+        const remaining = installment.amount + installment.penaltyMinor - installment.paidAmount;
+        return sum + (remaining > 0n ? remaining : 0n);
+      }, 0n);
       return {
         id: l.id,
         loanRef: l.loanRef,
         lender: l.tenant,
         status: l.status,
         createdAt: l.createdAt,
-        principal: minorToKwacha(l.principal),
-        outstanding: minorToKwacha(rest > 0n ? rest : 0n),
+        principalMinor: l.principal.toString(),
+        outstandingMinor: rest.toString(),
         repayments: l.repayments.map((repayment) => ({
           id: repayment.id,
-          amount: minorToKwacha(repayment.amount),
+          amountMinor: repayment.amount.toString(),
+          kind: repayment.kind,
           method: repayment.method,
           reference: repayment.reference,
           recordedAt: repayment.createdAt,
@@ -673,6 +683,7 @@ export class AdminService {
     await this.audit.record({
       actorId,
       action: 'pii.read',
+      description: `Platform admin accessed borrower NRC ${side} photo`,
       entity: 'Client',
       entityId: clientId,
       diff: { field: 'nrcPhoto', side, context: 'admin.nrc_viewer' },
@@ -750,6 +761,7 @@ export class AdminService {
     await this.audit.record({
       actorId,
       action: 'admin.user_status',
+      description: `User account status changed from "${user.status}" to "${status}"`,
       entity: 'User',
       entityId: userId,
       tenantId: user.tenantId ?? undefined,
@@ -812,6 +824,7 @@ export class AdminService {
     await this.audit.record({
       actorId,
       action: 'admin.tenant_status',
+      description: `Tenant status changed from "${tenant.status}" to "${status}"`,
       entity: 'Tenant',
       entityId: tenantId,
       tenantId,

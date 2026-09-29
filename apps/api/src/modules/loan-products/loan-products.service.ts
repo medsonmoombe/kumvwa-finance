@@ -63,6 +63,7 @@ export class LoanProductsService {
     await this.audit.record({
       actorId,
       action: 'loan_product.create',
+      description: `Loan product "${product.name}" created (${product.rateBps / 100}%/mo, K${minorToKwacha(product.minAmount)}–K${minorToKwacha(product.maxAmount)})`,
       entity: 'LoanProduct',
       entityId: product.id,
       tenantId,
@@ -157,6 +158,7 @@ export class LoanProductsService {
     await this.audit.record({
       actorId,
       action: 'loan_product.update',
+      description: `Loan product settings updated`,
       entity: 'LoanProduct',
       entityId: product.id,
       tenantId,

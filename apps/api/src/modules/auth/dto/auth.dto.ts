@@ -187,6 +187,13 @@ export class ConsoleVerifyDto {
   rememberDevice?: boolean;
 }
 
+export class RedeemMobileAccessCodeDto {
+  @IsString()
+  @MinLength(16)
+  @MaxLength(32)
+  code!: string;
+}
+
 export class Set2faDto {
   @IsBoolean()
   enabled!: boolean;

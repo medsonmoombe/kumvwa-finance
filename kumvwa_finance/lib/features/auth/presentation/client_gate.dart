@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:kumvwa_finance/core/network/api_client.dart';
@@ -130,6 +131,19 @@ final clientGateProvider = FutureProvider.autoDispose<ClientGateState>((
       lenders: lenders,
     );
   } on DioException catch (e) {
-    throw ApiException.fromDio(e);
+    final err = ApiException.fromDio(e);
+    // The gate is the first thing a signed-in borrower sees, so a failure here
+    // blanks the whole app — log which call and which status caused it.
+    debugPrint(
+      '[clientGate] GET ${e.requestOptions.path} failed: '
+      '${err.statusCode ?? e.type.name} — ${err.message}',
+    );
+    throw err;
+  } catch (e, st) {
+    // Anything else here is a parse failure: the request succeeded but the
+    // payload is a shape this build does not expect. Without this the screen
+    // would report it as an account-load failure with no way to tell them apart.
+    debugPrint('[clientGate] unexpected payload: $e\n$st');
+    throw ApiException('Unexpected response from the server — $e');
   }
 });

@@ -1,0 +1,26 @@
+<svg width="100%" viewBox="0 0 360 250" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>Kumvwa lending scene</title>
+  <circle cx="232" cy="110" r="112" fill="#4C7DF0"/>
+  <circle cx="232" cy="110" r="130" fill="none" stroke="#DCE7FB" stroke-width="2" stroke-dasharray="3 8"/>
+  <g transform="translate(170 64) scale(0.63 0.611765)">
+    <path d="M18 52 L100 18 L182 52 Z" fill="#F4F8FF"/>
+    <circle cx="100" cy="38" r="5" fill="#4C7DF0"/>
+    <rect x="26" y="54" width="148" height="9" rx="3" fill="#fff"/>
+    <g fill="#fff">
+      <rect x="40" y="68" width="14" height="62"/>
+      <rect x="74" y="68" width="14" height="62"/>
+      <rect x="108" y="68" width="14" height="62"/>
+      <rect x="142" y="68" width="14" height="62"/>
+    </g>
+    <rect x="30" y="134" width="140" height="8" rx="2" fill="#EAF2FF"/>
+    <rect x="22" y="145" width="156" height="8" rx="2" fill="#fff"/>
+    <rect x="14" y="156" width="172" height="8" rx="2" fill="#EAF2FF"/>
+  </g>
+  <g stroke="#B9CBEF" stroke-width="2.4" stroke-linecap="round" fill="none">
+    <path d="M96 52v12M90 58h12"/>
+    <path d="M330 44v10M325 49h10"/>
+  </g>
+  <circle cx="118" cy="192" r="4" fill="#B9CBEF"/>
+  <circle cx="330" cy="146" r="4.5" fill="#2ECC71" opacity=".85"/>
+  <circle cx="72" cy="118" r="3.5" fill="#DCE7FB"/>
+</svg>

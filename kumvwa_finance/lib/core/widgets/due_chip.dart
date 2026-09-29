@@ -15,11 +15,7 @@ class DueChip extends StatelessWidget {
     final days = daysUntilZambianDate(dueDate);
 
     final (Color bg, Color fg, String label) = switch (days) {
-      < 0 => (
-        AppColors.red50,
-        const Color(0xFFC03538),
-        '-${days}d overdue',
-      ),
+      < 0 => (AppColors.red50, const Color(0xFFC03538), '-${days}d overdue'),
       0 => (AppColors.red50, const Color(0xFFC03538), 'Due today'),
       1 => (AppColors.amber50, const Color(0xFFB26A00), 'Tomorrow'),
       <= 7 => (AppColors.amber50, const Color(0xFFB26A00), 'in ${days}d'),

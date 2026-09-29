@@ -49,7 +49,7 @@ export class StaffService {
       select: { id: true, displayName: true, email: true, phone: true, status: true, roleId: true },
     });
     await this.queueStaffAccessEmail(tenantId, user.email!, user.displayName, role.name);
-    await this.audit.record({ actorId, action: 'staff.created', entity: 'User', entityId: user.id, tenantId, diff: { roleId: role.id } });
+    await this.audit.record({ actorId, action: 'staff.created', description: `New staff member "${user.displayName}" added with role ${role.name}`, entity: 'User', entityId: user.id, tenantId, diff: { roleId: role.id } });
     return user;
   }
 
@@ -60,7 +60,7 @@ export class StaffService {
     });
     if (!staff?.email) throw new NotFoundException('Active staff member not found');
     await this.queueStaffAccessEmail(tenantId, staff.email, staff.displayName, staff.staffRole?.name ?? 'Staff');
-    await this.audit.record({ actorId, action: 'staff.access_email_resent', entity: 'User', entityId: staff.id, tenantId });
+    await this.audit.record({ actorId, action: 'staff.access_email_resent', description: `Console access email resent to staff member "${staff.displayName}"`, entity: 'User', entityId: staff.id, tenantId });
     return { ok: true };
   }
 
@@ -76,7 +76,7 @@ export class StaffService {
     if (dto.active === false) {
       await this.prisma.refreshToken.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
     }
-    await this.audit.record({ actorId, action: 'staff.updated', entity: 'User', entityId: user.id, tenantId, diff: dto });
+    await this.audit.record({ actorId, action: 'staff.updated', description: `Staff member account updated${dto.active === false ? ' — access disabled' : ''}`, entity: 'User', entityId: user.id, tenantId, diff: dto });
     return updated;
   }
 
@@ -87,7 +87,7 @@ export class StaffService {
   async createRole(tenantId: string, actorId: string, dto: CreateRoleDto) {
     this.assertPermissions(dto.permissions);
     const role = await this.prisma.role.create({ data: { tenantId, name: dto.name.trim(), permissions: dto.permissions } });
-    await this.audit.record({ actorId, action: 'role.created', entity: 'Role', entityId: role.id, tenantId, diff: { permissions: dto.permissions } });
+    await this.audit.record({ actorId, action: 'role.created', description: `New staff role "${role.name}" created with ${dto.permissions.length} permission(s)`, entity: 'Role', entityId: role.id, tenantId, diff: { permissions: dto.permissions } });
     return role;
   }
 
@@ -96,7 +96,7 @@ export class StaffService {
     const role = await this.tenantRole(tenantId, roleId);
     if (role.isSystem) throw new BadRequestException('System roles cannot be edited');
     const updated = await this.prisma.role.update({ where: { id: role.id }, data: { name: dto.name.trim(), permissions: dto.permissions } });
-    await this.audit.record({ actorId, action: 'role.updated', entity: 'Role', entityId: role.id, tenantId, diff: { permissions: dto.permissions } });
+    await this.audit.record({ actorId, action: 'role.updated', description: `Staff role "${role.name}" permissions updated`, entity: 'Role', entityId: role.id, tenantId, diff: { permissions: dto.permissions } });
     return updated;
   }
 
@@ -106,7 +106,7 @@ export class StaffService {
     const staffCount = await this.prisma.user.count({ where: { roleId: role.id } });
     if (staffCount) throw new BadRequestException('Move staff to another role before deleting this role');
     await this.prisma.role.delete({ where: { id: role.id } });
-    await this.audit.record({ actorId, action: 'role.deleted', entity: 'Role', entityId: role.id, tenantId });
+    await this.audit.record({ actorId, action: 'role.deleted', description: `Staff role "${role.name}" permanently deleted`, entity: 'Role', entityId: role.id, tenantId });
     return { ok: true };
   }
 

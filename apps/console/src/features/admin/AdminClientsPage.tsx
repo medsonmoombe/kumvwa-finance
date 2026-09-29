@@ -24,10 +24,10 @@ interface Detail {
   lenders: Array<{ id: string; name: string; status: string; linkedAt: string }>;
   accountStatus: string;
   loans: Array<{
-    id: string; loanRef: string; status: string; principal: string;
-    outstanding: string; createdAt: string;
+    id: string; loanRef: string; status: string; principalMinor: string;
+    outstandingMinor: string; createdAt: string;
     lender: { id: string; name: string; status: string };
-    repayments: Array<{ id: string; amount: string; method: string; reference: string | null; recordedAt: string }>;
+    repayments: Array<{ id: string; amountMinor: string; kind: string; method: string; reference: string | null; recordedAt: string }>;
   }>;
 }
 
@@ -193,8 +193,8 @@ export function AdminClientsPage() {
                         <span className="text-[10.5px] capitalize text-ink-muted">{l.lender.name} · {l.status}</span>
                       </div>
                       <div className="text-right">
-                        <b className="block tabular-nums">{money(l.principal)}</b>
-                        <span className="text-[10.5px] text-ink-muted">out {money(l.outstanding)}</span>
+                        <b className="block tabular-nums">{money(l.principalMinor)}</b>
+                        <span className="text-[10.5px] text-ink-muted">out {money(l.outstandingMinor)}</span>
                       </div>
                     </div>
                     {l.repayments.length > 0 && (
@@ -202,7 +202,7 @@ export function AdminClientsPage() {
                         {l.repayments.map((repayment) => (
                           <div key={repayment.id} className="flex justify-between py-0.5">
                             <span>{repayment.method.replaceAll('_', ' ')} · {repayment.reference ?? 'no reference'}</span>
-                            <b className="tabular-nums text-accent-700">{money(repayment.amount)}</b>
+                            <b className="tabular-nums text-accent-700">{money(repayment.amountMinor)}</b>
                           </div>
                         ))}
                       </div>

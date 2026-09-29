@@ -7,8 +7,21 @@ import 'package:kumvwa_finance/core/dev/loaders_preview_screen.dart';
 import 'package:kumvwa_finance/core/widgets/client_shell.dart';
 import 'package:kumvwa_finance/features/auth/presentation/auth_controller.dart';
 import 'package:kumvwa_finance/features/auth/presentation/client_gate.dart';
+import 'package:kumvwa_finance/features/auth/presentation/screens/lender_register_screen.dart';
 import 'package:kumvwa_finance/features/auth/presentation/screens/login_screen.dart';
+import 'package:kumvwa_finance/features/auth/presentation/screens/lender_login_screen.dart';
+import 'package:kumvwa_finance/features/auth/presentation/screens/org_registration_success_screen.dart';
+import 'package:kumvwa_finance/features/auth/presentation/screens/role_select_screen.dart';
 import 'package:kumvwa_finance/features/auth/presentation/screens/splash_screen.dart';
+import 'package:kumvwa_finance/features/lender/presentation/screens/lender_clients_screen.dart';
+import 'package:kumvwa_finance/features/lender/presentation/screens/lender_client_detail_screen.dart';
+import 'package:kumvwa_finance/features/lender/presentation/screens/lender_home_screen.dart';
+import 'package:kumvwa_finance/features/lender/presentation/screens/lender_loan_detail_screen.dart';
+import 'package:kumvwa_finance/features/lender/presentation/screens/lender_profile_screen.dart';
+import 'package:kumvwa_finance/features/lender/presentation/screens/lender_requests_screen.dart';
+import 'package:kumvwa_finance/features/lender/presentation/widgets/lender_shell.dart';
+import 'package:kumvwa_finance/features/notifications/presentation/screens/notifications_screen.dart';
+import 'package:kumvwa_finance/features/notifications/presentation/screens/notification_detail_screen.dart';
 import 'package:kumvwa_finance/features/clients/presentation/screens/client_invite_screen.dart';
 import 'package:kumvwa_finance/features/clients/presentation/screens/invite_code_screen.dart';
 import 'package:kumvwa_finance/features/loans/presentation/screens/client_home_screen.dart';
@@ -17,8 +30,6 @@ import 'package:kumvwa_finance/features/loans/presentation/screens/client_loan_h
 import 'package:kumvwa_finance/features/loans/presentation/screens/client_request_loan_screen.dart';
 import 'package:kumvwa_finance/features/loans/presentation/screens/loan_request_detail_screen.dart';
 import 'package:kumvwa_finance/features/loans/presentation/screens/request_status_screen.dart';
-import 'package:kumvwa_finance/features/notifications/presentation/screens/notifications_screen.dart';
-import 'package:kumvwa_finance/features/notifications/presentation/screens/notification_detail_screen.dart';
 import 'package:kumvwa_finance/features/notifications/domain/app_notification.dart';
 import 'package:kumvwa_finance/features/onboarding/domain/registration_gate.dart';
 import 'package:kumvwa_finance/features/onboarding/presentation/screens/profile_stepper_screen.dart';
@@ -38,38 +49,37 @@ String? appRedirect({
   required bool needsProfile,
   required String location,
   required RegistrationDecision? registration,
+  required String? role,
 }) {
-  // Dev-only previews stay reachable in every auth state.
   if (location.startsWith('/dev')) return null;
 
-  // Routes reachable while logged OUT. Invites are reachable in BOTH states: a
-  // borrower opens the link logged out, and an already-logged-in borrower can
-  // still complete an invite (linking a second lender).
-  const preLogin = ['/login', '/register', '/invite'];
+  const preLogin = ['/splash', '/login', '/register', '/invite'];
 
   return switch (status) {
-    // Still restoring: the splash is the only legal destination.
     AuthStatus.restoring => location == '/splash' ? null : '/splash',
     AuthStatus.unauthenticated =>
-      preLogin.any(location.startsWith) ? null : '/login',
+      preLogin.any(location.startsWith) ? null : '/splash',
     AuthStatus.authenticated => () {
-      // A borrower who still owes money must clear the balance BEFORE the
-      // stepper binds them, so the stepper is off-limits until it does.
+      final isLender = role == 'business';
+
+      // ── Lender routing ──────────────────────────────────────────────
+      if (isLender) {
+        // Allow success screen (pre-session) and lender shell.
+        if (location.startsWith('/lender') ||
+            location == '/register/lender/success') {
+          return null;
+        }
+        return '/lender/home';
+      }
+
+      // ── Borrower routing ────────────────────────────────────────────
       if (location.startsWith('/c/register') &&
           (registration?.owesThenRegisters ?? false)) {
         return '/c/home';
       }
 
       if (needsProfile) {
-        // While KYC is outstanding, a borrower may only reach the wizard, their
-        // profile, the registration stepper, invites and dev previews. Loan
-        // features unlock once the profile hits 100%.
-        //
-        // One exception: a borrower who still owes money needs the pay surface
-        // more than they need another form, so clearing the balance comes first
-        // and the stepper binds them right after.
         final clearingLoan = registration?.owesThenRegisters ?? false;
-
         final allowedWhileIncomplete = clearingLoan
             ? [
                 '/c/complete-profile',
@@ -80,12 +90,7 @@ String? appRedirect({
                 '/c/alerts',
                 '/invite',
               ]
-            : [
-                '/c/complete-profile',
-                '/c/register',
-                '/c/profile',
-                '/invite',
-              ];
+            : ['/c/complete-profile', '/c/register', '/c/profile', '/invite'];
         return allowedWhileIncomplete.any(location.startsWith)
             ? null
             : '/c/complete-profile';
@@ -118,6 +123,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         needsProfile: auth.session?.needsProfile ?? false,
         location: state.matchedLocation,
         registration: ref.read(clientGateProvider).valueOrNull?.registration,
+        role: auth.session?.role,
       );
     },
     routes: [
@@ -132,15 +138,104 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const LoginScreen(),
       ),
       GoRoute(
+        path: '/login/lender',
+        name: 'lender-login',
+        builder: (_, _) => const LenderLoginScreen(),
+      ),
+      GoRoute(
         path: '/register/client',
         name: 'register-client',
+        builder: (_, _) => const RoleSelectScreen(),
+      ),
+      GoRoute(
+        path: '/register/client/borrower',
+        name: 'register-borrower',
         builder: (_, _) => const InviteCodeScreen(),
+      ),
+      GoRoute(
+        path: '/register/lender',
+        name: 'register-lender',
+        builder: (_, _) => const LenderRegisterScreen(),
+      ),
+      GoRoute(
+        path: '/register/lender/success',
+        name: 'register-lender-success',
+        builder: (_, state) => OrgRegistrationSuccessScreen(
+          businessName: state.extra as String? ?? 'Your Organisation',
+        ),
+      ),
+
+      // ── Lender shell ──────────────────────────────────────────────────────
+      StatefulShellRoute.indexedStack(
+        builder: (_, _, shell) => LenderShell(shell: shell),
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/lender/home',
+                name: 'lender-home',
+                builder: (_, _) => const LenderHomeScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/lender/clients',
+                name: 'lender-clients',
+                builder: (_, _) => const LenderClientsScreen(),
+                routes: [
+                  GoRoute(
+                    path: ':id',
+                    name: 'lender-client-detail',
+                    builder: (_, state) => LenderClientDetailScreen(clientId: state.pathParameters['id']!),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/lender/requests',
+                name: 'lender-requests',
+                builder: (_, _) => const LenderRequestsScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/lender/alerts',
+                name: 'lender-alerts',
+                builder: (_, _) => const NotificationsScreen(
+                  role: 'lender',
+                  embedded: true,
+                ),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/lender/profile',
+                name: 'lender-profile',
+                builder: (_, _) => const LenderProfileScreen(),
+              ),
+            ],
+          ),
+        ],
       ),
       GoRoute(
         path: '/invite/:token',
         name: 'client-invite',
         builder: (_, state) =>
             ClientInviteScreen(code: state.pathParameters['token']!),
+      ),
+      GoRoute(
+        path: '/lender/loans/:id',
+        name: 'lender-loan-detail',
+        builder: (_, state) => LenderLoanDetailScreen(loanId: state.pathParameters['id']!),
       ),
       // Dev-only: never registered in release, so the loaders preview
       // cannot ship.

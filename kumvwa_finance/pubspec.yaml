@@ -43,6 +43,7 @@ flutter:
   assets:
     - assets/images/
     - assets/brand/
+    - assets/illustrations/
 
 flutter_launcher_icons:
   image_path: "assets/brand/icon_1024.png"

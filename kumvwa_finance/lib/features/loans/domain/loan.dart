@@ -11,6 +11,7 @@ class Installment {
     required this.amount,
     required this.status,
     this.penalty = 0,
+    this.paidAmount = 0,
     this.rolloverFee = false,
   });
 
@@ -21,6 +22,10 @@ class Installment {
   /// Accrued late penalty (kwacha) riding with this installment — shown
   /// separately in red; paying the installment settles it first.
   final double penalty;
+  final double paidAmount;
+
+  double get remaining =>
+      (amount + penalty - paidAmount).clamp(0, double.infinity).toDouble();
 
   final InstallmentStatus status;
 
@@ -166,8 +171,7 @@ class Loan {
   final String repaymentStructure;
 
   /// Bullet loans carry ONE installment for the whole obligation.
-  bool get isBullet =>
-      repaymentStructure == 'bullet' || schedule.length == 1;
+  bool get isBullet => repaymentStructure == 'bullet' || schedule.length == 1;
 
   double get outstanding => totalDue - amountPaid;
   double get progress =>

@@ -1,0 +1,20 @@
+<svg width="100%" viewBox="0 0 200 240" xmlns="http://www.w3.org/2000/svg" role="img">
+  <title>Kumvwa mascot</title>
+  <path d="M60 236 L60 178 Q60 142 100 142 Q140 142 140 178 L140 236 Z" fill="#2E63E6"/>
+  <path d="M100 150 L86 166 L100 198 L114 166 Z" fill="#fff" opacity=".92"/>
+  <rect x="90" y="124" width="20" height="20" rx="9" fill="#F0AE82"/>
+  <path d="M52 168 C 38 150 32 122 34 96" stroke="#2E63E6" stroke-width="17" stroke-linecap="round" fill="none"/>
+  <path d="M148 168 C 162 150 168 122 166 96" stroke="#2E63E6" stroke-width="17" stroke-linecap="round" fill="none"/>
+  <circle cx="34" cy="88" r="11" fill="#F4BA90"/>
+  <circle cx="166" cy="88" r="11" fill="#F4BA90"/>
+  <circle cx="63" cy="100" r="6" fill="#F0AE82"/>
+  <circle cx="137" cy="100" r="6" fill="#F0AE82"/>
+  <circle cx="100" cy="96" r="36" fill="#F4BA90"/>
+  <path d="M62 96 Q62 54 100 54 Q138 54 138 96 Q126 72 100 72 Q74 72 62 96 Z" fill="#33261F"/>
+  <circle cx="100" cy="50" r="11" fill="#33261F"/>
+  <circle cx="87" cy="98" r="3.2" fill="#2B1D16"/>
+  <circle cx="113" cy="98" r="3.2" fill="#2B1D16"/>
+  <path d="M89 112 Q100 121 111 112" stroke="#2B1D16" stroke-width="3" stroke-linecap="round" fill="none"/>
+  <circle cx="77" cy="108" r="5" fill="#F29B88" opacity=".55"/>
+  <circle cx="123" cy="108" r="5" fill="#F29B88" opacity=".55"/>
+</svg>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { FiArrowLeft, FiCheck, FiExternalLink, FiFileText, FiX } from 'react-icons/fi';
+import { FiArrowLeft, FiCheck, FiExternalLink, FiFileText, FiKey, FiX } from 'react-icons/fi';
 import { Link, useParams } from 'react-router-dom';
 
 import { Badge, ErrorBox } from '../../components/ui';
@@ -21,8 +21,8 @@ type TenantDetail = {
   review: { canApprove: boolean; blockers: string[]; reviewedAt: string | null; reviewer: { name: string; email: string | null } | null };
   users: Array<{ id: string; displayName: string; email: string | null; phone: string; role: string; status: string }>;
   products: Array<{ id: string; name: string; active: boolean; rateBps: number; maxTerm: number }>;
-  portfolio: { clientCount: number; loanCount: number; outstanding: string; overdueCount: number };
-  loans: Array<{ id: string; loanRef: string; status: string; principal: string; outstanding: string; createdAt: string }>;
+  portfolio: { clientCount: number; loanCount: number; outstandingMinor: string; overdueCount: number };
+  loans: Array<{ id: string; loanRef: string; status: string; principalMinor: string; outstandingMinor: string; createdAt: string }>;
 };
 
 type OwnerNrc = { revealed: false } | { revealed: true; value: string | null };
@@ -37,6 +37,8 @@ export function AdminTenantDetailPage() {
   const [documentUrl, setDocumentUrl] = useState('');
   const [ownerNrc, setOwnerNrc] = useState<OwnerNrc>({ revealed: false });
   const [nrcBusy, setNrcBusy] = useState(false);
+  const [mobileCode, setMobileCode] = useState<{ code: string; expiresAt: string } | null>(null);
+  const [generatingCode, setGeneratingCode] = useState(false);
 
   const load = useCallback(() => {
     api.get<TenantDetail>(`/admin/tenants/${id}`).then((r) => setTenant(r.data)).catch((e) => setError(apiError(e)));
@@ -68,6 +70,15 @@ export function AdminTenantDetailPage() {
     catch (e) { setDocument(null); setError(apiError(e)); }
   }
 
+  async function generateMobileAccessCode() {
+    if (!id) return;
+    setGeneratingCode(true); setError('');
+    try {
+      const res = await api.post<{ code: string; expiresAt: string }>(`/admin/tenants/${id}/mobile-access-code`);
+      setMobileCode(res.data);
+    } catch (e) { setError(apiError(e)); } finally { setGeneratingCode(false); }
+  }
+
   if (error && !tenant) return <ErrorBox message={error} />;
 
   // ── loading skeleton ──
@@ -97,8 +108,8 @@ export function AdminTenantDetailPage() {
 
   const loanColumns: Array<Column<TenantDetail['loans'][number]>> = [
     { key: 'ref', header: 'Loan ref', render: (loan) => <b className="text-brand-600">{loan.loanRef}</b> },
-    { key: 'principal', header: 'Principal', render: (loan) => <span>{money(loan.principal)}</span> },
-    { key: 'outstanding', header: 'Outstanding', render: (loan) => <b>{money(loan.outstanding)}</b> },
+    { key: 'principal', header: 'Principal', render: (loan) => <span>{money(loan.principalMinor)}</span> },
+    { key: 'outstanding', header: 'Outstanding', render: (loan) => <b>{money(loan.outstandingMinor)}</b> },
     { key: 'status', header: 'Status', render: (loan) => <Badge color={loan.status === 'overdue' ? 'red' : loan.status === 'active' ? 'green' : 'grey'} dot>{loan.status}</Badge> },
     { key: 'date', header: 'Issued', render: (loan) => <span className="text-ink-muted">{date(loan.createdAt)}</span> },
   ];
@@ -111,7 +122,7 @@ export function AdminTenantDetailPage() {
       {error && <div className="mb-3"><ErrorBox message={error} /></div>}
 
       <div className="grid gap-3 sm:grid-cols-4">
-        {[['Clients', String(tenant.portfolio.clientCount)], ['Loans', String(tenant.portfolio.loanCount)], ['Outstanding', money(tenant.portfolio.outstanding)], ['Overdue', String(tenant.portfolio.overdueCount)]].map(([label, value]) => (
+        {[['Clients', String(tenant.portfolio.clientCount)], ['Loans', String(tenant.portfolio.loanCount)], ['Outstanding', money(tenant.portfolio.outstandingMinor)], ['Overdue', String(tenant.portfolio.overdueCount)]].map(([label, value]) => (
           <div key={label} className="border border-line bg-white p-3"><div className="text-[10px] font-bold uppercase text-ink-muted">{label}</div><div className="mt-1 font-display text-[18px] font-bold">{value}</div></div>
         ))}
       </div>
@@ -161,6 +172,11 @@ export function AdminTenantDetailPage() {
 
         <FormSection title={`Console users (${tenant.users.length})`} defaultOpen>
           <div className="space-y-2">{tenant.users.map((user) => <div key={user.id} className="flex justify-between border-b border-line-2 pb-2 text-[12px]"><span><b>{user.displayName}</b> | {user.email ?? user.phone}</span><span className="text-ink-muted">{user.role} | {user.status}</span></div>)}</div>
+        </FormSection>
+        <FormSection title="Mobile app access" defaultOpen>
+          <div className="flex flex-wrap items-center gap-3"><p className="flex-1 text-[12px] text-ink-muted">Generate a one-time 10-minute app sign-in code for this lender's active owner account. Generation and redemption are audited.</p><Pill onClick={() => void generateMobileAccessCode()} disabled={generatingCode || tenant.status !== 'active'}><FiKey /> {generatingCode ? 'Creating...' : 'Generate code'}</Pill></div>
+          {tenant.status !== 'active' && <p className="mt-2 text-[11px] text-amber-700">Mobile access is available after the lender is approved.</p>}
+          {mobileCode && <div className="mt-3 border border-line bg-surface p-3"><div className="font-mono text-[16px] font-bold tracking-[0.08em]">{mobileCode.code}</div><p className="mt-1 text-[10.5px] text-ink-muted">Give this to the lender securely. It expires {date(mobileCode.expiresAt)} and is not stored in readable form.</p></div>}
         </FormSection>
         <FormSection title={`Loan products (${tenant.products.length})`} defaultOpen>
           <div className="space-y-2">{tenant.products.map((product) => <div key={product.id} className="flex justify-between text-[12px]"><b>{product.name}</b><span>{product.rateBps / 100}% | {product.maxTerm} months | {product.active ? 'active' : 'inactive'}</span></div>)}</div>

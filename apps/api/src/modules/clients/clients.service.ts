@@ -395,7 +395,7 @@ export class ClientsService {
 
     if (c.nrcPhotoFileId) {
       await this.audit.record({
-        actorId, action: 'pii.read', entity: 'Client', entityId: clientId,
+        actorId, action: 'pii.read', description: 'Lender viewed client NRC photo on the client detail page', entity: 'Client', entityId: clientId,
         tenantId, diff: { field: 'nrcPhoto', context: 'lender.client_detail' },
       });
     }
@@ -466,7 +466,8 @@ export class ClientsService {
     if (!file) throw new NotFoundException('File missing');
 
     await this.audit.record({
-      actorId, action: 'pii.read', entity: 'Client', entityId: clientId,
+      actorId, action: 'pii.read', description: `Lender accessed client NRC ${side} photo`,
+      entity: 'Client', entityId: clientId,
       tenantId, diff: { field: 'nrcPhoto', side, context: 'lender.nrc_viewer' },
     });
     return { url: await this.files.presignGet(file.storageKey, file.mime) };

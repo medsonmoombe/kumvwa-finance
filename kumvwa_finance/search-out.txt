@@ -1,0 +1,6 @@
+lib\core\router\app_router.dart:279: builder: (_, _, shell) => ClientShell(shell: shell),
+lib\core\widgets\client_shell.dart:12: class ClientShell extends StatelessWidget {
+lib\core\widgets\client_shell.dart:13: const ClientShell({super.key, required this.shell});
+lib\features\loans\presentation\screens\client_home_screen.dart:607: onPressed: () => showPaySheet(context, ref, loan),
+lib\features\loans\presentation\screens\client_loan_detail_screen.dart:245: onPressed: () => showPaySheet(context, ref, loan),
+lib\features\loans\presentation\widgets\pay_sheet.dart:52: Future<void> showPaySheet(

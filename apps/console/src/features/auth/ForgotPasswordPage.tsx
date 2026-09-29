@@ -68,7 +68,7 @@ export function ForgotPasswordPage() {
       {step === 0 && (
         <>
           <h2 className="mt-5 font-display text-[20px] font-bold tracking-tight text-ink">Reset password</h2>
-          <p className="mb-4 mt-1 text-[12px] text-[#888]">Enter your console email to receive a reset code</p>
+          <p className="mb-4 mt-1 text-[12px] text-[#888]">Enter your email to receive a reset code</p>
           <AuthStepper steps={['Request', 'Code', 'New password']} current={0} />
           <div className="mb-4">
             <label className={lbl}>Email address <em className="not-italic text-[#C62828]">*</em></label>

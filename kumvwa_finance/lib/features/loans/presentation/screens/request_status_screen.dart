@@ -83,11 +83,7 @@ class _ErrorView extends ConsumerWidget {
 /// 82px tinted disc with a 52px solid inner disc carrying the status icon —
 /// the mockup's "medal" that sits above every status headline.
 class _Medal extends StatelessWidget {
-  const _Medal({
-    required this.outer,
-    required this.solid,
-    required this.icon,
-  });
+  const _Medal({required this.outer, required this.solid, required this.icon});
 
   final Color outer;
   final Color solid;
@@ -521,8 +517,10 @@ class _ApprovedView extends ConsumerWidget {
             ),
           ]
         : () {
-            final interest =
-                (loan.totalDue - loan.principal).clamp(0.0, double.infinity);
+            final interest = (loan.totalDue - loan.principal).clamp(
+              0.0,
+              double.infinity,
+            );
             final repayBy = loan.schedule.isNotEmpty
                 ? loan.schedule.last.dueDate
                 : request.reviewedAt ?? request.requestedAt;
@@ -593,18 +591,17 @@ class _RejectedView extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cap =
-        ref
-            .watch(
-              creditLimitProvider(
-                (clientId: request.clientId, lenderId: request.lenderId),
-              ),
-            )
-            .valueOrNull;
-    final approved =
-        (cap != null && cap.limitKwacha > 0)
-            ? Fmt.money(cap.limitKwacha)
-            : null;
+    final cap = ref
+        .watch(
+          creditLimitProvider((
+            clientId: request.clientId,
+            lenderId: request.lenderId,
+          )),
+        )
+        .valueOrNull;
+    final approved = (cap != null && cap.limitKwacha > 0)
+        ? Fmt.money(cap.limitKwacha)
+        : null;
     final feedback = request.feedback?.trim();
 
     return Column(

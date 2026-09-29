@@ -5,8 +5,11 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import 'package:kumvwa_finance/core/network/api_client.dart';
+import 'package:kumvwa_finance/core/network/api_exception.dart';
 import 'package:kumvwa_finance/core/config/env.dart';
 import 'package:kumvwa_finance/core/theme/app_colors.dart';
+import 'package:kumvwa_finance/core/theme/app_effects.dart';
+import 'package:kumvwa_finance/core/theme/app_text.dart';
 import 'package:kumvwa_finance/core/utils/format.dart';
 import 'package:kumvwa_finance/core/widgets/skeleton.dart';
 import 'package:kumvwa_finance/core/widgets/app_loader.dart';
@@ -54,6 +57,7 @@ class ClientHomeScreen extends ConsumerWidget {
         ),
         error: (e, _) => _ErrorRetry(
           message: 'Could not load your account',
+          detail: describeApiError(e),
           onRetry: () => ref.invalidate(clientGateProvider),
         ),
         data: (g) {
@@ -80,136 +84,187 @@ class _HomeScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: AppColors.card,
       body: SafeArea(child: body),
     );
   }
 }
 
-/// The mockup header: green gradient avatar (initials), a muted time-of-day
-/// greeting over the full name, and the bell as a raised button with a red
-/// numbered unread badge. Tapping the avatar opens the profile.
-class _HomeHeader extends ConsumerWidget {
-  const _HomeHeader({required this.session});
+/// Domed gradient header matching HTML .dome — contains the appbar row
+/// (.appbar) and the hero balance block (.hero).
+class _HomeDome extends ConsumerWidget {
+  const _HomeDome({required this.session});
 
   final UserSession session;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final unread = ref
-        .watch(notificationsProvider(session.role))
-        .valueOrNull
-        ?.where((n) => !n.read)
-        .length;
-    final count = unread ?? 0;
+            .watch(notificationsProvider(session.role))
+            .valueOrNull
+            ?.where((n) => !n.read)
+            .length ??
+        0;
 
-    return Row(
-      children: [
-        GestureDetector(
-          onTap: () => context.push('/c/profile'),
-          child: Container(
-            width: 44,
-            height: 44,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [AppColors.green500, AppColors.green700],
-              ),
-            ),
-            child: Text(
-              Fmt.initials(session.displayName),
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _greeting(),
-                    style: const TextStyle(fontSize: 11, color: AppColors.muted),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(
-                    Icons.waving_hand_rounded,
-                    size: 12,
-                    color: AppColors.muted,
-                  ),
-                ],
-              ),
-              Text(
-                session.displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.ink,
-                  letterSpacing: -0.3,
-                ),
-              ),
-            ],
-          ),
-        ),
-        GestureDetector(
-          onTap: () => context.go('/c/alerts'),
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppColors.line),
-            ),
-            child: Stack(
-              alignment: Alignment.center,
-              clipBehavior: Clip.none,
-              children: [
-                const Icon(
-                  Icons.notifications_none_rounded,
-                  size: 20,
-                  color: AppColors.ink2,
-                ),
-                if (count > 0)
-                  Positioned(
-                    top: -6,
-                    right: -6,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 3),
-                      constraints: const BoxConstraints(minWidth: 14),
-                      height: 14,
-                      alignment: Alignment.center,
-                      decoration: const BoxDecoration(
-                        color: AppColors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Text(
-                        count > 99 ? '99+' : '$count',
-                        style: const TextStyle(
-                          fontSize: 7.5,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                        ),
-                      ),
+    return DecoratedBox(
+      decoration: const BoxDecoration(gradient: AppGradients.dome),
+      child: Stack(
+        children: [
+                Positioned(
+                  right: -60,
+                  top: -90,
+                  child: Container(
+                    width: 190,
+                    height: 190,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.09),
                     ),
                   ),
+                ),
+                Positioned(
+                  left: -44,
+                  bottom: -30,
+                  child: Container(
+                    width: 130,
+                    height: 130,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.07),
+                    ),
+                  ),
+                ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 28),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.16),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(
+                              Icons.grid_view_rounded,
+                              size: 17,
+                              color: Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 11),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _greeting().toUpperCase(),
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.6,
+                                    color: Color(0xA8FFFFFF),
+                                  ),
+                                ),
+                                Text(
+                                  session.displayName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => context.go('/c/profile'),
+                            child: Stack(
+                              clipBehavior: Clip.none,
+                              children: [
+                                Container(
+                                  width: 38,
+                                  height: 38,
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: Colors.white.withValues(alpha: 0.18),
+                                    border: Border.all(
+                                      color: Colors.white.withValues(alpha: 0.4),
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    Fmt.initials(session.displayName),
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                if (unread > 0)
+                                  Positioned(
+                                    right: -1,
+                                    bottom: -1,
+                                    child: GestureDetector(
+                                      onTap: () => context.go('/c/alerts'),
+                                      child: Container(
+                                        width: 14,
+                                        height: 14,
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                          color: AppColors.red,
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                            color: Colors.white,
+                                            width: 1.5,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          unread > 9 ? '9+' : '$unread',
+                                          style: const TextStyle(
+                                            fontSize: 7,
+                                            fontWeight: FontWeight.w800,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  Positioned(
+                                    right: -1,
+                                    bottom: -1,
+                                    child: Container(
+                                      width: 11,
+                                      height: 11,
+                                      decoration: BoxDecoration(
+                                        color: AppColors.green500,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: Colors.white,
+                                          width: 2,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      const _HeroSection(),
               ],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -275,17 +330,17 @@ class _PlatformTermsGateState extends ConsumerState<_PlatformTermsGate> {
               Text(
                 'Platform Terms of Service',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.ink,
-                ),
+                style: AppText.pageTitle,
               ),
               const SizedBox(height: 8),
               const Text(
                 'Please read and accept the Kumvwa Finance Terms of Service to continue.',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: AppColors.muted, height: 1.5),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: AppColors.muted,
+                  height: 1.5,
+                ),
               ),
               const SizedBox(height: 20),
               Expanded(
@@ -319,11 +374,31 @@ class _PlatformTermsGateState extends ConsumerState<_PlatformTermsGate> {
                 ),
                 const SizedBox(height: 8),
               ],
-              ElevatedButton(
+              FilledButton(
                 onPressed: _busy ? null : _accept,
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.blue600,
+                  minimumSize: const Size.fromHeight(AppSizes.button),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadii.button),
+                  ),
+                ),
                 child: _busy
-                    ? const ButtonSpinner()
-                    : const Text('I Accept the Terms'),
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Text(
+                        'I Accept the Terms',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
               ),
             ],
           ),
@@ -338,7 +413,6 @@ class _PlatformTermsGateState extends ConsumerState<_PlatformTermsGate> {
 class _HomeBody extends ConsumerWidget {
   const _HomeBody({this.gate});
 
-  /// Null in mock mode — no terms endpoints to consult.
   final ClientGateState? gate;
 
   @override
@@ -347,26 +421,16 @@ class _HomeBody extends ConsumerWidget {
     final session = ref.watch(authControllerProvider).session;
     final clientId = session?.userId ?? '';
 
-    return RefreshIndicator(
-      onRefresh: () async {
-        ref.invalidate(clientLoansProvider);
-        ref.invalidate(loanRequestsByClientProvider(clientId));
-        ref.invalidate(_homeLimitProvider);
-        ref.invalidate(notificationsProvider(session?.role ?? 'client'));
-        // Settling a loan is what releases the borrower from the registration
-        // gate, so the gate has to be re-judged on the same refresh.
-        ref.invalidate(clientGateProvider);
-      },
-      child: loansAsync.when(
-        loading: () => const _RefreshGrid(child: _LoadingView()),
-        error: (e, _) => _RefreshGrid(
-          child: _ErrorRetry(
-            message: 'Could not load your loans',
-            onRetry: () => ref.invalidate(clientLoansProvider),
-          ),
+    return loansAsync.when(
+      loading: () => const _RefreshGrid(child: _LoadingView()),
+      error: (e, _) => _RefreshGrid(
+        child: _ErrorRetry(
+          message: 'Could not load your loans',
+          detail: describeApiError(e),
+          onRetry: () => ref.invalidate(clientLoansProvider),
         ),
-        data: (loans) => _Body(loans: loans, gate: gate),
       ),
+      data: (loans) => _Body(loans: loans, gate: gate),
     );
   }
 }
@@ -383,264 +447,62 @@ class _Body extends ConsumerWidget {
     if (session == null) return const SizedBox.shrink();
     final clientId = session.userId;
 
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 90),
-      children: [
-        _HomeHeader(session: session),
-        const SizedBox(height: 11),
-        // State-driven hero: payment due → borrow capacity → quiet presence.
-        const _HeroSection(),
-        const SizedBox(height: 12),
-        // Registration is outstanding but the balance must clear first — the
-        // stepper is queued below the hero and only unlocks once the loan is
-        // settled, so paying is always the first thing they are offered.
-        if (gate?.registration.owesThenRegisters ?? false)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: _RegistrationPendingCard(decision: gate!.registration),
-          ),
-        const SizedBox(height: 12),
-        // Applications in flight (pending amber badge), then any lender that
-        // republished their terms — the queued-attention stack. Declined
-        // applications stay in History; home keeps only open loops.
-        _ApplicationsStrip(clientId: clientId),
-        for (final l
-            in gate?.lenders.where((l) => !l.termsAccepted) ??
-                const <LenderStatus>[])
-          Padding(
-            padding: const EdgeInsets.only(bottom: 9),
-            child: _HomeCard(
-              title: '${l.name} updated their terms',
-              subtitle: 'Tap to review & accept',
-              leading: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFDF3E0),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: const Icon(
-                  Icons.description_outlined,
-                  size: 16,
-                  color: Color(0xFFB26A00),
-                ),
-              ),
-              trailing: const Icon(
-                Icons.chevron_right_rounded,
-                size: 18,
-                color: Color(0xFFB26A00),
-              ),
-              backgroundColor: const Color(0xFFFDF3E0),
-              onTap: () => showTenantTermsSheet(context, ref, l),
-            ),
-          ),
-        const SizedBox(height: 14),
-        _ActivityStrip(role: session.role),
-      ],
-    );
-  }
-}
-
-// ---------- state hero ----------
-
-/// One primary surface, strict priority:
-///   1. the soonest upcoming payment (act first),
-///   2. the borrow limit (the only surface that offers a new application).
-/// A pending application never hides either — it queues as a card below
-/// (mockup: "everything else is queued attention").
-class _HeroSection extends ConsumerWidget {
-  const _HeroSection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final loans = ref.watch(clientLoansProvider).valueOrNull ?? const <Loan>[];
-    final withDue = loans
-        .where((l) => l.nextInstallment != null)
-        .map((l) => (loan: l, due: l.nextInstallment!.dueDate))
-        .toList();
-    if (withDue.isNotEmpty) {
-      withDue.sort((a, b) => a.due.compareTo(b.due));
-      return _PaymentHero(loan: withDue.first.loan);
-    }
-
-    return ref.watch(_homeLimitProvider).when(
-      loading: () =>
-          const Skeleton(width: double.infinity, height: 150, radius: 20),
-      error: (_, _) => const _WelcomeCard(),
-      data: (limit) => limit == null ? const _WelcomeCard() : _LimitHero(limit: limit),
-    );
-  }
-}
-
-// ---------- payment hero ----------
-
-class _PaymentHero extends ConsumerWidget {
-  const _PaymentHero({required this.loan});
-
-  final Loan loan;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final next = loan.nextInstallment!;
-    final days = loan.daysUntilDue ?? 0;
-    final theme = lenderTheme(ref, loan.tenantId);
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: theme.gradient,
-          ),
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              right: -30,
-              top: -30,
-              child: Container(
-                width: 160,
-                height: 160,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.07),
-                ),
-              ),
-            ),
-            Positioned(
-              right: 40,
-              bottom: -40,
-              child: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.05),
-                ),
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'NEXT PAYMENT',
-                      style: TextStyle(
-                        fontSize: 9.5,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.6,
-                        color: Color(0xFFAFC3EE),
-                      ),
-                    ),
-                    _DuePill(days: days, dueDate: next.dueDate),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                _BigKwacha(amount: next.amount + next.penalty),
-                if (next.penalty > 0)
-                  Text(
-                    'includes penalty ${Fmt.money(next.penalty, decimals: 2)}',
-                    style: const TextStyle(fontSize: 10, color: Color(0xFF9FB4E4)),
-                  ),
-                const SizedBox(height: 3),
-                Text(
-                  '${loan.lenderName} · due ${Fmt.date(next.dueDate)}',
-                  style: const TextStyle(fontSize: 11, color: Color(0xFFBFD0F2)),
-                ),
-                const SizedBox(height: 13),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 14,
-                      child: ElevatedButton(
-                        onPressed: () => showPaySheet(context, ref, loan),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.green500,
-                          minimumSize: const Size.fromHeight(46),
-                        ),
-                        child: Text(
-                          days < 0 ? 'Pay Overdue Now' : 'Pay Now',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 8,
-                      child: OutlinedButton(
-                        onPressed: () => context.push('/c/loan/${loan.id}'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Color(0xFF5B7BC7), width: 1.5),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          minimumSize: const Size.fromHeight(46),
-                        ),
-                        child: const Text(
-                          'Details',
-                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The mockup's due pill: white translucent capsule, schedule icon + text.
-class _DuePill extends StatelessWidget {
-  const _DuePill({required this.days, required this.dueDate});
-
-  final int days;
-  final DateTime dueDate;
-
-  @override
-  Widget build(BuildContext context) {
-    final String label;
-    if (days < 0) {
-      label = '${-days} days overdue';
-    } else if (days == 0) {
-      label = 'due today · ${DateFormat('d MMM').format(dueDate)}';
-    } else if (days == 1) {
-      label = 'due tomorrow · ${DateFormat('d MMM').format(dueDate)}';
-    } else {
-      label =
-          'due in $days days · ${DateFormat('d MMM').format(dueDate)}';
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(99),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
+    return RefreshIndicator(
+      onRefresh: () async {
+        ref.invalidate(clientLoansProvider);
+        ref.invalidate(loanRequestsByClientProvider(clientId));
+        ref.invalidate(_homeLimitProvider);
+        ref.invalidate(notificationsProvider(session.role));
+        ref.invalidate(clientGateProvider);
+      },
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
         children: [
-          const Icon(Icons.schedule_rounded, size: 10, color: Color(0xFFBFD0F2)),
-          const SizedBox(width: 3),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFFBFD0F2),
+          // Dome scrolls with content
+          _HomeDome(session: session),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 90),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _ActionButtons(loans: loans),
+                const SizedBox(height: 4),
+                if (gate?.registration.owesThenRegisters ?? false)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: _RegistrationPendingCard(decision: gate!.registration),
+                  ),
+                const SizedBox(height: 12),
+                _ApplicationsStrip(clientId: clientId),
+                for (final l in gate?.lenders.where((l) => !l.termsAccepted) ?? const <LenderStatus>[])
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 9),
+                    child: _HomeCard(
+                      title: '${l.name} updated their terms',
+                      subtitle: 'Tap to review & accept',
+                      leading: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFDF3E0),
+                          borderRadius: BorderRadius.circular(11),
+                        ),
+                        child: const Icon(Icons.description_outlined, size: 16, color: Color(0xFFB26A00)),
+                      ),
+                      trailing: const Icon(Icons.chevron_right_rounded, size: 18, color: Color(0xFFB26A00)),
+                      backgroundColor: const Color(0xFFFDF3E0),
+                      onTap: () => showTenantTermsSheet(context, ref, l),
+                    ),
+                  ),
+                const SizedBox(height: 14),
+                _SectionHeader(
+                  title: 'Recent Transaction',
+                  onSeeAll: () => context.go('/c/history'),
+                ),
+                const SizedBox(height: 7),
+                _ActivityStrip(role: session.role),
+              ],
             ),
           ),
         ],
@@ -649,298 +511,124 @@ class _DuePill extends StatelessWidget {
   }
 }
 
-// ---------- borrow-capacity hero ----------
 
-class _LimitHero extends ConsumerWidget {
-  const _LimitHero({required this.limit});
+// ---------- state hero ----------
 
-  final _HomeLimit limit;
+/// Hero balance block inside the dome — matches HTML .hero.
+/// Shows loan balance (if active loan) or available limit.
+class _HeroSection extends ConsumerWidget {
+  const _HeroSection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final nt = limit.nextTier;
-    final reached = nt == null
-        ? 5
-        : (nt.clearedNeeded - nt.clearedRemaining).clamp(0, 5);
-    final theme = lenderTheme(ref, limit.tenantId);
+    final loans = ref.watch(clientLoansProvider).valueOrNull ?? const <Loan>[];
+    final activeLoan = loans.where((l) => l.nextInstallment != null).toList();
+    if (activeLoan.isNotEmpty) {
+      activeLoan.sort(
+        (a, b) => a.nextInstallment!.dueDate.compareTo(
+          b.nextInstallment!.dueDate,
+        ),
+      );
+      final loan = activeLoan.first;
+      final next = loan.nextInstallment!;
+      return _HeroDomeContent(
+        label: 'Loan balance',
+        amount: loan.outstanding,
+        sub:
+            'Next payment ${Fmt.money(next.remaining)} · due ${Fmt.date(next.dueDate)}',
+        onTap: () => showPaySheet(context, ref, loan),
+      );
+    }
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: theme.gradient,
-          ),
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              right: -30,
-              top: -30,
-              child: Container(
-                width: 160,
-                height: 160,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.07),
-                ),
-              ),
-            ),
-            Positioned(
-              right: 40,
-              bottom: -40,
-              child: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.05),
-                ),
-              ),
-            ),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'YOU CAN BORROW UP TO',
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.6,
-                    color: Color(0xFFAFC3EE),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                _BigKwacha(amount: limit.limitKwacha),
-                const SizedBox(height: 5),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppColors.green500.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.star_rounded, size: 10, color: Color(0xFF7FE8AC)),
-                      const SizedBox(width: 4),
-                      Text(
-                        '${limit.tier} · with ${limit.lenderName}',
-                        style: const TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF7FE8AC),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 13),
-                _Ladder(reached: reached, nextTier: nt),
-                const SizedBox(height: 13),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    onPressed: () => context.push('/c/request'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.green500,
-                      minimumSize: const Size.fromHeight(46),
-                      elevation: 0,
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.add_rounded, size: 18),
-                        SizedBox(width: 6),
-                        Text(
-                          'Apply for a Loan',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
+    return ref.watch(_homeLimitProvider).when(
+      loading: () => const _HeroDomeContent(
+        label: 'Available limit',
+        amount: 0,
+        sub: 'Loading…',
+      ),
+      error: (_, _) => const _HeroDomeContent(
+        label: 'Available limit',
+        amount: 0,
+        sub: 'You can borrow up to · Building trust',
+      ),
+      data: (limit) => _HeroDomeContent(
+        label: limit == null ? 'Available limit' : 'Available limit',
+        amount: limit?.limitKwacha ?? 0,
+        sub: limit == null
+            ? 'You can borrow up to · Building trust'
+            : 'You can borrow up to · ${limit.lenderName}',
+        onTap: limit != null ? () => context.push('/c/request') : null,
       ),
     );
   }
 }
 
-/// The mockup ladder: capped scale, a thin gradient progress bar, and the
-/// "Repay N more loans to unlock K X" caption with bold highlights.
-class _Ladder extends StatelessWidget {
-  const _Ladder({required this.reached, required this.nextTier});
+/// The dome's central balance display — matches HTML .hero block.
+class _HeroDomeContent extends StatelessWidget {
+  const _HeroDomeContent({
+    required this.label,
+    required this.amount,
+    required this.sub,
+    this.onTap,
+  });
 
-  final int reached;
-  final CreditNextTier? nextTier;
+  final String label;
+  final double amount;
+  final String sub;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final fill = reached / 5 * 100;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text(
-              'K 1,000',
-              style: TextStyle(fontSize: 9, color: Color(0xFFA9BEE8)),
-            ),
-            Text(
-              'K 20,000',
-              style: TextStyle(fontSize: 9, color: Color(0xFFA9BEE8)),
-            ),
-          ],
-        ),
-        const SizedBox(height: 5),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(99),
-          child: Container(
-            height: 6,
-            decoration: const BoxDecoration(color: Color(0x2EFFFFFF)),
-            child: FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: fill / 100,
-              child: const DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [AppColors.green500, Color(0xFF7FE8AC)],
-                  ),
-                ),
-              ),
+    final n = NumberFormat.decimalPattern()
+      ..maximumFractionDigits = 2
+      ..minimumFractionDigits = 2;
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.8,
+              color: Color(0xA8FFFFFF),
             ),
           ),
-        ),
-        const SizedBox(height: 6),
-        if (nextTier != null)
+          const SizedBox(height: 4),
           Text.rich(
             TextSpan(
-              style: const TextStyle(fontSize: 9.5, color: Color(0xFFBFD0F2)),
               children: [
-                const TextSpan(text: 'Repay '),
                 TextSpan(
-                  text: '${nextTier!.clearedRemaining} more '
-                      'loan${nextTier!.clearedRemaining == 1 ? '' : 's'}',
-                  style: const TextStyle(
+                  text: 'K ',
+                  style: TextStyle(
+                    fontSize: 17,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF7FE8AC),
+                    color: const Color(0xFF9FB4E4).withValues(alpha: 0.9),
                   ),
                 ),
-                const TextSpan(text: ' to unlock '),
                 TextSpan(
-                  text: Fmt.money(nextTier!.limitKwacha),
-                  style: const TextStyle(
+                  text: n.format(amount),
+                  style: GoogleFonts.poppins(
+                    fontSize: 32,
                     fontWeight: FontWeight.w800,
-                    color: Color(0xFF7FE8AC),
-                  ),
-                ),
-              ],
-            ),
-          )
-        else
-          const Text(
-            'Top rung reached. Keep repaying on time.',
-            style: TextStyle(fontSize: 9.5, color: Color(0xFFBFD0F2)),
-          ),
-      ],
-    );
-  }
-}
-
-// ---------- quiet hero ----------
-
-/// When no lender limit is available yet, Home retains the visual anchor of a
-/// lender-owned banner instead of dropping to a generic white empty state.
-class _WelcomeCard extends ConsumerWidget {
-  const _WelcomeCard();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final lenders = ref.watch(lenderBrandingProvider);
-    final tenantId = lenders.keys.firstOrNull;
-    final theme = lenderTheme(ref, tenantId);
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        height: 166,
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: theme.gradient,
-          ),
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              right: -30,
-              top: -30,
-              child: Container(
-                width: 160,
-                height: 160,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.07),
-                ),
-              ),
-            ),
-            Positioned(
-              right: 40,
-              bottom: -48,
-              child: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withValues(alpha: 0.05),
-                ),
-              ),
-            ),
-            const Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'WELCOME BACK',
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.6,
-                    color: Color(0xFFAFC3EE),
-                  ),
-                ),
-                SizedBox(height: 7),
-                Text(
-                  'Your next opportunity\nis on its way.',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w800,
-                    height: 1.15,
+                    letterSpacing: -0.6,
                     color: Colors.white,
                   ),
                 ),
-                SizedBox(height: 7),
-                Text(
-                  'We will let you know when borrowing opens for you.',
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFFBFD0F2),
-                  ),
-                ),
               ],
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            sub,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w500,
+              color: Color(0xC7FFFFFF),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1028,10 +716,7 @@ class _HomeCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              if (leading != null) ...[
-                leading!,
-                const SizedBox(width: 10),
-              ],
+              if (leading != null) ...[leading!, const SizedBox(width: 10)],
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1070,45 +755,6 @@ class _HomeCard extends StatelessWidget {
   }
 }
 
-// ---------- kwacha display ----------
-
-/// Big hero number with the mockup's small "K" prefix (K2,500 style).
-class _BigKwacha extends StatelessWidget {
-  const _BigKwacha({required this.amount});
-
-  final double amount;
-
-  @override
-  Widget build(BuildContext context) {
-    final n = NumberFormat.decimalPattern()
-      ..maximumFractionDigits = 2
-      ..minimumFractionDigits = 0;
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: 'K',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w800,
-              color: const Color(0xFF9FB4E4).withValues(alpha: 0.9),
-            ),
-          ),
-          TextSpan(
-            text: n.format(amount),
-            style: GoogleFonts.poppins(
-              fontSize: 34,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -1,
-              color: Colors.white,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // ---------- my applications ----------
 
 class _SectionHeader extends StatelessWidget {
@@ -1123,10 +769,10 @@ class _SectionHeader extends StatelessWidget {
       children: [
         Text(
           title,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppColors.muted,
+          style: GoogleFonts.poppins(
+            fontSize: 13.5,
+            fontWeight: FontWeight.w700,
+            color: AppColors.ink,
           ),
         ),
         const Spacer(),
@@ -1136,7 +782,7 @@ class _SectionHeader extends StatelessWidget {
             child: const Text(
               'See all',
               style: TextStyle(
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
                 color: AppColors.blue600,
               ),
@@ -1209,7 +855,12 @@ class _ApplicationsStrip extends ConsumerWidget {
 }
 
 class AppBadge extends StatelessWidget {
-  const AppBadge(this.label, {super.key, this.variant = BadgeVariant.blue, this.fontSize = 9});
+  const AppBadge(
+    this.label, {
+    super.key,
+    this.variant = BadgeVariant.blue,
+    this.fontSize = 9,
+  });
 
   final String label;
   final BadgeVariant variant;
@@ -1278,12 +929,7 @@ class _ActivityStrip extends ConsumerWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _SectionHeader(
-              title: 'Recent activity',
-              onSeeAll: () => context.go('/c/alerts'),
-            ),
-            const SizedBox(height: 7),
-            for (final n in items.take(2)) _ActivityRow(notification: n),
+            for (final n in items.take(4)) _ActivityRow(notification: n),
           ],
         );
       },
@@ -1338,10 +984,7 @@ class _ActivityRow extends StatelessWidget {
                   '${_timeAgo(notification.time)} · ${notification.body}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.muted,
-                  ),
+                  style: const TextStyle(fontSize: 11, color: AppColors.muted),
                 ),
               ],
             ),
@@ -1353,28 +996,28 @@ class _ActivityRow extends StatelessWidget {
 }
 
 IconData _iconFor(NotificationType type) => switch (type) {
-      NotificationType.paymentDue => Icons.alarm_rounded,
-      NotificationType.paymentReceived => Icons.check_rounded,
-      NotificationType.loanOverdue => Icons.error_rounded,
-      NotificationType.verification => Icons.verified_rounded,
-      NotificationType.clientActivity => Icons.person_outline_rounded,
-      NotificationType.loanRequest => Icons.send_rounded,
-      NotificationType.requestApproved => Icons.celebration_outlined,
-      NotificationType.requestRejected => Icons.close_rounded,
-      NotificationType.system => Icons.info_rounded,
-    };
+  NotificationType.paymentDue => Icons.alarm_rounded,
+  NotificationType.paymentReceived => Icons.check_rounded,
+  NotificationType.loanOverdue => Icons.error_rounded,
+  NotificationType.verification => Icons.verified_rounded,
+  NotificationType.clientActivity => Icons.person_outline_rounded,
+  NotificationType.loanRequest => Icons.send_rounded,
+  NotificationType.requestApproved => Icons.celebration_outlined,
+  NotificationType.requestRejected => Icons.close_rounded,
+  NotificationType.system => Icons.info_rounded,
+};
 
 Color _fgFor(NotificationType type) => switch (type) {
-      NotificationType.paymentDue => const Color(0xFFB26A00),
-      NotificationType.paymentReceived => AppColors.green700,
-      NotificationType.loanOverdue => AppColors.red,
-      NotificationType.verification => AppColors.blue600,
-      NotificationType.clientActivity => AppColors.blue600,
-      NotificationType.loanRequest => AppColors.blue600,
-      NotificationType.requestApproved => AppColors.green700,
-      NotificationType.requestRejected => AppColors.red,
-      NotificationType.system => AppColors.muted,
-    };
+  NotificationType.paymentDue => const Color(0xFFB26A00),
+  NotificationType.paymentReceived => AppColors.green700,
+  NotificationType.loanOverdue => AppColors.red,
+  NotificationType.verification => AppColors.blue600,
+  NotificationType.clientActivity => AppColors.blue600,
+  NotificationType.loanRequest => AppColors.blue600,
+  NotificationType.requestApproved => AppColors.green700,
+  NotificationType.requestRejected => AppColors.red,
+  NotificationType.system => AppColors.muted,
+};
 
 String _timeAgo(DateTime then) {
   final diff = DateTime.now().difference(then);
@@ -1383,6 +1026,91 @@ String _timeAgo(DateTime then) {
   if (diff.inHours < 24) return '${diff.inHours}h ago';
   if (diff.inDays == 1) return 'yesterday';
   return '${diff.inDays}d ago';
+}
+
+// ---------- conditional action buttons ----------
+
+class _ActionButtons extends ConsumerWidget {
+  const _ActionButtons({required this.loans});
+  final List<Loan> loans;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final active = loans.where((l) => l.nextInstallment != null).toList()
+      ..sort((a, b) =>
+          a.nextInstallment!.dueDate.compareTo(b.nextInstallment!.dueDate));
+    final hasActive = active.isNotEmpty;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: Row(
+        children: [
+          if (hasActive) ...[
+            Expanded(
+              child: _HomeActionBtn(
+                icon: Icons.north_east_rounded,
+                label: 'Repay',
+                green: true,
+                onTap: () => showPaySheet(context, ref, active.first),
+              ),
+            ),
+            const SizedBox(width: 12),
+          ],
+          Expanded(
+            child: _HomeActionBtn(
+              icon: Icons.add_rounded,
+              label: 'Apply',
+              green: false,
+              onTap: () => context.push('/c/request'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeActionBtn extends StatelessWidget {
+  const _HomeActionBtn({
+    required this.icon,
+    required this.label,
+    required this.green,
+    required this.onTap,
+  });
+  final IconData icon;
+  final String label;
+  final bool green;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: AppSizes.button,
+        decoration: BoxDecoration(
+          gradient: green ? AppGradients.green : AppGradients.brand,
+          borderRadius: BorderRadius.circular(AppRadii.button),
+          boxShadow: green ? AppShadows.shActionGreen : AppShadows.shAction,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 18, color: Colors.white),
+            const SizedBox(width: 7),
+            Text(
+              label,
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ---------- loading / error ----------
@@ -1428,30 +1156,72 @@ class _LoadingView extends StatelessWidget {
 }
 
 class _ErrorRetry extends StatelessWidget {
-  const _ErrorRetry({required this.message, required this.onRetry});
+  const _ErrorRetry({
+    required this.message,
+    required this.onRetry,
+    this.detail,
+  });
 
   final String message;
   final VoidCallback onRetry;
+  final String? detail;
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 90),
-      children: [
-        const Icon(
-          Icons.cloud_off_outlined,
-          size: 44,
-          color: AppColors.muted,
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 68,
+              height: 68,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: AppColors.red50,
+                shape: BoxShape.circle,
+                border: Border.all(color: AppColors.redLine, width: 1.5),
+              ),
+              child: const Icon(
+                Icons.cloud_off_rounded,
+                size: 30,
+                color: AppColors.red,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.ink,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            if (detail != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                detail!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 11, color: AppColors.muted),
+              ),
+            ],
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: const Text('Retry'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.blue600,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(AppRadii.button),
+                ),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 14),
-        Center(child: Text(message)),
-        const SizedBox(height: 16),
-        ElevatedButton(
-          onPressed: onRetry,
-          child: const Text('Retry'),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -1473,7 +1243,9 @@ final _homeLimitProvider = FutureProvider.autoDispose<_HomeLimit?>((ref) async {
   };
 
   try {
-    for (final lender in await ref.watch(linkedLendersProvider(userId).future)) {
+    for (final lender in await ref.watch(
+      linkedLendersProvider(userId).future,
+    )) {
       lenderNames.putIfAbsent(lender.id, () => lender.name);
     }
   } catch (_) {
@@ -1493,8 +1265,9 @@ final _homeLimitProvider = FutureProvider.autoDispose<_HomeLimit?>((ref) async {
   // The application card on this very screen is also a direct lender
   // relationship. Some older loan records predate `tenantId`, but requests
   // always carry the lender id used by the credit-limit endpoint.
-  for (final request
-      in await ref.watch(loanRequestsByClientProvider(userId).future)) {
+  for (final request in await ref.watch(
+    loanRequestsByClientProvider(userId).future,
+  )) {
     if (request.lenderId.isNotEmpty) {
       lenderNames.putIfAbsent(request.lenderId, () => request.lenderName);
     }

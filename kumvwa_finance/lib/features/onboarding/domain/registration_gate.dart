@@ -62,8 +62,7 @@ class RegistrationDecision {
 
   /// True when the borrower may proceed but owes money — the home shows a
   /// "finish your registration" card alongside the pay surface.
-  bool get owesThenRegisters =>
-      action == RegistrationGateAction.clearLoanFirst;
+  bool get owesThenRegisters => action == RegistrationGateAction.clearLoanFirst;
 
   /// Unlocked: nothing required is missing.
   bool get isComplete => action == RegistrationGateAction.complete;

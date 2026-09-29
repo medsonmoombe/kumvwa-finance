@@ -15,6 +15,7 @@ import type { Request } from 'express';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/guards/public.decorator';
 import { AllowUnverifiedTenant } from '../../common/guards/unverified-tenant.decorator';
+import { Roles } from '../../common/guards/roles.decorator';
 import { AuthService } from './auth.service';
 import {
   Set2faDto,
@@ -28,6 +29,7 @@ import {
   OtpVerifyDto,
   RefreshDto,
   RegisterTenantDto,
+  RedeemMobileAccessCodeDto,
   ResetPasswordDto,
 } from './dto/auth.dto';
 
@@ -90,6 +92,36 @@ export class AuthController {
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   consoleVerify2fa(@Body() dto: ConsoleVerifyDto, @Req() req: Request) {
     return this.auth.consoleVerify2fa(dto, req);
+  }
+
+  @Public()
+  @Post('mobile/lender/login')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  lenderMobileLogin(@Body() dto: ConsoleLoginDto, @Req() req: Request) {
+    return this.auth.lenderMobileLogin(dto, req, req.headers['x-device-token'] as string | undefined);
+  }
+
+  @Public()
+  @Post('mobile/lender/verify-2fa')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  lenderMobileVerify2fa(@Body() dto: ConsoleVerifyDto, @Req() req: Request) {
+    return this.auth.lenderMobileVerify2fa(dto, req);
+  }
+
+  @Post('mobile/lender/access-code')
+  @Roles('tenant_owner')
+  createLenderMobileAccessCode(@CurrentUser() user: { sub: string }) {
+    return this.auth.createOwnLenderMobileAccessCode(user.sub);
+  }
+
+  @Public()
+  @Post('mobile/lender/access-code/redeem')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 8, ttl: 60_000 } })
+  redeemLenderMobileAccessCode(@Body() dto: RedeemMobileAccessCodeDto, @Req() req: Request) {
+    return this.auth.redeemLenderMobileAccessCode(dto, req);
   }
 
   @Public()

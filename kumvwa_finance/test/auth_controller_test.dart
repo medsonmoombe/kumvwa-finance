@@ -46,6 +46,21 @@ class _FakeAuthRepository implements AuthRepository {
   }
 
   @override
+  Future<LenderSignInResult> loginLender({required String email, required String password}) async {
+    throw const AuthException('nope');
+  }
+
+  @override
+  Future<UserSession> verifyLenderOtp({required String preToken, required String code}) async {
+    throw const AuthException('nope');
+  }
+
+  @override
+  Future<UserSession> redeemLenderAccessCode(String code) async {
+    throw const AuthException('nope');
+  }
+
+  @override
   Future<void> logout() async => logoutCalls++;
 }
 
