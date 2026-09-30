@@ -32,6 +32,7 @@ class _LenderRegisterScreenState extends ConsumerState<LenderRegisterScreen> {
   final _nameCtrl = TextEditingController();
   String _bizType = 'sacco';
   final _contactCtrl = TextEditingController();
+  final _descriptionCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _tpinCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
@@ -58,6 +59,7 @@ class _LenderRegisterScreenState extends ConsumerState<LenderRegisterScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _contactCtrl.dispose();
+    _descriptionCtrl.dispose();
     _phoneCtrl.dispose();
     _tpinCtrl.dispose();
     _addressCtrl.dispose();
@@ -103,10 +105,6 @@ void _back() {
 
   Future<void> _submit() async {
     if (!(_form3.currentState?.validate() ?? false)) return;
-    if (_pickedFile == null) {
-      setState(() => _error = 'Attach the BOZ registration certificate.');
-      return;
-    }
     if (_termsVersion == null) {
       setState(() => _error = 'Platform terms still loading. Please wait and try again.');
       return;
@@ -133,9 +131,11 @@ void _back() {
           'businessName': _nameCtrl.text.trim(),
           'businessType': _bizType,
           'contactPerson': _contactCtrl.text.trim(),
+          'businessDescription': _descriptionCtrl.text.trim(),
           if (_addressCtrl.text.trim().isNotEmpty)
             'address': _addressCtrl.text.trim(),
-          if (_tpinCtrl.text.trim().isNotEmpty) 'tpin': _tpinCtrl.text.trim(),
+          'tpin': _tpinCtrl.text.trim(),
+          'ownerNrc': _nrcCtrl.text.trim(),
           'acceptedTermsVersion': _termsVersion,
         },
       );
@@ -145,15 +145,15 @@ void _back() {
         data['refreshToken'] as String?,
       );
 
-      // Attach BOZ cert — in a real implementation this would upload the file
-      // via presigned URL. For now we post the NRC only.
-      try {
-        await client.postA(
-          '/tenants/me/verification',
-          data: {'ownerNrc': _nrcCtrl.text.trim()},
-        );
-      } catch (_) {
-        // Non-fatal — account created, cert can be attached later
+      // BOZ is optional, but selected files always use the full presign ->
+      // upload -> confirm flow before they are linked to the business.
+      if (_pickedFile != null) {
+        try {
+          await _uploadOptionalBoz(client, _pickedFile!);
+        } catch (_) {
+          // Registration must not become unrecoverable because optional
+          // supporting evidence could not be uploaded on this network.
+        }
       }
 
       if (mounted) {
@@ -175,13 +175,41 @@ void _back() {
     }
   }
 
+  Future<void> _uploadOptionalBoz(ApiClient client, PlatformFile file) async {
+    final bytes = await file.readAsBytes();
+    final extension = file.extension?.toLowerCase();
+    final mime = extension == 'pdf'
+        ? 'application/pdf'
+        : extension == 'png'
+        ? 'image/png'
+        : 'image/jpeg';
+    final upload = await client.postA(
+      '/files/upload-url',
+      data: {'kind': 'boz_certificate', 'mime': mime, 'size': bytes.length},
+    );
+    final data = upload.data as Map<String, dynamic>;
+    final fileId = data['fileId'] as String;
+    await Dio().put<void>(
+      data['uploadUrl'] as String,
+      data: bytes,
+      options: Options(
+        headers: {'Content-Type': mime, 'Content-Length': bytes.length},
+      ),
+    );
+    await client.postA('/files/$fileId/confirm');
+    await client.postA(
+      '/tenants/me/verification',
+      data: {'fileId': fileId, 'ownerNrc': _nrcCtrl.text.trim()},
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final titles = ['Business details', 'Your account', 'BOZ certificate'];
+    final titles = ['Business details', 'Your account', 'Contact identity'];
     final subs = [
       'Tell us who is lending',
       'How you sign in to the console',
-      'Proof of your lending licence',
+      'Identity details for platform review',
     ];
 
     return Scaffold(
@@ -222,6 +250,7 @@ void _back() {
                             bizType: _bizType,
                             onBizType: (v) => setState(() => _bizType = v),
                             contactCtrl: _contactCtrl,
+                            descriptionCtrl: _descriptionCtrl,
                             phoneCtrl: _phoneCtrl,
                             tpinCtrl: _tpinCtrl,
                             addressCtrl: _addressCtrl,
@@ -274,6 +303,7 @@ class _Step1 extends StatelessWidget {
     required this.bizType,
     required this.onBizType,
     required this.contactCtrl,
+    required this.descriptionCtrl,
     required this.phoneCtrl,
     required this.tpinCtrl,
     required this.addressCtrl,
@@ -285,6 +315,7 @@ class _Step1 extends StatelessWidget {
   final String bizType;
   final ValueChanged<String> onBizType;
   final TextEditingController contactCtrl;
+  final TextEditingController descriptionCtrl;
   final TextEditingController phoneCtrl;
   final TextEditingController tpinCtrl;
   final TextEditingController addressCtrl;
@@ -333,15 +364,30 @@ class _Step1 extends StatelessWidget {
                 : null,
           ),
           const SizedBox(height: 12),
+          AppField(
+            label: 'Business description *',
+            controller: descriptionCtrl,
+            hint: 'Describe your lending business and who you serve',
+            textCapitalization: TextCapitalization.sentences,
+            maxLines: 3,
+            textInputAction: TextInputAction.next,
+            validator: (v) => (v == null || v.trim().length < 20)
+                ? 'Enter at least 20 characters about the business.'
+                : null,
+          ),
+          const SizedBox(height: 12),
           _PhoneRow(controller: phoneCtrl),
           const SizedBox(height: 12),
           AppField(
-            label: 'TPIN (optional)',
+            label: 'TPIN *',
             controller: tpinCtrl,
             hint: '1000123456',
             keyboardType: TextInputType.number,
             textInputAction: TextInputAction.next,
             inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9A-Za-z]'))],
+            validator: (v) => (v == null || v.trim().isEmpty)
+                ? 'TPIN is required.'
+                : null,
           ),
           const SizedBox(height: 12),
           AppField(
@@ -454,17 +500,18 @@ class _Step3 extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // BOZ cert upload row
           AppUploadRow(
-            title: 'BOZ registration certificate',
-            subtitle: pickedFile != null ? pickedFile!.name : 'Tap to attach · PDF, JPG or PNG',
+            title: 'BOZ registration certificate (optional)',
+            subtitle: pickedFile != null
+                ? pickedFile!.name
+                : 'Tap to attach · PDF, JPG or PNG',
             onTap: onPickFile,
             tone: pickedFile != null ? TileTone.green : TileTone.blue,
             status: pickedFile != null ? UploadStatus.done : UploadStatus.idle,
           ),
           const SizedBox(height: 12),
           AppField(
-            label: 'Owner NRC *',
+            label: 'Contact person NRC *',
             controller: nrcCtrl,
             hint: '245711/63/1',
             keyboardType: TextInputType.number,
@@ -472,7 +519,7 @@ class _Step3 extends StatelessWidget {
             inputFormatters: [NrcInputFormatter()],
             formFieldKey: const ValueKey('l-nrc'),
             validator: Validators.nrc,
-            helper: 'The reviewer checks this against the certificate.',
+            helper: 'Used to verify the person responsible for this business.',
           ),
           const SizedBox(height: 16),
           // Terms box

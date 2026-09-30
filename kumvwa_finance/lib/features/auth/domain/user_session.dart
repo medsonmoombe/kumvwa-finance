@@ -9,23 +9,25 @@ class UserSession {
     this.refreshToken,
     this.profileComplete = true,
     this.profilePercent = 100,
+    this.profileFileId,
+    this.profileImageUrl,
   });
 
-  final String token; // JWT once the real API exists
+  final String token;
   final String userId;
   final String displayName;
   final String phone;
-  final String role; // 'business' | 'client'
-
-  /// Rotating refresh token (API-backed sessions). Null for mock sessions,
-  /// so persisted mock data still loads.
+  final String role;
   final String? refreshToken;
-
-  /// Client-only: KYC wizard state. `profileComplete` gates the loan
-  /// features; `profilePercent` drives the wizard's progress indicator.
-  /// Lender accounts are always "complete".
   final bool profileComplete;
   final int profilePercent;
+
+  /// Stable file ID — persisted to storage. Used to re-fetch a fresh
+  /// presigned URL on every session restore (presigned URLs expire in 15 min).
+  final String? profileFileId;
+
+  /// Ephemeral presigned URL — never persisted, always re-fetched from /auth/me.
+  final String? profileImageUrl;
 
   bool get needsProfile => !profileComplete;
 
@@ -35,6 +37,8 @@ class UserSession {
     String? role,
     bool? profileComplete,
     int? profilePercent,
+    String? profileFileId,
+    String? profileImageUrl,
   }) => UserSession(
     token: token,
     userId: userId,
@@ -44,6 +48,8 @@ class UserSession {
     refreshToken: refreshToken,
     profileComplete: profileComplete ?? this.profileComplete,
     profilePercent: profilePercent ?? this.profilePercent,
+    profileFileId: profileFileId ?? this.profileFileId,
+    profileImageUrl: profileImageUrl ?? this.profileImageUrl,
   );
 
   Map<String, dynamic> toJson() => {
@@ -55,6 +61,10 @@ class UserSession {
     if (refreshToken != null) 'refreshToken': refreshToken,
     'profileComplete': profileComplete,
     'profilePercent': profilePercent,
+    // profileFileId persisted — stable, never expires
+    if (profileFileId != null) 'profileFileId': profileFileId,
+    // profileImageUrl intentionally NOT persisted — it's a presigned URL
+    // that expires in 15 min. It is re-fetched fresh from /auth/me on restore.
   };
 
   factory UserSession.fromJson(Map<String, dynamic> json) => UserSession(
@@ -64,9 +74,9 @@ class UserSession {
     phone: json['phone'] as String,
     role: json['role'] as String,
     refreshToken: json['refreshToken'] as String?,
-    // Old persisted sessions predate these fields — treat as complete
-    // so a stale cache never traps a lender on the wizard.
     profileComplete: json['profileComplete'] as bool? ?? true,
     profilePercent: json['profilePercent'] as int? ?? 100,
+    profileFileId: json['profileFileId'] as String?,
+    // profileImageUrl always starts null — re-populated by /auth/me
   );
 }

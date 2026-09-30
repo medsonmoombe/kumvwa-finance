@@ -16,6 +16,7 @@ class HistoryTile extends StatelessWidget {
     required this.statusDotColor,
     required this.avatarGradient,
     required this.avatarInitials,
+    this.avatarImageUrl,
     required this.onTap,
   });
 
@@ -27,6 +28,7 @@ class HistoryTile extends StatelessWidget {
   final Color statusDotColor;
   final List<Color> avatarGradient;
   final String avatarInitials;
+  final String? avatarImageUrl;
   final VoidCallback onTap;
 
   @override
@@ -54,14 +56,31 @@ class HistoryTile extends StatelessWidget {
                       ),
                       shape: BoxShape.circle,
                     ),
-                    child: Text(
-                      avatarInitials,
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
+                    child: avatarImageUrl == null
+                        ? Text(
+                            avatarInitials,
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
+                          )
+                        : ClipOval(
+                            child: Image.network(
+                              avatarImageUrl!,
+                              width: 36,
+                              height: 36,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => Text(
+                                avatarInitials,
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
                   ),
                   Positioned(
                     right: -1,

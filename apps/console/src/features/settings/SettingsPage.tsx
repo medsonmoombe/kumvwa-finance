@@ -20,17 +20,18 @@ export function SettingsPage() {
   const [ok, setOk] = useState('');
 
   const [form, setForm] = useState({
-    email: '', address: '', tpin: '', contactPerson: '', tagline: '',
+    email: '', address: '', tpin: '', contactPerson: '', businessDescription: '', tagline: '',
   });
 
   useEffect(() => {
     api.get('/tenants/me/branding')
-      .then((r: { data: { email?: string | null; address?: string | null; tpin?: string | null; contactPerson?: string | null; tagline?: string | null } }) => {
+      .then((r: { data: { email?: string | null; address?: string | null; tpin?: string | null; contactPerson?: string | null; businessDescription?: string | null; tagline?: string | null } }) => {
         setForm({
           email: r.data.email ?? '',
           address: r.data.address ?? '',
           tpin: r.data.tpin ?? '',
           contactPerson: r.data.contactPerson ?? '',
+          businessDescription: r.data.businessDescription ?? '',
           tagline: r.data.tagline ?? '',
         });
       })
@@ -111,6 +112,12 @@ export function SettingsPage() {
                 <input className={inputCls} value={form.tpin}
                   onChange={(e) => setForm({ ...form, tpin: e.target.value })}
                   placeholder="Tax number" />
+              </div>
+              <div className="sm:col-span-2">
+                <label className={labelCls}>Business description</label>
+                <textarea className={[inputCls, 'min-h-20 resize-y'].join(' ')} value={form.businessDescription}
+                  onChange={(e) => setForm({ ...form, businessDescription: e.target.value.slice(0, 1000) })}
+                  placeholder="Describe your lending business, clients served, and loan products." />
               </div>
               <div className="sm:col-span-2">
                 <label className={labelCls}>Tagline (shows under your name in the client app)</label>

@@ -18,10 +18,12 @@ import { PrismaService } from '../../infra/prisma.module';
 import { REDIS } from '../../infra/redis.module';
 import { PasswordService } from '../../common/crypto/password.service';
 import { TokenService } from '../../common/crypto/token.service';
+import { NrcCryptoService } from '../../common/crypto/nrc-crypto.service';
 import { EmailService } from '../../common/email/email.service';
 import { AuditService } from '../audit/audit.service';
 import { PlatformService } from '../admin/platform.service';
 import { TermsService } from '../terms/terms.service';
+import { FilesService } from '../files/files.service';
 import { normalizeZmPhone } from '../../common/utils/phone.util';
 import {
   ChangePasswordDto,
@@ -60,6 +62,8 @@ export class AuthService {
     private readonly terms: TermsService,
     private readonly platform: PlatformService,
     private readonly email: EmailService,
+    private readonly nrc: NrcCryptoService,
+    private readonly files: FilesService,
     @Inject(ENV) private readonly env: Env,
     @Inject(REDIS) private readonly redis: Redis,
   ) {}
@@ -185,6 +189,8 @@ export class AuthService {
 
   async registerTenant(dto: RegisterTenantDto, req: Request) {
     const phone = this.mustPhone(dto.phone);
+    const tpin = dto.tpin?.trim();
+    if (!tpin) throw new BadRequestException('TPIN is required');
 
     // The console signs a lender up without an SMS step, so a token is
     // optional. When one IS sent (the mobile app), it still has to match this
@@ -222,8 +228,10 @@ export class AuthService {
           type: dto.businessType,
           email: dto.email?.toLowerCase(),
           address: dto.address?.trim(),
-          tpin: dto.tpin?.trim(),
+          tpin,
           contactPerson: dto.contactPerson.trim(),
+          businessDescription: dto.businessDescription.trim(),
+          ownerNrcEncrypted: this.nrc.encrypt(dto.ownerNrc.trim()),
           // Dev convenience: skip the BOZ gate so the whole loop is testable
           // without object storage. The gate itself stays in place for prod.
           status: this.env.DEV_AUTO_VERIFY_TENANTS
@@ -249,13 +257,21 @@ export class AuthService {
           permissions: role.permissions,
         })),
       });
+      await tx.tenantReviewEvent.create({
+        data: {
+          tenantId: tenant.id,
+          actorId: user.id,
+          action: 'registered',
+          note: 'Business application created and placed in the review queue.',
+        },
+      });
       return { tenant, user };
     });
 
     await this.audit.record({
       actorId: user.id,
       action: 'auth.register_tenant',
-      description: `New lender "${dto.businessName.trim()}" registered and pending BOZ verification`,
+      description: `New lender "${dto.businessName.trim()}" registered and awaiting platform review`,
       entity: 'Tenant',
       entityId: tenant.id,
       tenantId: tenant.id,
@@ -765,6 +781,8 @@ export class AuthService {
         role: true,
         tenantId: true,
         clientId: true,
+        profileFileId: true,
+        profileFile: { select: { storageKey: true, mime: true } },
       },
     });
     return this.sessionUser(user);
@@ -825,13 +843,18 @@ export class AuthService {
     phone: string;
     role: string;
     clientId?: string | null;
+    profileFileId?: string | null;
+    profileFile?: { storageKey: string; mime: string } | null;
   }) {
+    const profileImageUrl = u.profileFile
+      ? await this.files.presignGet(u.profileFile.storageKey, u.profileFile.mime)
+      : null;
     if (u.role === 'client' && u.clientId) {
       const client = await this.prisma.client.findUnique({
         where: { id: u.clientId },
         select: { nrcHash: true, dob: true, address: true },
       });
-      let percent = 40; // fullName + phone minted at invite time
+      let percent = 40;
       if (client?.nrcHash) percent += 20;
       if (client?.dob) percent += 20;
       if (client?.address && client.address.trim().length > 0) percent += 20;
@@ -842,6 +865,8 @@ export class AuthService {
         role: u.role,
         profileComplete: percent >= 100,
         profilePercent: Math.min(percent, 100),
+        profileFileId: u.profileFileId ?? null,
+        profileImageUrl,
       };
     }
     return {
@@ -851,6 +876,8 @@ export class AuthService {
       role: u.role,
       profileComplete: true,
       profilePercent: 100,
+      profileFileId: u.profileFileId ?? null,
+      profileImageUrl,
     };
   }
 

@@ -2,6 +2,11 @@ import { businessDate, businessNow } from '@kumvwa/core';
 
 import { asPrisma } from '../../testing/mocks';
 import { ReportsService } from './reports.service';
+import type { StorageService } from '../files/storage.service';
+
+const stubStorage = {
+  presignGet: jest.fn().mockResolvedValue('https://example.com/img.jpg'),
+} as unknown as StorageService;
 
 function summarySetup(
   grouped: unknown[] = [
@@ -31,7 +36,7 @@ function summarySetup(
           principal: 25_000n,
           status: 'active',
           createdAt: new Date('2026-09-10T00:00:00Z'),
-          client: { firstName: 'Mwansa', lastName: 'Bwalya' },
+          client: { firstName: 'Mwansa', lastName: 'Bwalya', user: null },
         },
       ]),
     },
@@ -43,7 +48,7 @@ function summarySetup(
       aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 12_000n } }),
     },
   };
-  return { service: new ReportsService(asPrisma(prisma)), prisma };
+  return { service: new ReportsService(asPrisma(prisma), stubStorage), prisma };
 }
 
 describe('ReportsService.summary', () => {
@@ -97,6 +102,7 @@ describe('ReportsService.summary', () => {
         principalMinor: '25000',
         status: 'active',
         createdAt: new Date('2026-09-10T00:00:00Z'),
+        profileImageUrl: null,
       },
     ]);
   });
@@ -132,7 +138,7 @@ describe('ReportsService.monthly', () => {
         .mockResolvedValueOnce([{ month: thisMonth, total: 2_000n }]),
     };
 
-    const res = await new ReportsService(asPrisma(prisma)).monthly('t1');
+    const res = await new ReportsService(asPrisma(prisma), stubStorage).monthly('t1');
 
     expect(res).toHaveLength(6);
     expect(res.at(-1)?.month).toBe(thisMonth);
@@ -153,7 +159,7 @@ describe('ReportsService.monthly', () => {
         .mockResolvedValueOnce([]),
     };
 
-    const res = await new ReportsService(asPrisma(prisma)).monthly('t1');
+    const res = await new ReportsService(asPrisma(prisma), stubStorage).monthly('t1');
 
     const bucket = res.find((m) => m.month === twoAgo);
     expect(bucket?.disbursedMinor).toBe('9000');
@@ -188,7 +194,7 @@ describe('ReportsService.loansCsv', () => {
       },
     };
 
-    const csv = await new ReportsService(asPrisma(prisma)).loansCsv('t1');
+    const csv = await new ReportsService(asPrisma(prisma), stubStorage).loansCsv('t1');
     const lines = csv.split('\n');
 
     expect(lines).toHaveLength(3);
@@ -212,7 +218,7 @@ describe('ReportsService.par', () => {
 
   function parSetup(loans: unknown[]) {
     const prisma = { loan: { findMany: jest.fn().mockResolvedValue(loans) } };
-    return { service: new ReportsService(asPrisma(prisma)), prisma };
+    return { service: new ReportsService(asPrisma(prisma), stubStorage), prisma };
   }
 
   /** One loan whose single installment fell due `daysLate` days ago. */

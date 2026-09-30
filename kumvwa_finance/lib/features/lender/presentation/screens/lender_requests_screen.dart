@@ -8,6 +8,7 @@ import 'package:kumvwa_finance/core/theme/app_colors.dart';
 import 'package:kumvwa_finance/core/theme/app_effects.dart';
 import 'package:kumvwa_finance/core/theme/app_text.dart';
 import 'package:kumvwa_finance/core/utils/format.dart';
+import 'package:kumvwa_finance/core/widgets/app_refresh.dart';
 import 'package:kumvwa_finance/core/widgets/dome_header.dart';
 
 class LenderRequestsScreen extends ConsumerStatefulWidget {
@@ -108,47 +109,59 @@ class _LenderRequestsScreenState
     );
 
     if (_loading) {
-      return ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          dome,
-          const Padding(
-            padding: EdgeInsets.only(top: 80),
-            child: Center(
-              child: CircularProgressIndicator(
-                color: AppColors.blue600,
-                strokeWidth: 2,
+      return AppRefresh(
+        onRefresh: _load,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          children: [
+            dome,
+            const Padding(
+              padding: EdgeInsets.only(top: 80),
+              child: Center(
+                child: CircularProgressIndicator(
+                  color: AppColors.blue600,
+                  strokeWidth: 2,
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       );
     }
 
     if (_error != null) {
-      return ListView(
-        padding: EdgeInsets.zero,
-        children: [
-          dome,
-          Padding(
-            padding: const EdgeInsets.all(32),
-            child: _Retry(message: _error!, onRetry: _load),
-          ),
-        ],
+      return AppRefresh(
+        onRefresh: _load,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          children: [
+            dome,
+            Padding(
+              padding: const EdgeInsets.all(32),
+              child: _Retry(message: _error!, onRetry: _load),
+            ),
+          ],
+        ),
       );
     }
 
     if (_items.isEmpty) {
-      return ListView(
-        padding: EdgeInsets.zero,
-        children: [dome, const _Empty()],
+      return AppRefresh(
+        onRefresh: _load,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          children: [dome, const _Empty()],
+        ),
       );
     }
 
-    return RefreshIndicator(
-      color: AppColors.blue600,
+    return AppRefresh(
       onRefresh: _load,
       child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.zero,
         itemCount: _items.length + 1,
         separatorBuilder: (_, index) =>

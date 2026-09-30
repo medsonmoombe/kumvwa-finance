@@ -251,9 +251,10 @@ export function PendingPage() {
 
   const status = tenant?.status ?? 'pending_verification';
   const submitted = status === 'pending_verification';
-  const underReview = submitted && Boolean(tenant?.bozFile);
-  const needsSubmission =
-    status === 'rejected' || (submitted && !tenant?.bozFile);
+  const underReview = submitted;
+  // A BOZ certificate is optional supporting evidence. The account is already
+  // in the review queue once it is registered with the required identity data.
+  const needsSubmission = false;
 
   // Poll while the review is open so approval lands without a manual refresh.
   useEffect(() => {
@@ -368,9 +369,9 @@ export function PendingPage() {
         <div className="mb-3 overflow-hidden rounded-card border border-danger-500/30 bg-white shadow-c1">
           <div className="band"><span className="t">Changes requested by reviewer</span></div>
           <div className="p-3.5 text-[12.5px] leading-relaxed text-ink-2">
-            {tenant.verificationNote ?? 'The submitted certificate was not accepted. Please upload a corrected copy.'}
+            {tenant.verificationNote ?? 'Your application needs changes before it can be approved.'}
             <p className="mt-2 text-[11px] text-ink-muted">
-              Replace the certificate and NRC below to resubmit.
+              Update the details requested by the reviewer, then contact support to resubmit.
             </p>
           </div>
         </div>
@@ -388,7 +389,7 @@ export function PendingPage() {
           <div className="p-3.5">
             <div className="flex items-center gap-2 text-[12.5px]">
               <FiClock className="text-warn-500" size={14} />
-              <b>Our team is reviewing your BOZ certificate.</b>
+              <b>Our team is reviewing your business application.</b>
             </div>
             <p className="mt-1.5 text-[11.5px] leading-relaxed text-ink-muted">
               Review typically takes 1–2 working days. This page updates automatically upon approval.

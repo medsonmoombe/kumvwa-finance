@@ -13,6 +13,7 @@ export const FILE_KINDS = [
   'kyc_document',
   'nrc_photo',
   'tenant_logo',
+  'profile_image',
   'other',
 ] as const;
 export type FileKindName = (typeof FILE_KINDS)[number];

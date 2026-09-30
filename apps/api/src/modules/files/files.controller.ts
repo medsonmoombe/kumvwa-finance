@@ -46,6 +46,11 @@ export class FilesController {
   confirm(@CurrentUser() u: TokenClaims, @Param('id') id: string) {
     return this.files.confirm(u.tenantId!, u.sub, id);
   }
+
+  @Post('profile-image/:id')
+  setProfileImage(@CurrentUser() u: TokenClaims, @Param('id') id: string) {
+    return this.files.setProfileImage(u.sub, id);
+  }
 }
 
 /**
@@ -64,8 +69,10 @@ export class ClientFilesController {
 
   @Post('upload-url')
   uploadUrl(@CurrentUser() u: TokenClaims, @Body() dto: CreateUploadUrlDto) {
-    if (dto.kind !== 'nrc_photo') {
-      throw new BadRequestException('Clients may only upload NRC photos');
+    if (!['nrc_photo', 'profile_image'].includes(dto.kind)) {
+      throw new BadRequestException(
+        'Clients may only upload NRC photos or a profile image',
+      );
     }
     return this.files.createUploadUrl(null, u.sub, dto);
   }
@@ -73,6 +80,35 @@ export class ClientFilesController {
   @Post(':id/confirm')
   confirm(@CurrentUser() u: TokenClaims, @Param('id') id: string) {
     return this.files.confirm(null, u.sub, id);
+  }
+
+  @Post('profile-image/:id')
+  setProfileImage(@CurrentUser() u: TokenClaims, @Param('id') id: string) {
+    return this.files.setProfileImage(u.sub, id);
+  }
+}
+
+@Roles('platform_admin')
+@Controller('files/platform')
+export class PlatformProfileFilesController {
+  constructor(private readonly files: FilesService) {}
+
+  @Post('upload-url')
+  uploadUrl(@CurrentUser() u: TokenClaims, @Body() dto: CreateUploadUrlDto) {
+    if (dto.kind !== 'profile_image') {
+      throw new BadRequestException('Only a profile image can be uploaded here');
+    }
+    return this.files.createUploadUrl(null, u.sub, dto);
+  }
+
+  @Post(':id/confirm')
+  confirm(@CurrentUser() u: TokenClaims, @Param('id') id: string) {
+    return this.files.confirm(null, u.sub, id);
+  }
+
+  @Post('profile-image/:id')
+  setProfileImage(@CurrentUser() u: TokenClaims, @Param('id') id: string) {
+    return this.files.setProfileImage(u.sub, id);
   }
 }
 

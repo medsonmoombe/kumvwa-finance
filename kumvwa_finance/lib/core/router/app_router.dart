@@ -15,6 +15,7 @@ import 'package:kumvwa_finance/features/auth/presentation/screens/role_select_sc
 import 'package:kumvwa_finance/features/auth/presentation/screens/splash_screen.dart';
 import 'package:kumvwa_finance/features/lender/presentation/screens/lender_clients_screen.dart';
 import 'package:kumvwa_finance/features/lender/presentation/screens/lender_client_detail_screen.dart';
+import 'package:kumvwa_finance/features/lender/presentation/screens/lender_application_review_screen.dart';
 import 'package:kumvwa_finance/features/lender/presentation/screens/lender_home_screen.dart';
 import 'package:kumvwa_finance/features/lender/presentation/screens/lender_loan_detail_screen.dart';
 import 'package:kumvwa_finance/features/lender/presentation/screens/lender_profile_screen.dart';
@@ -163,6 +164,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, state) => OrgRegistrationSuccessScreen(
           businessName: state.extra as String? ?? 'Your Organisation',
         ),
+      ),
+      GoRoute(
+        path: '/lender/application-review',
+        name: 'lender-application-review',
+        builder: (_, _) => const LenderApplicationReviewScreen(),
       ),
 
       // ── Lender shell ──────────────────────────────────────────────────────

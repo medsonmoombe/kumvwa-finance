@@ -22,9 +22,25 @@ function setup(overrides: {
   const prisma = {
     tenant: {
       findUnique: jest.fn().mockResolvedValue(
-        overrides.tenant === undefined
-          ? { id: 't1', status: 'pending_verification' }
-          : overrides.tenant,
+        overrides.tenant === null
+          ? null
+          : {
+              id: 't1',
+              name: 'Chilenje Community SACCO',
+              type: 'sacco',
+              status: 'pending_verification',
+              verificationNote: null,
+              email: 'info@chilenje.zm',
+              address: null,
+              tpin: '1000123456',
+              contactPerson: 'Ms. Bwalya',
+              businessDescription: 'Community lender serving small businesses.',
+              bozSubmittedAt: null,
+              bozFile: null,
+              createdAt: new Date('2026-09-01T00:00:00Z'),
+              reviewEvents: [],
+              ...(overrides.tenant ?? {}),
+            }
       ),
       update: jest.fn().mockResolvedValue({
         id: 't1',
@@ -54,6 +70,7 @@ function setup(overrides: {
         .fn()
         .mockResolvedValue(overrides.admins ?? [{ id: 'admin1' }]),
     },
+    tenantReviewEvent: { create: jest.fn().mockResolvedValue({ id: 'event1' }) },
   };
   const audit = auditMock();
   const notify = notifyMock();

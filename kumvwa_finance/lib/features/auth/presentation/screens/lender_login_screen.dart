@@ -71,8 +71,16 @@ class _LenderLoginScreenState extends ConsumerState<LenderLoginScreen> {
             DomeHeader(
               padding: const EdgeInsets.fromLTRB(22, 18, 22, 54),
               child: DomeTitle(
-                title: otpStage ? 'Check your inbox' : _useAccessCode ? 'Use access code' : 'Lender sign in',
-                subtitle: otpStage ? 'Enter the code sent to ${_email.text.trim()}' : _useAccessCode ? 'Enter the one-time code from your lender or platform administrator' : 'Use your existing Kumvwa Console account',
+                title: otpStage
+                    ? 'Check your inbox'
+                    : _useAccessCode
+                    ? 'Use access code'
+                    : 'Sign in with your email',
+                subtitle: otpStage
+                    ? 'Enter the code sent to ${_email.text.trim()}'
+                    : _useAccessCode
+                    ? 'Enter the one-time code from your lender or platform administrator'
+                    : 'Use the email and password on your existing account',
                 onBack: () => otpStage ? setState(() => _preToken = null) : _useAccessCode ? setState(() => _useAccessCode = false) : context.go('/login'),
               ),
             ),

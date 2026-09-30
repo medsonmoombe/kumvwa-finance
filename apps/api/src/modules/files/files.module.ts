@@ -6,6 +6,7 @@ import {
   FilesDownloadController,
   FilesController,
   LocalStorageController,
+  PlatformProfileFilesController,
 } from './files.controller';
 import { FilesService } from './files.service';
 import { StorageService } from './storage.service';
@@ -16,6 +17,7 @@ import { StorageService } from './storage.service';
     FilesController,
     FilesDownloadController,
     ClientFilesController,
+    PlatformProfileFilesController,
     LocalStorageController,
   ],
   providers: [FilesService, StorageService],

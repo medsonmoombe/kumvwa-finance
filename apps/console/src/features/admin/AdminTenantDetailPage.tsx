@@ -15,9 +15,11 @@ type Attachment = { id: string; kind: string; mime: string; size: number; create
 type TenantDetail = {
   id: string; name: string; type: string; status: string;
   email: string | null; address: string | null; tpin: string | null;
-  contactPerson: string | null; tagline: string | null;
+  contactPerson: string | null; tagline: string | null; businessDescription: string | null;
   verificationNote: string | null; bozSubmittedAt: string | null; createdAt: string;
   bozFile: Attachment | null; attachments: Attachment[];
+  rejectionCount: number;
+  reviewHistory: Array<{ id: string; action: string; note: string | null; changes: { fields?: string[] } | null; createdAt: string; actor: { name: string; role: string } | null }>;
   review: { canApprove: boolean; blockers: string[]; reviewedAt: string | null; reviewer: { name: string; email: string | null } | null };
   users: Array<{ id: string; displayName: string; email: string | null; phone: string; role: string; status: string }>;
   products: Array<{ id: string; name: string; active: boolean; rateBps: number; maxTerm: number }>;
@@ -113,6 +115,15 @@ export function AdminTenantDetailPage() {
     { key: 'status', header: 'Status', render: (loan) => <Badge color={loan.status === 'overdue' ? 'red' : loan.status === 'active' ? 'green' : 'grey'} dot>{loan.status}</Badge> },
     { key: 'date', header: 'Issued', render: (loan) => <span className="text-ink-muted">{date(loan.createdAt)}</span> },
   ];
+  const reviewAction = (action: string) => ({
+    registered: 'Application created',
+    evidence_submitted: 'Evidence attached',
+    application_updated: 'Application updated',
+    resubmitted: 'Resubmitted for review',
+    approved: 'Approved',
+    rejected: 'Changes requested',
+    status_changed: 'Account status changed',
+  }[action] ?? action.replaceAll('_', ' '));
 
   return (
     <div>
@@ -121,8 +132,8 @@ export function AdminTenantDetailPage() {
         actions={<Badge color={tenant.status === 'active' ? 'green' : tenant.status === 'rejected' ? 'red' : 'amber'} dot>{tenant.status.replaceAll('_', ' ')}</Badge>} />
       {error && <div className="mb-3"><ErrorBox message={error} /></div>}
 
-      <div className="grid gap-3 sm:grid-cols-4">
-        {[['Clients', String(tenant.portfolio.clientCount)], ['Loans', String(tenant.portfolio.loanCount)], ['Outstanding', money(tenant.portfolio.outstandingMinor)], ['Overdue', String(tenant.portfolio.overdueCount)]].map(([label, value]) => (
+      <div className="grid gap-3 sm:grid-cols-5">
+        {[['Clients', String(tenant.portfolio.clientCount)], ['Loans', String(tenant.portfolio.loanCount)], ['Outstanding', money(tenant.portfolio.outstandingMinor)], ['Overdue', String(tenant.portfolio.overdueCount)], ['Rejections', String(tenant.rejectionCount)]].map(([label, value]) => (
           <div key={label} className="border border-line bg-white p-3"><div className="text-[10px] font-bold uppercase text-ink-muted">{label}</div><div className="mt-1 font-display text-[18px] font-bold">{value}</div></div>
         ))}
       </div>
@@ -132,7 +143,7 @@ export function AdminTenantDetailPage() {
           <FormGrid cols={3}>
             <Field label="Business type">{tenant.type}</Field><Field label="Contact person">{tenant.contactPerson ?? 'Not provided'}</Field><Field label="Business email">{tenant.email ?? 'Not provided'}</Field>
             <Field label="TPIN">{tenant.tpin ?? 'Not provided'}</Field><Field label="Address" span={2}>{tenant.address ?? 'Not provided'}</Field>
-            <Field label="Business description" span={2}>{tenant.tagline ?? 'Not provided'}</Field><Field label="Registration date">{date(tenant.createdAt)}</Field>
+            <Field label="Business description" span={2}>{tenant.businessDescription ?? 'Not provided'}</Field><Field label="Tagline">{tenant.tagline ?? 'Not provided'}</Field><Field label="Registration date">{date(tenant.createdAt)}</Field>
           </FormGrid>
         </FormSection>
 
@@ -155,9 +166,25 @@ export function AdminTenantDetailPage() {
             <Field label="Certificate submitted">{tenant.bozSubmittedAt ? date(tenant.bozSubmittedAt) : 'Not submitted'}</Field>
             <Field label="Reviewed">{tenant.review.reviewedAt ? date(tenant.review.reviewedAt) : 'Not reviewed yet'}</Field>
             <Field label="Reviewer">{tenant.review.reviewer?.name ?? 'Not assigned'}</Field>
+            <Field label="Rejection attempts">{String(tenant.rejectionCount)}</Field>
           </FormGrid>
           {tenant.verificationNote && <div className="mt-3 border border-danger-500/25 bg-danger-50 p-3 text-[12px] text-danger-500"><b>Decision note:</b> {tenant.verificationNote}</div>}
           {!tenant.review.canApprove && <div className="mt-3 border border-amber-500/25 bg-amber-50 p-3 text-[12px] text-amber-800"><b>Approval is unavailable:</b><ul className="mt-1 list-disc pl-4">{tenant.review.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul></div>}
+        </FormSection>
+
+        <FormSection title={`Review history (${tenant.reviewHistory.length})`} defaultOpen>
+          {tenant.reviewHistory.length === 0 ? <p className="text-[12px] text-ink-muted">No review activity has been recorded yet.</p> : (
+            <div className="divide-y divide-line-2">{tenant.reviewHistory.map((event) => (
+              <div key={event.id} className="py-3 first:pt-0">
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-[12px]">
+                  <b className={event.action === 'rejected' ? 'text-danger-500' : event.action === 'approved' ? 'text-success-600' : ''}>{reviewAction(event.action)}</b>
+                  <span className="text-[10.5px] text-ink-muted">{date(event.createdAt)}{event.actor ? ` | ${event.actor.name}` : ''}</span>
+                </div>
+                {event.note && <p className="mt-1 text-[12px] text-ink-muted">{event.note}</p>}
+                {event.changes?.fields?.length ? <p className="mt-1 text-[10.5px] text-ink-muted">Updated: {event.changes.fields.join(', ')}</p> : null}
+              </div>
+            ))}</div>
+          )}
         </FormSection>
 
         <FormSection title={`Verification documents (${tenant.attachments.length})`} defaultOpen>

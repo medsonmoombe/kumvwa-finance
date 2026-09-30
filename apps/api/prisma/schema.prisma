@@ -110,6 +110,7 @@ enum FileKind {
   kyc_document
   nrc_photo
   tenant_logo
+  profile_image
   other
 }
 
@@ -174,6 +175,7 @@ model Tenant {
   address           String?
   tpin              String?
   contactPerson     String?
+  businessDescription String?
   logoFileId        String?      @unique
   primaryColor      String?
   tagline           String?
@@ -194,6 +196,24 @@ model Tenant {
   // ── M5: lending rules (versioned credit ladder) + per-client exceptions ──
   creditPolicy CreditPolicy?
   overrides    ClientLimitOverride[]
+  reviewEvents TenantReviewEvent[]
+}
+
+/// Immutable audit trail for a lender's registration review lifecycle.
+model TenantReviewEvent {
+  id        String   @id @default(cuid())
+  tenantId  String
+  actorId   String?
+  action    String   // registered | application_updated | resubmitted | approved | rejected | evidence_submitted
+  note      String?
+  changes   Json?
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  actor  User?  @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@index([actorId])
 }
 
 model User {
@@ -207,6 +227,7 @@ model User {
   tenantId         String?    // set for tenant_owner / tenant_staff
   clientId         String?    @unique // set for client (links identity)
   roleId           String?    // custom staff role (tenant_staff)
+  profileFileId    String?    @unique
   twoFactorEnabled Boolean    @default(true)
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
@@ -214,11 +235,14 @@ model User {
   tenant         Tenant?           @relation(fields: [tenantId], references: [id])
   client         Client?           @relation(fields: [clientId], references: [id])
   staffRole      Role?             @relation(fields: [roleId], references: [id])
+  profileFile    File?             @relation("UserProfileImage", fields: [profileFileId], references: [id])
+  uploadedFiles  File[]            @relation("UploadedFiles")
   refreshTokens  RefreshToken[]
   notifications  Notification[]
   mobileAccessCodes MobileAccessCode[]
   devices        DevicePushToken[]
   trustedDevices TrustedDevice[]
+  reviewEvents   TenantReviewEvent[]
 
   @@index([tenantId])
 }
@@ -279,6 +303,8 @@ model Client {
   incomeSource       String?
   kinName            String?
   kinPhone           String?
+  kin2Name           String?
+  kin2Phone          String?
   profileCompletedAt DateTime?
   status             ClientStatus      @default(active)
   createdAt          DateTime          @default(now())
@@ -561,6 +587,7 @@ model AuditLog {
 model File {
   id         String    @id @default(cuid())
   tenantId   String?
+  uploadedById String?
   kind       FileKind
   storageKey String    @unique
   mime       String
@@ -570,6 +597,8 @@ model File {
   createdAt  DateTime  @default(now())
 
   tenant       Tenant? @relation("TenantFiles", fields: [tenantId], references: [id])
+  uploadedBy   User?   @relation("UploadedFiles", fields: [uploadedById], references: [id])
+  profileOfUser User?  @relation("UserProfileImage")
   bozCertOf    Tenant? @relation("BozCert", fields: [bozCertOfId], references: [id])
   bozCertOfId  String? @unique
   logoOfTenant Tenant? @relation("TenantLogo")

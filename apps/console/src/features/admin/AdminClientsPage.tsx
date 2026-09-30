@@ -20,7 +20,7 @@ interface Detail {
   createdAt: string;  nrc: string | null; dob: string | null; address: string | null;
   documents: Array<{ id: string; kind: string; mime: string; size: number; side: 'front' | 'back'; createdAt: string }>;
   employmentStatus: string | null; incomeBand: string | null; incomeSource: string | null;
-  kinName: string | null; kinPhone: string | null; profileCompletedAt: string | null;
+  kinName: string | null; kinPhone: string | null; kin2Name: string | null; kin2Phone: string | null; profileCompletedAt: string | null;
   lenders: Array<{ id: string; name: string; status: string; linkedAt: string }>;
   accountStatus: string;
   loans: Array<{
@@ -164,6 +164,8 @@ export function AdminClientsPage() {
                 <div className="col-span-2"><dt className="text-ink-muted">Income source</dt><dd className="font-semibold">{selected.incomeSource ?? 'Not provided'}</dd></div>
                 <div><dt className="text-ink-muted">Next of kin</dt><dd className="font-semibold">{selected.kinName ?? 'Not provided'}</dd></div>
                 <div><dt className="text-ink-muted">Kin phone</dt><dd className="font-semibold">{selected.kinPhone ?? 'Not provided'}</dd></div>
+                <div><dt className="text-ink-muted">Second next of kin</dt><dd className="font-semibold">{selected.kin2Name ?? 'Not provided'}</dd></div>
+                <div><dt className="text-ink-muted">Second kin phone</dt><dd className="font-semibold">{selected.kin2Phone ?? 'Not provided'}</dd></div>
               </dl>
             </div>
 

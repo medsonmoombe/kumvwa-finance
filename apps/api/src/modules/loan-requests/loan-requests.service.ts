@@ -167,7 +167,7 @@ export class LoanRequestsService {
         client: { select: {
           firstName: true, lastName: true, phone: true,
           profileCompletedAt: true, employmentStatus: true, educationLevel: true,
-          incomeBand: true, kinName: true, kinPhone: true,
+          incomeBand: true, kinName: true, kinPhone: true, kin2Name: true, kin2Phone: true,
         } },
         tenant: { select: { name: true } },
         loan: { select: { id: true } },
@@ -188,7 +188,7 @@ export class LoanRequestsService {
             firstName: true, lastName: true, phone: true,
             profileCompletedAt: true,
             employmentStatus: true, educationLevel: true,
-            incomeBand: true, kinName: true, kinPhone: true,
+            incomeBand: true, kinName: true, kinPhone: true, kin2Name: true, kin2Phone: true,
           },
         },
         tenant: { select: { name: true } },
@@ -213,6 +213,7 @@ export class LoanRequestsService {
       profileCompletedAt?: Date | null; employmentStatus?: string | null;
       educationLevel?: string | null; incomeBand?: string | null;
       kinName?: string | null; kinPhone?: string | null;
+      kin2Name?: string | null; kin2Phone?: string | null;
     };
     tenantId: string;
     tenant: { name: string };
@@ -237,6 +238,8 @@ export class LoanRequestsService {
         incomeBand: r.client.incomeBand ?? null,
         nextOfKinName: r.client.kinName ?? null,
         nextOfKinPhone: r.client.kinPhone ?? null,
+        secondNextOfKinName: r.client.kin2Name ?? null,
+        secondNextOfKinPhone: r.client.kin2Phone ?? null,
       },
       lenderId: r.tenantId,
       lenderName: r.tenant.name,

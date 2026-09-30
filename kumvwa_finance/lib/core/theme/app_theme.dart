@@ -29,10 +29,13 @@ class AppTheme {
     );
 
     final base = ThemeData(useMaterial3: true, colorScheme: scheme);
+    // Apply Inter as the global base — every widget that doesn't set an
+    // explicit style will render in Inter automatically.
+    final interBase = GoogleFonts.interTextTheme(base.textTheme);
 
     return base.copyWith(
       scaffoldBackgroundColor: AppColors.bg,
-      textTheme: _textTheme(base.textTheme),
+      textTheme: _textTheme(interBase),
       appBarTheme: AppBarTheme(
         backgroundColor: AppColors.bg,
         surfaceTintColor: Colors.transparent,
@@ -83,7 +86,7 @@ class AppTheme {
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           textStyle: const TextStyle(
-            fontSize: 12.5,
+            fontSize: 13,
             fontWeight: FontWeight.w600,
             color: AppColors.blue600,
           ),
@@ -124,9 +127,9 @@ class AppTheme {
         titleTextStyle: AppText.sheetTitle,
         contentTextStyle: const TextStyle(
           fontSize: 13,
-          fontWeight: FontWeight.w500,
+          fontWeight: FontWeight.w400,
           color: AppColors.ink2,
-          height: 1.55,
+          height: 1.5,
         ),
       ),
       dividerTheme: const DividerThemeData(
@@ -159,29 +162,17 @@ class AppTheme {
         borderSide: BorderSide(color: color, width: width),
       );
 
-  /// Theme-level mirror of `AppText`. Keep the two in step — the theme covers
-  /// `Theme.of(context).textTheme.*` usage, `AppText` covers direct styles.
   static TextTheme _textTheme(TextTheme base) {
     return base.copyWith(
-      // Display / heading voice (Poppins).
       displaySmall: AppText.heroNumber,
-      headlineMedium: GoogleFonts.poppins(
-        fontSize: 24,
-        fontWeight: FontWeight.w700,
-        color: AppColors.ink,
-      ),
+      headlineMedium: AppText.amountLarge,
       headlineSmall: AppText.splashTitle,
-      // Page title.
       titleLarge: AppText.pageTitle,
-      // Section / card title.
       titleMedium: AppText.cardTitle,
-      // Reading voice (Inter).
       bodyLarge: AppText.body,
       bodyMedium: AppText.paragraph,
-      // Sub text.
       bodySmall: AppText.subText,
       labelLarge: AppText.bodyStrong,
-      // Caption floor.
       labelSmall: AppText.caption,
     );
   }

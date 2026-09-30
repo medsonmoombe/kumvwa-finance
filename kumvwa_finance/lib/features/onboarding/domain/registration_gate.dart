@@ -12,7 +12,9 @@ enum RegistrationField {
   educationLevel('Education level'),
   incomeBand('Income range'),
   kinName('Next of kin name'),
-  kinPhone('Next of kin phone');
+  kinPhone('Next of kin phone'),
+  kin2Name('Second next of kin name'),
+  kin2Phone('Second next of kin phone');
 
   const RegistrationField(this.label);
 
@@ -149,6 +151,8 @@ List<RegistrationField> missingRegistrationFields(ClientProfile p) {
     RegistrationField.incomeBand: p.incomeBand,
     RegistrationField.kinName: p.kinName,
     RegistrationField.kinPhone: p.kinPhone,
+    RegistrationField.kin2Name: p.kin2Name,
+    RegistrationField.kin2Phone: p.kin2Phone,
   };
 
   return [

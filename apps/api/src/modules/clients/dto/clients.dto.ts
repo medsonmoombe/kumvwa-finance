@@ -65,6 +65,17 @@ export class UpdateProfileDto {
 
   @IsOptional()
   @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  kin2Name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  kin2Phone?: string;
+
+  @IsOptional()
+  @IsString()
   nrcPhotoFileId?: string;
 
   @IsOptional()

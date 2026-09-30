@@ -14,6 +14,7 @@ export const ALLOWED_MIMES_BY_KIND: Record<FileKindName, readonly string[]> = {
   kyc_document: ['application/pdf', 'image/jpeg', 'image/png'],
   nrc_photo: ['image/jpeg', 'image/png'],
   tenant_logo: ['image/png', 'image/jpeg'],
+  profile_image: ['image/png', 'image/jpeg'],
   other: ['application/pdf', 'image/jpeg', 'image/png'],
 };
 
@@ -57,6 +58,7 @@ export class FilesService {
     const file = await this.prisma.file.create({
       data: {
         tenantId,
+        uploadedById: actorId,
         kind: dto.kind,
         storageKey,
         mime: dto.mime,
@@ -86,7 +88,7 @@ export class FilesService {
 
   /** Step 2 of 3: prove the bytes actually landed before trusting the row. */
   async confirm(tenantId: string | null, actorId: string, fileId: string) {
-    const file = await this.mustOwn(tenantId, fileId);
+    const file = await this.mustOwn(tenantId, actorId, fileId);
 
     const head = await this.storage.head(file.storageKey);
     if (!head) {
@@ -141,7 +143,11 @@ export class FilesService {
     if (!file) throw new NotFoundException('File not found');
 
     const isAdmin = claims.role === 'platform_admin';
-    if (!isAdmin && file.tenantId !== claims.tenantId) {
+    if (
+      !isAdmin &&
+      file.tenantId !== claims.tenantId &&
+      file.uploadedById !== claims.sub
+    ) {
       throw new NotFoundException('File not found');
     }
 
@@ -164,9 +170,37 @@ export class FilesService {
     };
   }
 
+  /** Attach a confirmed image uploaded by this exact user to their profile. */
+  async setProfileImage(userId: string, fileId: string) {
+    const file = await this.prisma.file.findFirst({
+      where: {
+        id: fileId,
+        uploadedById: userId,
+        kind: 'profile_image',
+        checksum: { not: '' },
+      },
+    });
+    if (!file) throw new NotFoundException('Confirmed profile image not found');
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { profileFile: { connect: { id: file.id } } },
+    });
+    await this.audit.record({
+      actorId: userId,
+      action: 'user.profile_image_update',
+      entity: 'User',
+      entityId: userId,
+      tenantId: file.tenantId ?? undefined,
+      diff: { fileId: file.id },
+    });
+    return { profileImageUrl: await this.presignGet(file.storageKey, file.mime) };
+  }
+
   /** 404 (never 403) so file ids can't be probed across tenants. */
   private async mustOwn(
     tenantId: string | null,
+    actorId: string,
     fileId: string,
   ): Promise<FileRow> {
     const file = await this.prisma.file.findUnique({ where: { id: fileId } });
@@ -174,7 +208,11 @@ export class FilesService {
       throw new NotFoundException('File not found');
     }
     // Client uploads carry no tenant — they may only ever be NRC photos.
-    if (tenantId === null && file.kind !== 'nrc_photo') {
+    if (
+      tenantId === null &&
+      (file.uploadedById !== actorId ||
+        !['nrc_photo', 'profile_image'].includes(file.kind))
+    ) {
       throw new NotFoundException('File not found');
     }
     return file;

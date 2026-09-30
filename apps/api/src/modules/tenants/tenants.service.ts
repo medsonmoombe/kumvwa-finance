@@ -11,7 +11,12 @@ import { AuditService } from '../audit/audit.service';
 import { FilesService } from '../files/files.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { DEFAULT_PRIMARY_COLOR } from '../terms/terms.service';
-import type { SubmitVerificationDto, UpdateBrandingDto } from './dto/tenants.dto';
+import type {
+  ResubmitVerificationDto,
+  SubmitVerificationDto,
+  UpdateApplicationDto,
+  UpdateBrandingDto,
+} from './dto/tenants.dto';
 
 /** Hand-written structural row type — house style (see LoanRequestsService). */
 type TenantRow = {
@@ -20,6 +25,19 @@ type TenantRow = {
   type: string;
   status: string;
   verificationNote: string | null;
+  email: string | null;
+  address: string | null;
+  tpin: string | null;
+  contactPerson: string | null;
+  businessDescription: string | null;
+  reviewEvents: Array<{
+    id: string;
+    action: string;
+    note: string | null;
+    changes: unknown;
+    createdAt: Date;
+    actor: { displayName: string; role: string } | null;
+  }>;
   bozSubmittedAt: Date | null;
   createdAt: Date;
   bozFile: {
@@ -48,6 +66,22 @@ const TENANT_SELECT = {
   type: true,
   status: true,
   verificationNote: true,
+  email: true,
+  address: true,
+  tpin: true,
+  contactPerson: true,
+  businessDescription: true,
+  reviewEvents: {
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      action: true,
+      note: true,
+      changes: true,
+      createdAt: true,
+      actor: { select: { displayName: true, role: true } },
+    },
+  },
   bozSubmittedAt: true,
   createdAt: true,
   bozFile: BOZ_FILE_SELECT,
@@ -89,7 +123,7 @@ export class TenantsService {
   ) {
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, name: true },
     });
     if (!tenant) throw new NotFoundException('Tenant not found');
     if (tenant.status === 'active') {
@@ -124,7 +158,7 @@ export class TenantsService {
     // the reviewer never opens a dead link.
     await this.files.assertObjectPresent(file.storageKey);
 
-    const updated = await this.prisma.tenant.update({
+    await this.prisma.tenant.update({
       where: { id: tenantId },
       data: {
         // The FK (`File.bozCertOfId`) lives on File, so this is a relation
@@ -150,7 +184,7 @@ export class TenantsService {
         admin.id,
         'verification',
         'BOZ certificate submitted',
-        `${updated.name} submitted their certificate for review.`,
+        `${tenant.name} submitted their certificate for review.`,
         { tenantId },
       );
     }
@@ -164,8 +198,160 @@ export class TenantsService {
       // Never log the NRC itself — the fact that one was supplied is enough.
       diff: { fileId: file.id, ownerNrcSupplied: true },
     });
+    await this.prisma.tenantReviewEvent.create({
+      data: {
+        tenantId,
+        actorId,
+        action: 'evidence_submitted',
+        note: 'An optional BOZ certificate was attached to the application.',
+        changes: { fileId: file.id },
+      },
+    });
 
-    return this.toJson(updated);
+    if (tenant.status === 'rejected') {
+      await this.prisma.tenantReviewEvent.create({
+        data: {
+          tenantId,
+          actorId,
+          action: 'resubmitted',
+          note: 'Business application resubmitted for review with updated evidence.',
+        },
+      });
+    }
+
+    // Read again so clients receive the just-created immutable timeline events.
+    return this.me(tenantId);
+  }
+
+  /** A rejected lender can return to the review queue without a BOZ upload. */
+  async resubmitVerification(
+    tenantId: string,
+    actorId: string,
+    dto: ResubmitVerificationDto,
+  ) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, status: true, name: true },
+    });
+    if (!tenant) throw new NotFoundException('Tenant not found');
+    if (tenant.status !== 'rejected') {
+      throw new BadRequestException(
+        'Only a rejected business can be resubmitted for review',
+      );
+    }
+
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        status: 'pending_verification',
+        verificationNote: null,
+        verificationReviewedAt: null,
+        verificationReviewedBy: null,
+        ownerNrcEncrypted: this.nrc.encrypt(dto.ownerNrc.trim()),
+      },
+      select: TENANT_SELECT,
+    });
+
+    const admins = await this.prisma.user.findMany({
+      where: { role: 'platform_admin' },
+      select: { id: true },
+    });
+    for (const admin of admins) {
+      await this.notify.create(
+        admin.id,
+        'verification',
+        'Business application resubmitted',
+        `${tenant.name} resubmitted their application for review.`,
+        { tenantId },
+      );
+    }
+    await this.audit.record({
+      actorId,
+      action: 'tenant.verification_resubmit',
+      entity: 'Tenant',
+      entityId: tenantId,
+      tenantId,
+      diff: { ownerNrcSupplied: true, bozFileReplaced: false },
+    });
+    await this.prisma.tenantReviewEvent.create({
+      data: {
+        tenantId,
+        actorId,
+        action: 'resubmitted',
+        note: 'Business application resubmitted for review.',
+      },
+    });
+    return this.me(tenantId);
+  }
+
+  /** Rejected lenders can correct their complete business application. */
+  async updateRejectedApplication(
+    tenantId: string,
+    actorId: string,
+    dto: UpdateApplicationDto,
+  ) {
+    const existing = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, status: true },
+    });
+    if (!existing) throw new NotFoundException('Tenant not found');
+    if (existing.status !== 'rejected') {
+      throw new BadRequestException(
+        'Business details can only be edited while the application is rejected',
+      );
+    }
+
+    await this.prisma.tenant.update({
+      where: { id: tenantId },
+      data: {
+        name: dto.businessName.trim(),
+        type: dto.businessType,
+        email: dto.email.trim().toLowerCase(),
+        address: dto.address?.trim() || null,
+        tpin: dto.tpin.trim(),
+        contactPerson: dto.contactPerson.trim(),
+        businessDescription: dto.businessDescription.trim(),
+      },
+      select: TENANT_SELECT,
+    });
+    await this.audit.record({
+      actorId,
+      action: 'tenant.application_update',
+      entity: 'Tenant',
+      entityId: tenantId,
+      tenantId,
+      diff: {
+        fields: [
+          'businessName',
+          'businessType',
+          'email',
+          'address',
+          'tpin',
+          'contactPerson',
+          'businessDescription',
+        ],
+      },
+    });
+    await this.prisma.tenantReviewEvent.create({
+      data: {
+        tenantId,
+        actorId,
+        action: 'application_updated',
+        note: 'Business application details were updated before resubmission.',
+        changes: {
+          fields: [
+            'businessName',
+            'businessType',
+            'email',
+            'address',
+            'tpin',
+            'contactPerson',
+            'businessDescription',
+          ],
+        },
+      },
+    });
+    return this.me(tenantId);
   }
 
   /**
@@ -184,6 +370,9 @@ export class TenantsService {
     if (dto.address !== undefined) data.address = dto.address;
     if (dto.tpin !== undefined) data.tpin = dto.tpin;
     if (dto.contactPerson !== undefined) data.contactPerson = dto.contactPerson;
+    if (dto.businessDescription !== undefined) {
+      data.businessDescription = dto.businessDescription;
+    }
     if (dto.logoFileId !== undefined) {
       const f = await this.prisma.file.findUnique({
         where: { id: dto.logoFileId },
@@ -245,6 +434,7 @@ export class TenantsService {
       address: t.address,
       tpin: t.tpin,
       contactPerson: t.contactPerson,
+      businessDescription: t.businessDescription,
       tagline: t.tagline,
       primaryColor: t.primaryColor ?? DEFAULT_PRIMARY_COLOR,
       logoUrl: t.logoFile
@@ -276,6 +466,7 @@ export class TenantsService {
     return {
       name: t.name,
       tagline: t.tagline,
+      businessDescription: t.businessDescription,
       primaryColor: t.primaryColor ?? DEFAULT_PRIMARY_COLOR, // Kumvwa default
       logoUrl: t.logoFile
         ? await this.files.presignGet(t.logoFile.storageKey, t.logoFile.mime)
@@ -304,6 +495,24 @@ export class TenantsService {
       type: t.type,
       status: t.status,
       verificationNote: t.verificationNote,
+      email: t.email,
+      address: t.address,
+      tpin: t.tpin,
+      contactPerson: t.contactPerson,
+      businessDescription: t.businessDescription,
+      reviewHistory: t.reviewEvents.map((event) => ({
+        id: event.id,
+        action: event.action,
+        note: event.note,
+        changes: event.changes,
+        createdAt: event.createdAt,
+        actor: event.actor
+          ? { name: event.actor.displayName, role: event.actor.role }
+          : null,
+      })),
+      rejectionCount: t.reviewEvents.filter(
+        (event) => event.action === 'rejected',
+      ).length,
       bozSubmittedAt: t.bozSubmittedAt,
       bozFile: t.bozFile,
       createdAt: t.createdAt,

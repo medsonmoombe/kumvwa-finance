@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { LoanStatus } from '@prisma/client';
+import { StorageService } from '../files/storage.service';
 import {
   businessDate,
   businessMonthBounds,
@@ -21,7 +22,10 @@ interface MonthRow {
 /** Dashboard/report aggregates for a single tenant (lender). */
 @Injectable()
 export class ReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+  ) {}
 
   /** Portfolio snapshot. Sums are computed in SQL, not by looping rows. */
   async summary(tenantId: string) {
@@ -46,7 +50,19 @@ export class ReportsService {
           where: { tenantId },
           orderBy: { createdAt: 'desc' },
           take: 5,
-          include: { client: { select: { firstName: true, lastName: true } } },
+          include: {
+            client: {
+              select: {
+                firstName: true,
+                lastName: true,
+                user: {
+                  select: {
+                    profileFile: { select: { storageKey: true, mime: true } },
+                  },
+                },
+              },
+            },
+          },
         }),
         // What is actually owed this calendar month, not the whole book.
         this.prisma.installment.aggregate({
@@ -99,14 +115,22 @@ export class ReportsService {
       collectedThisMonth: minorToKwacha(collectedMinor),
       collectedThisMonthMinor: collectedMinor.toString(),
       clientsCount,
-      recentLoans: recent.map((l) => ({
-        id: l.id,
-        clientName: `${l.client.firstName} ${l.client.lastName}`.trim(),
-        principal: minorToKwacha(l.principal),
-        principalMinor: l.principal.toString(),
-        status: l.status,
-        createdAt: l.createdAt,
-      })),
+      recentLoans: await Promise.all(
+        recent.map(async (l) => {
+          const pf = l.client.user?.profileFile;
+          return {
+            id: l.id,
+            clientName: `${l.client.firstName} ${l.client.lastName}`.trim(),
+            principal: minorToKwacha(l.principal),
+            principalMinor: l.principal.toString(),
+            status: l.status,
+            createdAt: l.createdAt,
+            profileImageUrl: pf
+              ? await this.storage.presignGet(pf.storageKey, pf.mime)
+              : null,
+          };
+        }),
+      ),
     };
   }
 

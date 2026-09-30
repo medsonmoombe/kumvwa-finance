@@ -166,6 +166,8 @@ class ApiAuthRepository implements AuthRepository {
         refreshToken: client.refreshToken,
         profileComplete: user['profileComplete'] as bool? ?? true,
         profilePercent: user['profilePercent'] as int? ?? 100,
+        profileFileId: user['profileFileId'] as String?,
+        profileImageUrl: user['profileImageUrl'] as String?,
       );
       await tokenStore.saveSession(session);
       return session;

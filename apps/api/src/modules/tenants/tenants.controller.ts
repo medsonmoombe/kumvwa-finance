@@ -6,7 +6,12 @@ import { Public } from '../../common/guards/public.decorator';
 import { Roles } from '../../common/guards/roles.decorator';
 import { RequirePermissions } from '../../common/guards/permissions.decorator';
 import { AllowUnverifiedTenant } from '../../common/guards/unverified-tenant.decorator';
-import { SubmitVerificationDto, UpdateBrandingDto } from './dto/tenants.dto';
+import {
+  ResubmitVerificationDto,
+  SubmitVerificationDto,
+  UpdateApplicationDto,
+  UpdateBrandingDto,
+} from './dto/tenants.dto';
 import { TenantsService } from './tenants.service';
 
 @Roles('tenant_owner', 'tenant_staff')
@@ -27,6 +32,24 @@ export class TenantsController {
     @Body() dto: SubmitVerificationDto,
   ) {
     return this.tenants.submitVerification(u.tenantId!, u.sub, dto);
+  }
+
+  @Post('me/resubmit')
+  @AllowUnverifiedTenant()
+  resubmit(
+    @CurrentUser() u: TokenClaims,
+    @Body() dto: ResubmitVerificationDto,
+  ) {
+    return this.tenants.resubmitVerification(u.tenantId!, u.sub, dto);
+  }
+
+  @Patch('me/application')
+  @AllowUnverifiedTenant()
+  updateApplication(
+    @CurrentUser() u: TokenClaims,
+    @Body() dto: UpdateApplicationDto,
+  ) {
+    return this.tenants.updateRejectedApplication(u.tenantId!, u.sub, dto);
   }
 
   /** Branding/business info read — reuses the public projection. */

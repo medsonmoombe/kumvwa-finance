@@ -353,13 +353,13 @@ export function AdminQueuePage() {
                     Reject
                   </Pill>
                   <Pill
-                    disabled={busyId === drawer.id || (drawer.review ? !drawer.review.canApprove : !drawer.bozFile)}
+                    disabled={busyId === drawer.id || (drawer.review ? !drawer.review.canApprove : false)}
                     onClick={() => void review(drawer.id, 'approve')}>
                     {busyId === drawer.id ? 'Working…' : '✓ Approve'}
                   </Pill>
                 </div>
                 <p className="text-[10.5px] text-ink-muted">
-                  Approving activates lending immediately. All required fields and confirmed certificate must be present.
+                  Approving activates lending immediately. All required business and contact identity fields must be present.
                 </p>
               </div>
             )}

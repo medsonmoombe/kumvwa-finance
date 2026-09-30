@@ -9,6 +9,7 @@ import 'package:kumvwa_finance/core/theme/app_colors.dart';
 import 'package:kumvwa_finance/core/theme/app_effects.dart';
 import 'package:kumvwa_finance/core/theme/app_text.dart';
 import 'package:kumvwa_finance/core/utils/format.dart';
+import 'package:kumvwa_finance/core/widgets/app_refresh.dart';
 import 'package:kumvwa_finance/core/widgets/dome_header.dart';
 import 'package:kumvwa_finance/features/auth/presentation/auth_controller.dart';
 
@@ -92,27 +93,48 @@ class _LenderHomeScreenState extends ConsumerState<LenderHomeScreen> {
       backgroundColor: AppColors.bg,
       body: SafeArea(
         child: _loading
-            ? const Center(
-                child: CircularProgressIndicator(
-                  color: AppColors.blue600,
-                  strokeWidth: 2,
+            ? AppRefresh(
+                onRefresh: _load,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  children: const [
+                    SizedBox(height: 200),
+                    Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.blue600,
+                        strokeWidth: 2,
+                      ),
+                    ),
+                  ],
                 ),
               )
             : _underReview
-            ? _UnderReviewBody(name: name, status: _tenantStatus ?? 'pending_verification', note: _verificationNote, onRetry: _load)
+            ? AppRefresh(
+                onRefresh: _load,
+                child: _UnderReviewBody(
+                  name: name,
+                  status: _tenantStatus ?? 'pending_verification',
+                  note: _verificationNote,
+                  onRetry: _load,
+                ),
+              )
             : _error != null
-            ? _ErrorBody(message: _error!, onRetry: _load, name: name)
-            : _Body(summary: _summary!, name: name),
+            ? AppRefresh(
+                onRefresh: _load,
+                child: _ErrorBody(message: _error!, onRetry: _load, name: name),
+              )
+            : _Body(summary: _summary!, name: name, onRefresh: _load),
       ),
     );
   }
 }
 
 class _Body extends StatelessWidget {
-  const _Body({required this.summary, required this.name});
+  const _Body({required this.summary, required this.name, required this.onRefresh});
 
   final Map<String, dynamic> summary;
   final String name;
+  final Future<void> Function() onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -122,10 +144,10 @@ class _Body extends StatelessWidget {
     final recentLoans =
         (summary['recentLoans'] as List? ?? []).cast<Map<String, dynamic>>();
 
-    return RefreshIndicator(
-      color: AppColors.blue600,
-      onRefresh: () async {},
+    return AppRefresh(
+      onRefresh: onRefresh,
       child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: EdgeInsets.zero,
         children: [
           // Dome scrolls with content
@@ -237,6 +259,8 @@ class _LoanRow extends StatelessWidget {
         : status == 'cleared'
         ? AppColors.muted
         : AppColors.green700;
+    final clientName = loan['clientName'] as String? ?? '?';
+    final profileImageUrl = loan['profileImageUrl'] as String?;
 
     return Material(
       color: Colors.transparent,
@@ -257,22 +281,22 @@ class _LoanRow extends StatelessWidget {
           Container(
             width: 36,
             height: 36,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: AppColors.blue50,
-              shape: BoxShape.circle,
-            ),
-            child: Text(
-              (loan['clientName'] as String? ?? '?')[0].toUpperCase(),
-              style: AppText.cardTitle.copyWith(color: AppColors.blue600),
-            ),
+            decoration: const BoxDecoration(shape: BoxShape.circle),
+            clipBehavior: Clip.antiAlias,
+            child: profileImageUrl != null
+                ? Image.network(
+                    profileImageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _InitialAvatar(name: clientName),
+                  )
+                : _InitialAvatar(name: clientName),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(loan['clientName'] as String? ?? '', style: AppText.rowTitle),
+                Text(clientName, style: AppText.rowTitle),
                 const SizedBox(height: 2),
                 Text(
                   _money(loan['principalMinor'] as String? ?? '0'),
@@ -298,6 +322,20 @@ class _LoanRow extends StatelessWidget {
       ),
     );
   }
+}
+
+class _InitialAvatar extends StatelessWidget {
+  const _InitialAvatar({required this.name});
+  final String name;
+  @override
+  Widget build(BuildContext context) => Container(
+        alignment: Alignment.center,
+        color: AppColors.blue50,
+        child: Text(
+          name.isNotEmpty ? name[0].toUpperCase() : '?',
+          style: AppText.cardTitle.copyWith(color: AppColors.blue600),
+        ),
+      );
 }
 
 class _EmptyLoans extends StatelessWidget {
@@ -341,6 +379,7 @@ class _UnderReviewBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.zero,
       children: [
         DomeHeader(
@@ -374,6 +413,53 @@ class _UnderReviewBody extends StatelessWidget {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
+              if (status == 'rejected') ...[
+                Text(
+                  'Your application review is complete. Make the requested changes and resubmit for another review.',
+                  style: AppText.paragraph.copyWith(color: AppColors.muted),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(13),
+                  decoration: BoxDecoration(
+                    color: AppColors.red50,
+                    borderRadius: BorderRadius.circular(AppRadii.card),
+                    border: Border.all(color: AppColors.redLine),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Reviewer comments',
+                        style: AppText.cardTitle.copyWith(
+                          color: AppColors.redInk,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        note?.trim().isNotEmpty == true
+                            ? note!
+                            : 'Please review and correct your application.',
+                        style: AppText.paragraph.copyWith(
+                          color: AppColors.redInk,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () =>
+                        context.go('/lender/application-review'),
+                    child: const Text('Review and resubmit'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
               Text(
                 'Your organisation is being verified by the Kumvwa team. '
                 'This usually takes 1–2 business days.',
@@ -388,7 +474,7 @@ class _UnderReviewBody extends StatelessWidget {
               const SizedBox(height: 10),
               _ReviewStep(
                 icon: Icons.verified_outlined,
-                label: 'BOZ certificate & NRC are being checked',
+                label: 'Business details and contact identity are checked',
               ),
               const SizedBox(height: 10),
               _ReviewStep(
@@ -503,6 +589,7 @@ class _ErrorBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.zero,
       children: [
         DomeHeader(

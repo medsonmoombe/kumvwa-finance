@@ -10,6 +10,7 @@ import { NrcCryptoService } from '../../common/crypto/nrc-crypto.service';
 import { AuditService } from '../audit/audit.service';
 import { FilesService } from '../files/files.service';
 import { minorToKwacha } from '@kumvwa/core';
+import { normalizeZmPhone } from '../../common/utils/phone.util';
 import type { UpdateProfileDto } from './dto/clients.dto';
 
 /** Which face of the NRC a viewer asked for. Anything else means 'front'. */
@@ -57,6 +58,8 @@ export const REGISTRATION_FIELDS = [
   'incomeBand',
   'kinName',
   'kinPhone',
+  'kin2Name',
+  'kin2Phone',
 ] as const;
 
 export type RegistrationField = (typeof REGISTRATION_FIELDS)[number];
@@ -75,6 +78,8 @@ export function missingRegistrationFields(client: {
   incomeBand: string | null;
   kinName: string | null;
   kinPhone: string | null;
+  kin2Name: string | null;
+  kin2Phone: string | null;
 }): RegistrationField[] {
   const blank = (value: string | null) =>
     value === null || String(value).trim().length === 0;
@@ -193,6 +198,8 @@ export class ClientsService {
       incomeSource: client.incomeSource,
       kinName: client.kinName,
       kinPhone: client.kinPhone,
+      kin2Name: client.kin2Name,
+      kin2Phone: client.kin2Phone,
       nrcPhotoFileId: client.nrcPhotoFileId,
       nrcBackPhotoFileId: client.nrcBackPhotoFileId,
       // The stepper's completion flag is separate from the KYC percentage.
@@ -238,6 +245,19 @@ export class ClientsService {
     });
     if (!existing) throw new NotFoundException('Client not found');
 
+    const kinPhone = dto.kinPhone === undefined
+      ? existing.kinPhone
+      : this.requiredZmPhone(dto.kinPhone, 'First next of kin phone');
+    const kin2Phone = dto.kin2Phone === undefined
+      ? existing.kin2Phone
+      : this.requiredZmPhone(dto.kin2Phone, 'Second next of kin phone');
+    if (kinPhone && kin2Phone && kinPhone === kin2Phone) {
+      throw new BadRequestException('Use two different next of kin phone numbers');
+    }
+    if ([kinPhone, kin2Phone].includes(existing.phone)) {
+      throw new BadRequestException('A next of kin phone number cannot be your own number');
+    }
+
     for (const [field, fileId] of [
       ['NRC front photo', dto.nrcPhotoFileId],
       ['NRC back photo', dto.nrcBackPhotoFileId],
@@ -268,7 +288,9 @@ export class ClientsService {
         educationLevel: dto.educationLevel ?? existing.educationLevel,
         incomeBand: dto.incomeBand ?? existing.incomeBand,
         kinName: dto.kinName ?? existing.kinName,
-        kinPhone: dto.kinPhone ?? existing.kinPhone,
+        kinPhone,
+        kin2Name: dto.kin2Name ?? existing.kin2Name,
+        kin2Phone,
       }).length === 0;
 
     const updated = await this.prisma.client.update({
@@ -280,7 +302,9 @@ export class ClientsService {
         incomeBand: dto.incomeBand as never,
         incomeSource: dto.incomeSource,
         kinName: dto.kinName,
-        kinPhone: dto.kinPhone,
+        kinPhone: dto.kinPhone === undefined ? undefined : kinPhone,
+        kin2Name: dto.kin2Name,
+        kin2Phone: dto.kin2Phone === undefined ? undefined : kin2Phone,
         nrcPhotoFileId: dto.nrcPhotoFileId,
         nrcBackPhotoFileId: dto.nrcBackPhotoFileId,
         // Never un-complete a profile that already got through the gate;
@@ -289,6 +313,14 @@ export class ClientsService {
       },
     });
     return { profileCompleted: updated.profileCompletedAt !== null };
+  }
+
+  private requiredZmPhone(value: string | null | undefined, label: string) {
+    const normalized = value ? normalizeZmPhone(value) : null;
+    if (!normalized) {
+      throw new BadRequestException(`${label} must be a valid Zambian mobile number`);
+    }
+    return normalized;
   }
 
   /**
@@ -413,6 +445,8 @@ export class ClientsService {
       incomeSource: c.incomeSource,
       kinName: c.kinName,
       kinPhone: c.kinPhone,
+      kin2Name: c.kin2Name,
+      kin2Phone: c.kin2Phone,
       nrcPhotoFileId: c.nrcPhotoFileId,
       nrcBackPhotoFileId: c.nrcBackPhotoFileId,
       lendersCount: c._count.lenderLinks,

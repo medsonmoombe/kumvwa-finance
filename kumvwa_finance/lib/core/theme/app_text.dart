@@ -3,334 +3,330 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'package:kumvwa_finance/core/theme/app_colors.dart';
 
-/// The single source of truth for type in the app, matched 1:1 to the mobile
-/// design mockup.
+/// Single source of truth for typography.
 ///
-/// Every piece of text in the app must use one of these — never a hand-rolled
-/// `TextStyle`, which is how the sizes drifted apart in the first place.
+/// Font: **Inter** throughout — tabular figures on all money tokens,
+/// negative letter-spacing on large numbers and headings, 1.4–1.5 line-height
+/// on body copy, 1.1–1.2 on headlines.
 ///
-/// Two voices, exactly as the mockup declares them:
-///   * **Poppins** — display and heading voice, plus every number that has to
-///     read as a figure.
-///   * **Inter** — reading voice, everything else.
-///
-/// Money tokens carry `tabular-nums` (the mockup's `.num` class) so columns of
-/// figures never reflow as digits change.
+/// Scale (matches fintech/banking standard):
+///   Hero number   32–40 / 700
+///   Screen title  22–24 / 700
+///   Section head  16–17 / 600
+///   Card title    15    / 600
+///   Body          14–15 / 400
+///   Meta/sub      12.5–13 / 400–500
+///   Button        15–16 / 600
+///   Badge/tag     11–12 / 700
 class AppText {
   AppText._();
 
-  /// The mockup's `.num` — figures that must not jitter as they change.
   static const List<FontFeature> tabular = [FontFeature.tabularFigures()];
 
-  // ═══════════════════════ display voice (Poppins) ═══════════════════════
+  // ─── hero numbers ────────────────────────────────────────────────────────
 
-  /// The one number on the screen — mockup `.hero .hn` (32/800).
-  static final heroNumber = _poppins(
-    32,
-    FontWeight.w800,
-    AppColors.ink,
-    ls: -0.6,
-    figures: true,
+  /// Large balance / hero number — 36 / 700, tight tracking, tabular.
+  static final heroNumber = _inter(
+    36, FontWeight.w700, AppColors.ink,
+    ls: -1.0, lh: 1.1, figures: true,
   );
 
-  /// Amount on the receipt/success screen — mockup `.dn-big` (28/800).
-  static final receiptAmount = _poppins(
-    28,
-    FontWeight.w800,
-    AppColors.ink,
-    ls: -0.5,
-    figures: true,
+  /// Receipt / success amount — 28 / 700, tabular.
+  static final receiptAmount = _inter(
+    28, FontWeight.w700, AppColors.ink,
+    ls: -0.6, lh: 1.1, figures: true,
   );
 
-  /// Big figure inside a tinted panel — mockup `.amtbox b` (24/800).
-  static final amountLarge = _poppins(
-    24,
-    FontWeight.w800,
-    AppColors.blue900,
-    figures: true,
+  /// Amount inside a tinted panel — 24 / 700, tabular.
+  static final amountLarge = _inter(
+    24, FontWeight.w700, AppColors.blue900,
+    ls: -0.4, figures: true,
   );
 
-  /// Splash headline — mockup `.sp-copy h1` (22/800).
-  static final splashTitle = _poppins(
-    22,
-    FontWeight.w800,
-    AppColors.ink,
-    ls: -0.2,
+  // ─── screen titles ───────────────────────────────────────────────────────
+
+  /// Splash headline — 22 / 700.
+  static final splashTitle = _inter(
+    22, FontWeight.w700, AppColors.ink,
+    ls: -0.3, lh: 1.2,
   );
 
-  /// Screen and AppBar titles. Also the theme's `titleLarge` — keep in step.
-  static final pageTitle = _poppins(20, FontWeight.w700, AppColors.ink);
-
-  /// Domed header title, full-bleed variant — mockup `.dome-t` (19/700).
-  static final domeTitle = _poppins(
-    23,
-    FontWeight.w800,
-    Colors.white,
-    ls: -0.3,
+  /// Screen / AppBar title — 20 / 700.
+  static final pageTitle = _inter(
+    20, FontWeight.w700, AppColors.ink,
+    ls: -0.3, lh: 1.2,
   );
 
-  /// Domed header title, compressed `.dome.sm` variant (17/700).
-  static final domeTitleSm = _poppins(
-    17,
-    FontWeight.w700,
-    Colors.white,
-    ls: -0.2,
+  /// Dome header title, full — 22 / 700, white.
+  static final domeTitle = _inter(
+    22, FontWeight.w700, Colors.white,
+    ls: -0.4, lh: 1.2,
   );
 
-  /// Name at the top of the profile dome — mockup `.phead b` (16/700).
-  static final nameOnDome = _poppins(16, FontWeight.w700, Colors.white);
+  /// Dome header title, compact — 17 / 600, white.
+  static final domeTitleSm = _inter(
+    17, FontWeight.w600, Colors.white,
+    ls: -0.2, lh: 1.2,
+  );
 
-  /// Card, section and list headers — mockup `.shead b` (13.5/700).
-  static final cardTitle = _poppins(13.5, FontWeight.w700, AppColors.ink);
+  /// Name on profile dome — 16 / 700, white.
+  static final nameOnDome = _inter(16, FontWeight.w700, Colors.white);
 
-  /// Legacy alias for [cardTitle] — the mockup gives section headers and card
-  /// headers the same voice and size, so they are the same token. Kept because
-  /// the cards that predate this file reference it.
+  // ─── section & card headers ──────────────────────────────────────────────
+
+  /// Card / section header — 15 / 600.
+  static final cardTitle = _inter(15, FontWeight.w600, AppColors.ink);
   static final sectionTitle = cardTitle;
 
-  /// Title inside a chooser card — mockup `.rc-t b` (13.5/700).
-  static final chooserTitle = _poppins(13.5, FontWeight.w700, AppColors.ink);
+  /// Chooser card title — 15 / 600.
+  static final chooserTitle = _inter(15, FontWeight.w600, AppColors.ink);
 
-  /// Bold figure in the profile stats strip — mockup `.stats b` (15/800).
-  static final statValue = _poppins(
-    15,
-    FontWeight.w800,
-    AppColors.ink,
+  /// Bottom-sheet title — 16 / 600.
+  static final sheetTitle = _inter(16, FontWeight.w600, AppColors.ink);
+
+  // ─── figures ─────────────────────────────────────────────────────────────
+
+  /// Stats strip bold figure — 15 / 700, tabular.
+  static final statValue = _inter(
+    15, FontWeight.w700, AppColors.ink,
     figures: true,
   );
 
-  /// Score readout inside a progress ring — mockup `.score-ring b` (25/800).
-  static final scoreValue = _poppins(
-    25,
-    FontWeight.w800,
-    AppColors.ink,
+  /// Score ring readout — 25 / 700, tabular.
+  static final scoreValue = _inter(
+    25, FontWeight.w700, AppColors.ink,
+    ls: -0.4, figures: true,
+  );
+
+  /// Row trailing amount — 12.5 / 700, tabular.
+  static final rowAmount = _inter(
+    12.5, FontWeight.w700, AppColors.blue600,
     figures: true,
   );
 
-  /// Bottom-sheet title — mockup `.sh-t` (16.5/700).
-  static final sheetTitle = _poppins(16.5, FontWeight.w700, AppColors.ink);
+  // ─── reading voice ───────────────────────────────────────────────────────
 
-  /// Trailing money on a transaction row — mockup `.amt` (12.5/800).
-  static final rowAmount = _poppins(
-    12.5,
-    FontWeight.w800,
-    AppColors.blue600,
-    figures: true,
-  );
-
-  /// A right-hand link in a section header — mockup `.lnk` (11/700).
-  static final linkLabel = GoogleFonts.inter(
-    fontSize: 11,
-    fontWeight: FontWeight.w700,
-    color: AppColors.blue600,
-  );
-
-  // ═══════════════════════ reading voice (Inter) ═══════════════════════
-
-  /// Primary reading text: list names, field values, paragraph copy.
-  /// Inter 14 / w500 / ink. Also the theme's `bodyLarge`.
+  /// Primary body — 14 / 400, lh 1.5.
   static const body = TextStyle(
     fontSize: 14,
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w400,
     color: AppColors.ink,
+    height: 1.5,
   );
 
-  /// Body copy the user must notice — Inter 14 / w600 / ink.
+  /// Emphasised body — 14 / 600.
   static const bodyStrong = TextStyle(
     fontSize: 14,
     fontWeight: FontWeight.w600,
     color: AppColors.ink,
+    height: 1.5,
   );
 
-  /// Text the user types into a field — Inter 14 / w400 / ink.
+  /// Text the user types — 14 / 400.
   static const fieldInput = TextStyle(
     fontSize: 14,
     fontWeight: FontWeight.w400,
     color: AppColors.ink,
   );
 
-  /// EVERY secondary line: helper text, metadata, empty-state copy.
-  /// Inter 13.5 / w500 / muted. Also the theme's `bodySmall`.
+  /// Secondary / meta — 13 / 400, muted, lh 1.45.
   static const subText = TextStyle(
-    fontSize: 13.5,
-    fontWeight: FontWeight.w500,
+    fontSize: 13,
+    fontWeight: FontWeight.w400,
     color: AppColors.muted,
+    height: 1.45,
   );
 
-  /// Labels above form fields — Inter 13 / w600 / ink.
+  /// Field label — 13 / 600.
   static const fieldLabel = TextStyle(
     fontSize: 13,
     fontWeight: FontWeight.w600,
     color: AppColors.ink,
   );
 
-  /// Leading line of a list row — mockup `.tr-m b` (12.5/600).
+  /// List row primary line — 13 / 600.
   static const rowTitle = TextStyle(
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: FontWeight.w600,
     color: AppColors.ink,
   );
 
-  /// Trailing line of a list row — mockup `.tr-m span` (10.5/500).
+  /// List row secondary line — 12 / 400, muted.
   static const rowSub = TextStyle(
-    fontSize: 10.5,
-    fontWeight: FontWeight.w500,
+    fontSize: 12,
+    fontWeight: FontWeight.w400,
     color: AppColors.muted,
+    height: 1.4,
   );
 
-  /// Supporting line under a bottom-sheet title — mockup `.sh-s` (11/500).
+  /// Sheet subtitle — 13 / 400, muted.
   static const sheetSub = TextStyle(
-    fontSize: 11,
-    fontWeight: FontWeight.w500,
+    fontSize: 13,
+    fontWeight: FontWeight.w400,
     color: AppColors.muted,
+    height: 1.45,
   );
 
-  /// Mid-length explanatory copy — mockup `.swap`, hint paragraphs (11.5/500).
+  /// Paragraph / explanatory copy — 13 / 400, lh 1.5.
   static const paragraph = TextStyle(
-    fontSize: 11.5,
-    fontWeight: FontWeight.w500,
+    fontSize: 13,
+    fontWeight: FontWeight.w400,
     color: AppColors.ink2,
-    height: 1.55,
+    height: 1.5,
   );
 
-  /// Primary button label — mockup `.pbtn` (14/700).
+  // ─── buttons ─────────────────────────────────────────────────────────────
+
+  /// Primary button — 15 / 600 (semibold, not bold — fintech standard).
   static const buttonLabel = TextStyle(
-    fontSize: 14,
-    fontWeight: FontWeight.w700,
+    fontSize: 15,
+    fontWeight: FontWeight.w600,
     color: Colors.white,
-    letterSpacing: 0.4,
+    letterSpacing: 0.1,
   );
 
-  /// Secondary/ghost button label — mockup `.ghostbtn` (12.5/600).
+  /// Ghost / secondary button — 13 / 600.
   static const buttonGhost = TextStyle(
-    fontSize: 12.5,
+    fontSize: 13,
     fontWeight: FontWeight.w600,
     color: AppColors.ink2,
   );
 
-  /// Field label as the mockup draws it, above a soft-filled input (11.5/600).
+  // ─── chrome & micro ──────────────────────────────────────────────────────
+
+  /// Small field label — 12 / 600.
   static const fieldLabelSm = TextStyle(
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: FontWeight.w600,
     color: AppColors.ink2,
   );
 
-  /// Inline validation message — mockup `.err` (10.5/500).
+  /// Inline validation — 11 / 500, red.
   static const fieldError = TextStyle(
-    fontSize: 10.5,
+    fontSize: 11,
     fontWeight: FontWeight.w500,
     color: AppColors.redInk,
   );
 
-  /// Selectable pill, unselected — mockup `.pill` (11/600).
+  /// Pill label — 12 / 600.
   static const pillLabel = TextStyle(
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: FontWeight.w600,
     color: AppColors.ink2,
   );
 
-  /// Fine print and captions — mockup `.fine` (10/500).
+  /// Fine print — 11 / 400, muted, lh 1.5.
   static const fine = TextStyle(
-    fontSize: 10,
-    fontWeight: FontWeight.w500,
+    fontSize: 11,
+    fontWeight: FontWeight.w400,
     color: AppColors.muted,
-    height: 1.55,
+    height: 1.5,
   );
 
-  /// Compact chrome: badges, chips, nav labels. Inter 11.5 / w600 / muted.
-  /// Also the theme's `labelSmall`.
+  /// Caption / badge — 12 / 600, muted.
   static const caption = TextStyle(
-    fontSize: 11.5,
+    fontSize: 12,
     fontWeight: FontWeight.w600,
     color: AppColors.muted,
   );
 
-  /// Filled status pill — mockup `.chip` (9.5/700).
+  /// Status chip — 11 / 700.
   static const chipLabel = TextStyle(
-    fontSize: 9.5,
+    fontSize: 11,
     fontWeight: FontWeight.w700,
     color: AppColors.ink,
   );
 
-  /// Bottom-nav item label, inactive — mockup `.nv` (9.5/600).
+  /// Nav label inactive — 10 / 500.
   static const navLabel = TextStyle(
-    fontSize: 9.5,
-    fontWeight: FontWeight.w600,
+    fontSize: 10,
+    fontWeight: FontWeight.w500,
     color: Color(0xFF9AA1B2),
   );
 
-  /// Bottom-nav item label, active — mockup `.nv.on` (9.5/700).
+  /// Nav label active — 10 / 700.
   static const navLabelOn = TextStyle(
-    fontSize: 9.5,
-    fontWeight: FontWeight.w700,
-    color: AppColors.blue600,
-  );
-
-  /// Letterspaced eyebrow over a gradient surface — mockup `.hero .hl`.
-  static const eyebrow = TextStyle(
-    fontSize: 9.5,
-    fontWeight: FontWeight.w700,
-    letterSpacing: 1.7,
-    color: AppColors.onGradientEyebrow,
-  );
-
-  /// Letterspaced eyebrow on a light surface — mockup `.fsec` (9.5/700).
-  static const eyebrowInk = TextStyle(
-    fontSize: 9.5,
-    fontWeight: FontWeight.w700,
-    letterSpacing: 1.3,
-    color: AppColors.muted,
-  );
-
-  /// Group label inside a sheet — mockup `.glbl` (9/700).
-  static const eyebrowTight = TextStyle(
-    fontSize: 9,
-    fontWeight: FontWeight.w700,
-    letterSpacing: 1.3,
-    color: AppColors.muted,
-  );
-
-  /// Label above a figure in a tinted panel — mockup `.amtbox span` (8.5/700).
-  static const eyebrowTiny = TextStyle(
-    fontSize: 8.5,
-    fontWeight: FontWeight.w700,
-    letterSpacing: 1.2,
-    color: AppColors.muted,
-  );
-
-  /// Column caption in the profile stats strip — mockup `.stats span` (8/700).
-  static const statLabel = TextStyle(
-    fontSize: 8,
-    fontWeight: FontWeight.w700,
-    letterSpacing: 1.2,
-    color: AppColors.muted,
-  );
-
-  /// Timestamp under a notification — mockup `.nrow time` (9.5/500).
-  static const timeStamp = TextStyle(
-    fontSize: 9.5,
-    fontWeight: FontWeight.w500,
-    color: AppColors.muted,
-  );
-
-  /// Right-hand status on an upload row — mockup `.up-st` (10/700).
-  static const uploadStatus = TextStyle(
     fontSize: 10,
     fontWeight: FontWeight.w700,
     color: AppColors.blue600,
   );
 
-  static TextStyle _poppins(
+  /// Eyebrow on gradient — 10 / 700, wide tracking.
+  static const eyebrow = TextStyle(
+    fontSize: 10,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 1.5,
+    color: AppColors.onGradientEyebrow,
+  );
+
+  /// Eyebrow on light surface — 10 / 700.
+  static const eyebrowInk = TextStyle(
+    fontSize: 10,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 1.2,
+    color: AppColors.muted,
+  );
+
+  /// Tight eyebrow in sheet — 9.5 / 700.
+  static const eyebrowTight = TextStyle(
+    fontSize: 9.5,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 1.2,
+    color: AppColors.muted,
+  );
+
+  /// Tiny eyebrow in panel — 9 / 700.
+  static const eyebrowTiny = TextStyle(
+    fontSize: 9,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 1.1,
+    color: AppColors.muted,
+  );
+
+  /// Stats strip column label — 9 / 700.
+  static const statLabel = TextStyle(
+    fontSize: 9,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 1.1,
+    color: AppColors.muted,
+  );
+
+  /// Notification timestamp — 10 / 400, muted.
+  static const timeStamp = TextStyle(
+    fontSize: 10,
+    fontWeight: FontWeight.w400,
+    color: AppColors.muted,
+  );
+
+  /// Upload row status — 11 / 700, blue.
+  static const uploadStatus = TextStyle(
+    fontSize: 11,
+    fontWeight: FontWeight.w700,
+    color: AppColors.blue600,
+  );
+
+  /// Section header right-hand link — 11 / 700, blue.
+  static final linkLabel = GoogleFonts.inter(
+    fontSize: 11,
+    fontWeight: FontWeight.w700,
+    color: AppColors.blue600,
+  );
+
+  // ─── builder ─────────────────────────────────────────────────────────────
+
+  static TextStyle _inter(
     double size,
     FontWeight weight,
     Color color, {
     double ls = 0,
+    double? lh,
     bool figures = false,
-  }) => GoogleFonts.poppins(
+  }) => GoogleFonts.inter(
     fontSize: size,
     fontWeight: weight,
     color: color,
     letterSpacing: ls,
+    height: lh,
     fontFeatures: figures ? AppText.tabular : null,
   );
 }

@@ -7,6 +7,7 @@ import 'package:kumvwa_finance/core/theme/app_effects.dart';
 import 'package:kumvwa_finance/core/theme/app_text.dart';
 import 'package:kumvwa_finance/core/utils/format.dart';
 import 'package:kumvwa_finance/core/widgets/client_dome_header.dart';
+import 'package:kumvwa_finance/core/widgets/profile_image_picker.dart';
 import 'package:kumvwa_finance/features/auth/presentation/auth_controller.dart';
 import 'package:kumvwa_finance/features/loans/data/loans_repository.dart';
 
@@ -25,7 +26,13 @@ class ClientProfileScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: SafeArea(
-        child: ListView(
+        child: RefreshIndicator(
+          color: AppColors.blue600,
+          onRefresh: () async {
+            ref.invalidate(clientLoansProvider);
+          },
+          child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: EdgeInsets.zero,
           children: [
             // Dome scrolls with content — avatar centred inside
@@ -35,26 +42,10 @@ class ClientProfileScreen extends ConsumerWidget {
               bottom: Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Center(
-                  child: Container(
-                    width: 72,
-                    height: 72,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.18),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.5),
-                        width: 2.5,
-                      ),
-                    ),
-                    child: Text(
-                      Fmt.initials(name),
-                      style: const TextStyle(
-                        fontSize: 23,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
-                    ),
+                  child: ProfileImagePicker(
+                    name: name,
+                    imageUrl: session?.profileImageUrl,
+                    uploadBasePath: '/files/client',
                   ),
                 ),
               ),
@@ -120,6 +111,7 @@ class ClientProfileScreen extends ConsumerWidget {
               ),
             ),
           ],
+        ),
         ),
       ),
     );

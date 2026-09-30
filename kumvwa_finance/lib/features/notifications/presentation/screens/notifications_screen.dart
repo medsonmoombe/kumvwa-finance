@@ -110,30 +110,35 @@ class NotificationsScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: SafeArea(
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: ClientDomeHeader(
-                title: 'Notifications',
-                subtitle: 'Your activity feed',
-                trailing: GestureDetector(
-                  onTap: () async {
-                    await ref
-                        .read(notificationsRepositoryProvider)
-                        .markAllRead(role: role);
-                    ref.invalidate(notificationsProvider(role));
-                  },
-                  child: Text(
-                    'Mark all read',
-                    style: AppText.linkLabel.copyWith(
-                      color: Colors.white.withValues(alpha: 0.85),
+        child: RefreshIndicator(
+          color: AppColors.blue600,
+          onRefresh: () async => ref.invalidate(notificationsProvider(role)),
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(
+                child: ClientDomeHeader(
+                  title: 'Notifications',
+                  subtitle: 'Your activity feed',
+                  trailing: GestureDetector(
+                    onTap: () async {
+                      await ref
+                          .read(notificationsRepositoryProvider)
+                          .markAllRead(role: role);
+                      ref.invalidate(notificationsProvider(role));
+                    },
+                    child: Text(
+                      'Mark all read',
+                      style: AppText.linkLabel.copyWith(
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-            SliverFillRemaining(child: body),
-          ],
+              SliverFillRemaining(child: body),
+            ],
+          ),
         ),
       ),
     );

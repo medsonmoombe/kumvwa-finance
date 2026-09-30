@@ -10,6 +10,7 @@ import 'package:kumvwa_finance/core/theme/app_colors.dart';
 import 'package:kumvwa_finance/core/theme/app_effects.dart';
 import 'package:kumvwa_finance/core/theme/app_text.dart';
 import 'package:kumvwa_finance/core/utils/format.dart';
+import 'package:kumvwa_finance/core/widgets/app_refresh.dart';
 import 'package:kumvwa_finance/core/widgets/dome_header.dart';
 
 class LenderClientsScreen extends ConsumerStatefulWidget {
@@ -97,31 +98,48 @@ class _LenderClientsScreenState extends ConsumerState<LenderClientsScreen> {
             ),
             const SizedBox(height: 10),
             Expanded(
-              child: _loading
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                        color: AppColors.blue600,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : _error != null
-                  ? _ErrorBody(message: _error!, onRetry: _load)
-                  : _filtered.isEmpty
-                  ? _Empty(hasQuery: _query.isNotEmpty)
-                  : RefreshIndicator(
-                      color: AppColors.blue600,
-                      onRefresh: _load,
-                      child: ListView.separated(
+              child: AppRefresh(
+                onRefresh: _load,
+                child: _loading
+                    ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: const [
+                          SizedBox(height: 160),
+                          Center(
+                            child: CircularProgressIndicator(
+                              color: AppColors.blue600,
+                              strokeWidth: 2,
+                            ),
+                          ),
+                        ],
+                      )
+                    : _error != null
+                    ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [
+                          SizedBox(height: 40),
+                          _ErrorBody(message: _error!, onRetry: _load),
+                        ],
+                      )
+                    : _filtered.isEmpty
+                    ? ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: [
+                          SizedBox(height: 160),
+                          _Empty(hasQuery: _query.isNotEmpty),
+                        ],
+                      )
+                    : ListView.separated(
+                        physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(18, 0, 18, 96),
                         itemCount: _filtered.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(height: 8),
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (_, i) => _ClientRow(
                           client: _filtered[i],
                           onTap: () => context.push('/lender/clients/${_filtered[i]['id']}'),
                         ),
                       ),
-                    ),
+              ),
             ),
           ],
         ),

@@ -36,6 +36,7 @@ import { AuditPage } from './features/admin/AuditPage';
 import { AuditDetailPage } from './features/admin/AuditDetailPage';
 import { LenderAuditPage } from './features/audit/LenderAuditPage';
 import { LenderAuditDetailPage } from './features/audit/LenderAuditDetailPage';
+import { UserProfilePage } from './features/profile/UserProfilePage';
 
 /** Sends each role to the landing screen it actually has. */
 function Home() {
@@ -198,6 +199,7 @@ export default function App() {
           <Route path="/admin/tenants/:id" element={<AdminTenantDetailPage />} />
           <Route path="/admin/borrowers" element={<AdminClientsPage />} />
           <Route path="/admin/audit" element={<AuditPage />} />
+          <Route path="/admin/profile" element={<UserProfilePage />} />
           <Route path="/admin/audit/:id" element={<AuditDetailPage />} />
           <Route path="/audit" element={<Guard><LenderAuditPage /></Guard>} />
           <Route path="/audit/:id" element={<Guard><LenderAuditDetailPage /></Guard>} />

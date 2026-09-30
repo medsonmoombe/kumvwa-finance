@@ -27,6 +27,8 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
   final _otherEmploymentCtrl = TextEditingController();
   final _kinNameCtrl = TextEditingController();
   final _kinPhoneCtrl = TextEditingController();
+  final _kin2NameCtrl = TextEditingController();
+  final _kin2PhoneCtrl = TextEditingController();
 
   String? _employment;
   String? _sector;
@@ -88,6 +90,8 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
     _otherEmploymentCtrl.dispose();
     _kinNameCtrl.dispose();
     _kinPhoneCtrl.dispose();
+    _kin2NameCtrl.dispose();
+    _kin2PhoneCtrl.dispose();
     super.dispose();
   }
 
@@ -115,6 +119,8 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
         }
         if (p.kinName != null) _kinNameCtrl.text = p.kinName!;
         if (p.kinPhone != null) _kinPhoneCtrl.text = p.kinPhone!;
+        if (p.kin2Name != null) _kin2NameCtrl.text = p.kin2Name!;
+        if (p.kin2Phone != null) _kin2PhoneCtrl.text = p.kin2Phone!;
         // A side already on file must read as done, not as a fresh upload.
         if (p.nrcPhotoFileId != null) _nrcPhotoFileId = p.nrcPhotoFileId;
         if (p.nrcBackPhotoFileId != null) _nrcBackFileId = p.nrcBackPhotoFileId;
@@ -253,6 +259,10 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
                 'kinName': _kinNameCtrl.text.trim(),
               if (_kinPhoneCtrl.text.trim().isNotEmpty)
                 'kinPhone': _kinPhoneCtrl.text.trim(),
+              if (_kin2NameCtrl.text.trim().isNotEmpty)
+                'kin2Name': _kin2NameCtrl.text.trim(),
+              if (_kin2PhoneCtrl.text.trim().isNotEmpty)
+                'kin2Phone': _kin2PhoneCtrl.text.trim(),
               'nrcPhotoFileId': ?_nrcPhotoFileId,
               'nrcBackPhotoFileId': ?_nrcBackFileId,
             },
@@ -309,6 +319,18 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
     if (_kinNameCtrl.text.trim().isEmpty) return 'Enter your next of kin name';
     if (_kinPhoneCtrl.text.trim().isEmpty) {
       return 'Enter your next of kin phone';
+    }
+    if (!RegExp(r'^0[5-9]\d{8}$').hasMatch(_kinPhoneCtrl.text.trim())) {
+      return 'Enter a valid Zambian mobile number for your first next of kin';
+    }
+    if (_kin2NameCtrl.text.trim().isEmpty) {
+      return 'Enter a second next of kin name';
+    }
+    if (!RegExp(r'^0[5-9]\d{8}$').hasMatch(_kin2PhoneCtrl.text.trim())) {
+      return 'Enter a valid Zambian mobile number for your second next of kin';
+    }
+    if (_kinPhoneCtrl.text.trim() == _kin2PhoneCtrl.text.trim()) {
+      return 'Your two next of kin must have different phone numbers';
     }
     return null;
   }
@@ -507,9 +529,30 @@ class _ProfileStepperScreenState extends ConsumerState<ProfileStepperScreen> {
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   enabled: !_submitting,
                 ),
+                const SizedBox(height: 20),
+                _fieldLabel('Second next of kin name'),
+                const SizedBox(height: 8),
+                AppTextField(
+                  label: '',
+                  controller: _kin2NameCtrl,
+                  hint: 'Full name',
+                  textInputAction: TextInputAction.next,
+                  enabled: !_submitting,
+                ),
+                const SizedBox(height: 14),
+                _fieldLabel('Second next of kin phone'),
+                const SizedBox(height: 8),
+                AppTextField(
+                  label: '',
+                  controller: _kin2PhoneCtrl,
+                  hint: '0975550002',
+                  keyboardType: TextInputType.phone,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  enabled: !_submitting,
+                ),
                 const SizedBox(height: 10),
                 const Text(
-                  'Your next of kin may be contacted if we cannot reach you about your loan.',
+                  'Provide two different Zambian mobile numbers. They may be contacted if we cannot reach you about your loan.',
                   style: TextStyle(
                     fontSize: 11.5,
                     color: AppColors.muted,

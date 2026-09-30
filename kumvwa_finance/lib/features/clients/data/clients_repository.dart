@@ -90,6 +90,8 @@ ClientProfile clientProfileFromJson(Map<String, dynamic> d) {
     incomeSource: d['incomeSource'] as String?,
     kinName: d['kinName'] as String?,
     kinPhone: d['kinPhone'] as String?,
+    kin2Name: d['kin2Name'] as String?,
+    kin2Phone: d['kin2Phone'] as String?,
     nrcPhotoFileId: d['nrcPhotoFileId'] as String?,
     nrcBackPhotoFileId: d['nrcBackPhotoFileId'] as String?,
     missingRegistrationFields:
@@ -125,6 +127,8 @@ class MockSelfClientsRepository implements ClientsRepository {
     incomeSource: 'Government / Public sector',
     kinName: 'Jane Doe',
     kinPhone: '0965000001',
+    kin2Name: 'John Doe',
+    kin2Phone: '0975000002',
     profilePercent: 100,
     complete: true,
     missing: <String>[],

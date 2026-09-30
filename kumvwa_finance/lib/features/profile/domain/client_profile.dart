@@ -16,6 +16,8 @@ class ClientProfile {
     this.incomeSource,
     this.kinName,
     this.kinPhone,
+    this.kin2Name,
+    this.kin2Phone,
     this.nrcPhotoFileId,
     this.nrcBackPhotoFileId,
     this.missingRegistrationFields = const [],
@@ -38,6 +40,8 @@ class ClientProfile {
   final String? incomeSource;
   final String? kinName;
   final String? kinPhone;
+  final String? kin2Name;
+  final String? kin2Phone;
 
   /// Uploaded NRC faces. Both are optional, but the stepper shows an already
   /// captured side as done instead of asking for it again.

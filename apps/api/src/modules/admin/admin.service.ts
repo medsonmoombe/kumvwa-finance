@@ -29,6 +29,8 @@ type AdminTenantRow = {
   status: TenantStatus;
   email: string | null;
   contactPerson: string | null;
+  businessDescription: string | null;
+  tpin: string | null;
   ownerNrcEncrypted: string | null;
   verificationNote: string | null;
   bozSubmittedAt: Date | null;
@@ -72,11 +74,12 @@ export class AdminService {
         status: true,
         email: true,
         contactPerson: true,
+        businessDescription: true,
+        tpin: true,
         ownerNrcEncrypted: true,
         verificationNote: true,
         bozSubmittedAt: true,
         createdAt: true,
-        // `checksum` decides "confirmed in storage" for the approval checklist.
         bozFile: {
           select: {
             id: true,
@@ -164,10 +167,10 @@ export class AdminService {
       await this.notify.create(
         owner.id,
         'verification',
-        approve ? 'BOZ verification approved' : 'BOZ verification rejected',
+        approve ? 'Business review approved' : 'Business review rejected',
         approve
           ? 'Your business is verified — you can now lend on Kumvwa.'
-          : `Your certificate was not accepted: ${updated.verificationNote}`,
+          : `Your business review needs changes: ${updated.verificationNote}`,
         { tenantId, decision: dto.decision },
       );
     }
@@ -176,12 +179,22 @@ export class AdminService {
       actorId: adminId,
       action: approve ? 'tenant.verification_approve' : 'tenant.verification_reject',
       description: approve
-        ? `BOZ verification approved for "${updated.name}"`
-        : `BOZ verification rejected for "${updated.name}": ${dto.reason}`,
+        ? `Business review approved for "${updated.name}"`
+        : `Business review rejected for "${updated.name}": ${dto.reason}`,
       entity: 'Tenant',
       entityId: tenantId,
       tenantId,
       diff: { decision: dto.decision, reason: dto.reason ?? null },
+    });
+    await this.prisma.tenantReviewEvent.create({
+      data: {
+        tenantId,
+        actorId: adminId,
+        action: approve ? 'approved' : 'rejected',
+        note: approve
+          ? 'Business application approved for lending.'
+          : dto.reason!.trim(),
+      },
     });
 
     return {
@@ -250,6 +263,17 @@ export class AdminService {
           orderBy: { createdAt: 'desc' },
           take: 100,
         },
+        reviewEvents: {
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            action: true,
+            note: true,
+            changes: true,
+            createdAt: true,
+            actor: { select: { displayName: true, role: true } },
+          },
+        },
       },
     });
     if (!tenant) throw new NotFoundException('Tenant not found');
@@ -283,11 +307,25 @@ export class AdminService {
       address: tenant.address,
       tpin: tenant.tpin,
       contactPerson: tenant.contactPerson,
+      businessDescription: tenant.businessDescription,
       tagline: tenant.tagline,
       verificationNote: tenant.verificationNote,
       bozSubmittedAt: tenant.bozSubmittedAt,
       bozFile: tenant.bozFile,
       attachments: tenant.files,
+      reviewHistory: tenant.reviewEvents.map((event) => ({
+        id: event.id,
+        action: event.action,
+        note: event.note,
+        changes: event.changes,
+        createdAt: event.createdAt,
+        actor: event.actor
+          ? { name: event.actor.displayName, role: event.actor.role }
+          : null,
+      })),
+      rejectionCount: tenant.reviewEvents.filter(
+        (event) => event.action === 'rejected',
+      ).length,
       review: {
         ...this.reviewReadiness(tenant),
         reviewedAt: tenant.verificationReviewedAt,
@@ -327,15 +365,11 @@ export class AdminService {
     type?: string | null;
     email?: string | null;
     contactPerson?: string | null;
-    bozSubmittedAt?: Date | null;
+    businessDescription?: string | null;
     ownerNrcEncrypted?: string | null;
-    bozFile?: { id: string; checksum: string } | null;
+    tpin?: string | null;
     users?: readonly unknown[];
   }) {
-    const certificateConfirmed = tenant.bozFile
-      ? tenant.bozFile.checksum !== ''
-      : false;
-
     const checks = [
       {
         key: 'name',
@@ -362,6 +396,12 @@ export class AdminService {
         blocker: 'Contact person is missing',
       },
       {
+        key: 'businessDescription',
+        label: 'Business description',
+        ok: Boolean(tenant.businessDescription?.trim()),
+        blocker: 'Business description is missing',
+      },
+      {
         key: 'owner',
         label: 'Owner account',
         ok: Boolean(tenant.users?.length),
@@ -369,21 +409,15 @@ export class AdminService {
       },
       {
         key: 'nrc',
-        label: 'Owner NRC on file',
+        label: 'Contact person NRC on file',
         ok: Boolean(tenant.ownerNrcEncrypted),
-        blocker: 'Owner NRC is missing',
+        blocker: 'Contact person NRC is missing',
       },
       {
-        key: 'submitted',
-        label: 'BOZ certificate submitted',
-        ok: Boolean(tenant.bozSubmittedAt),
-        blocker: 'BOZ certificate has not been submitted',
-      },
-      {
-        key: 'certificate',
-        label: 'Certificate confirmed in storage',
-        ok: certificateConfirmed,
-        blocker: 'A confirmed BOZ certificate is required',
+        key: 'tpin',
+        label: 'TPIN on file',
+        ok: Boolean(tenant.tpin?.trim()),
+        blocker: 'TPIN is missing',
       },
     ];
 
@@ -607,6 +641,8 @@ export class AdminService {
       incomeSource: client.incomeSource,
       kinName: client.kinName,
       kinPhone: client.kinPhone,
+      kin2Name: client.kin2Name,
+      kin2Phone: client.kin2Phone,
       profileCompletedAt: client.profileCompletedAt,
       lenders: client.lenderLinks.map((l) => ({
         id: l.tenant.id,
@@ -772,7 +808,8 @@ export class AdminService {
 
   /**
    * Direct lifecycle control (approve/reject/suspend/reactivate) — used by
-   * the tenant detail document. Requires a certificate before activation.
+   * the tenant detail document. Activation uses the same required business
+   * information checks as the review endpoint.
    */
   async setStatus(
     actorId: string,
@@ -793,9 +830,9 @@ export class AdminService {
         type: true,
         email: true,
         contactPerson: true,
-        bozSubmittedAt: true,
+        businessDescription: true,
+        tpin: true,
         ownerNrcEncrypted: true,
-        bozFile: { select: { id: true, checksum: true } },
         users: {
           where: { role: 'tenant_owner' },
           select: { id: true },
@@ -829,6 +866,15 @@ export class AdminService {
       entityId: tenantId,
       tenantId,
       diff: { from: tenant.status, to: status },
+    });
+    await this.prisma.tenantReviewEvent.create({
+      data: {
+        tenantId,
+        actorId,
+        action: status === 'active' ? 'approved' : 'status_changed',
+        note: `Account status changed from ${tenant.status.replaceAll('_', ' ')} to ${status.replaceAll('_', ' ')}.`,
+        changes: { from: tenant.status, to: status },
+      },
     });
 
     const owner = await this.prisma.user.findFirst({

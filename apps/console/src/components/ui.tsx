@@ -71,10 +71,12 @@ export function CardHead({
 
 export function Avatar({
   name,
+  imageUrl,
   tone = 'brand',
   size = 34,
 }: {
   name: string;
+  imageUrl?: string | null;
   tone?: 'brand' | 'green' | 'amber' | 'red';
   size?: number;
 }) {
@@ -91,7 +93,7 @@ export function Avatar({
       style={{ width: size, height: size }}
       className={`flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${bg} font-bold text-white`}
     >
-      <span style={{ fontSize: size * 0.32 }}>{init}</span>
+      {imageUrl ? <img src={imageUrl} alt="" className="h-full w-full rounded-full object-cover" /> : <span style={{ fontSize: size * 0.32 }}>{init}</span>}
     </div>
   );
 }

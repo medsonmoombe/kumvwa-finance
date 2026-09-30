@@ -36,6 +36,7 @@ export interface SessionUser {
   displayName: string;
   phone: string;
   role: UserRole;
+  profileImageUrl?: string | null;
 }
 
 export interface TenantBozFile {
@@ -55,6 +56,7 @@ export interface TenantInfo {
   bozSubmittedAt: string | null;
   bozFile: TenantBozFile | null;
   createdAt: string;
+  logoUrl?: string | null;
 }
 
 interface AuthState {
@@ -91,7 +93,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Only lenders have a tenant record; platform admins do not.
       if (me.data.role === 'tenant_owner' || me.data.role === 'tenant_staff') {
         const t = await api.get<TenantInfo>('/tenants/me');
-        setTenant(t.data);
+        const branding = await api.get<{ logoUrl: string | null }>('/tenants/me/branding')
+          .then((r) => r.data)
+          .catch(() => null);
+        setTenant({ ...t.data, logoUrl: branding?.logoUrl ?? null });
       } else {
         setTenant(null);
       }

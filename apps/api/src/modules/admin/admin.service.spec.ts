@@ -19,7 +19,9 @@ const READY_TENANT = {
   type: 'sacco',
   status: 'pending_verification',
   email: 'info@chilenje.zm',
+  tpin: '1000123456',
   contactPerson: 'Ms. Bwalya',
+  businessDescription: 'Community lender serving small businesses in Lusaka.',
   bozSubmittedAt: new Date('2026-09-20T00:00:00Z'),
   ownerNrcEncrypted: 'enc(245711/63/1)',
   bozFile: { id: 'f1', checksum: 'etag-123' },
@@ -44,6 +46,7 @@ function setup(
       findMany: jest.fn().mockResolvedValue([]),
     },
     user: { findFirst: jest.fn().mockResolvedValue({ id: 'owner1' }) },
+    tenantReviewEvent: { create: jest.fn().mockResolvedValue({ id: 'event1' }) },
     // Used by the borrower-document specs; harmless elsewhere.
     client: { findUnique: jest.fn().mockResolvedValue(null) },
     file: { findUnique: jest.fn().mockResolvedValue(null) },
@@ -76,7 +79,7 @@ describe('AdminService.review', () => {
     expect(notify.create).toHaveBeenCalledWith(
       'owner1',
       'verification',
-      'BOZ verification approved',
+      'Business review approved',
       expect.any(String),
       expect.anything(),
     );
@@ -98,6 +101,14 @@ describe('AdminService.review', () => {
     expect(data['verificationNote']).toBe('Certificate is unreadable');
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'tenant.verification_reject' }),
+    );
+    expect(prisma.tenantReviewEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          action: 'rejected',
+          note: 'Certificate is unreadable',
+        }),
+      }),
     );
   });
 
@@ -125,15 +136,13 @@ describe('AdminService.review', () => {
     ).rejects.toThrow(/already verified/);
   });
 
-  it('refuses to approve before a certificate was submitted', async () => {
+  it('allows approval without an optional BOZ certificate', async () => {
     const { service, prisma } = setup({
       tenant: { ...READY_TENANT, bozSubmittedAt: null },
     });
 
-    await expect(
-      service.review('admin1', 't1', { decision: 'approve' }),
-    ).rejects.toThrow(/BOZ certificate has not been submitted/);
-    expect(prisma.tenant.update).not.toHaveBeenCalled();
+    await service.review('admin1', 't1', { decision: 'approve' });
+    expect(prisma.tenant.update).toHaveBeenCalled();
   });
 
   it('404s on an unknown tenant', async () => {
@@ -144,15 +153,13 @@ describe('AdminService.review', () => {
     ).rejects.toThrow(/not found/i);
   });
 
-  it('refuses to approve when the certificate was never confirmed in storage', async () => {
+  it('allows approval when an optional certificate was never confirmed in storage', async () => {
     const { service, prisma } = setup({
       tenant: { ...READY_TENANT, bozFile: { id: 'f1', checksum: '' } },
     });
 
-    await expect(
-      service.review('admin1', 't1', { decision: 'approve' }),
-    ).rejects.toThrow(/confirmed BOZ certificate/);
-    expect(prisma.tenant.update).not.toHaveBeenCalled();
+    await service.review('admin1', 't1', { decision: 'approve' });
+    expect(prisma.tenant.update).toHaveBeenCalled();
   });
 
   it('names every missing item so the reviewer knows what to ask for', async () => {
@@ -161,14 +168,16 @@ describe('AdminService.review', () => {
         ...READY_TENANT,
         type: '',
         contactPerson: null,
+        businessDescription: null,
         ownerNrcEncrypted: null,
+        tpin: null,
       },
     });
 
     await expect(
       service.review('admin1', 't1', { decision: 'approve' }),
     ).rejects.toThrow(
-      /Business type is missing; Contact person is missing; Owner NRC is missing/,
+      /Business type is missing; Contact person is missing; Business description is missing; Contact person NRC is missing; TPIN is missing/,
     );
     expect(prisma.tenant.update).not.toHaveBeenCalled();
   });
@@ -193,7 +202,7 @@ describe('AdminService.listTenants', () => {
     );
   });
 
-  it('flags an incomplete application in the queue projection', async () => {
+  it('does not block a complete application for an optional certificate', async () => {
     const { service, prisma } = setup();
     prisma.tenant.findMany.mockResolvedValue([
       {
@@ -214,10 +223,7 @@ describe('AdminService.listTenants', () => {
 
     const [row] = await service.listTenants();
 
-    expect(row?.review).toEqual({
-      canApprove: false,
-      blockers: ['A confirmed BOZ certificate is required'],
-    });
+    expect(row?.review).toEqual({ canApprove: true, blockers: [] });
     // The storage checksum is server-side only — it must not ride along.
     expect(JSON.stringify(row)).not.toContain('checksum');
   });

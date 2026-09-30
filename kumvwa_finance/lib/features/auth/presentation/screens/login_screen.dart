@@ -121,29 +121,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Wrap(
-                      alignment: WrapAlignment.center,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 4,
-                      children: [
-                        Text(
-                          'Registering a lending institution?',
-                          style: AppText.paragraph.copyWith(color: AppColors.muted),
-                        ),
-                        GestureDetector(
-                            onTap: () => context.go('/login/lender'),
-                            child: Text(
-                              'Sign in as a lender or staff member',
-                            style: AppText.paragraph.copyWith(
-                              color: AppColors.blue500,
-                              fontWeight: FontWeight.w700,
-                            ),
+                    Center(
+                      child: GestureDetector(
+                        onTap: () => context.go('/login/lender'),
+                        child: Text(
+                          'Sign in with email instead',
+                          style: AppText.paragraph.copyWith(
+                            color: AppColors.blue500,
+                            fontWeight: FontWeight.w700,
                           ),
                         ),
-                      ],
+                      ),
                     ),
-                      const SizedBox(height: 8),
-                      Center(child: GestureDetector(onTap: () => context.go('/register/lender'), child: Text('New lending institution? Register here', style: AppText.fine.copyWith(color: AppColors.blue500, fontWeight: FontWeight.w700)))),
                     if (Env.isDev) ...[
                       const SizedBox(height: 20),
                       AppCard(

@@ -25,8 +25,8 @@ class OrgRegistrationSuccessScreen extends StatelessWidget {
               subtitle: 'Business name registered',
             ),
             SuccessCheckRow(
-              title: 'BOZ certificate',
-              subtitle: 'Submitted for review',
+              title: 'Contact identity',
+              subtitle: 'NRC captured for review',
             ),
             SuccessCheckRow(
               title: 'Platform Terms',

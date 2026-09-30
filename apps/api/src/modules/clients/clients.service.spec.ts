@@ -13,6 +13,8 @@ const completeProfile = {
   incomeBand: 'b1001_3000',
   kinName: 'Jane Tester',
   kinPhone: '0965550001',
+  kin2Name: 'John Tester',
+  kin2Phone: '0975550002',
 };
 
 describe('missingRegistrationFields', () => {
@@ -67,6 +69,8 @@ describe('missingRegistrationFields', () => {
       'incomeBand',
       'kinName',
       'kinPhone',
+      'kin2Name',
+      'kin2Phone',
     ]);
   });
 });

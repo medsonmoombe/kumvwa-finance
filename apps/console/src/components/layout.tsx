@@ -153,7 +153,7 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       <div className="space-y-1 border-t border-[#E7EAF1] p-3">
         {tenant && (
           <div className="flex items-center gap-2 rounded-[3px] border border-[#E7EAF1] bg-[#F5F6F8] px-2.5 py-2">
-            <Avatar name={tenant.name} size={24} />
+            <Avatar name={tenant.name} imageUrl={tenant.logoUrl} size={24} />
             <div className="min-w-0 flex-1">
               <b className="block truncate text-[10.5px] font-semibold text-[#0F1115]">
                 {tenant.name}
@@ -164,6 +164,12 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
               </span>
             </div>
           </div>
+        )}
+        {user && !tenant && (
+          <Link to="/admin/profile" className="flex items-center gap-2 rounded-[3px] border border-[#E7EAF1] bg-[#F5F6F8] px-2.5 py-2">
+            <Avatar name={user.displayName} imageUrl={user.profileImageUrl} size={24} />
+            <b className="min-w-0 flex-1 truncate text-[10.5px] font-semibold text-[#0F1115]">{user.displayName}</b>
+          </Link>
         )}
         <button
           onClick={async () => { await logout(); window.location.href = '/login'; }}
@@ -288,15 +294,31 @@ export function Shell() {
           </button>
 
           {/* user chip */}
-          <div className="flex min-w-0 items-center gap-2 rounded-[3px] border border-[#E7EAF1] bg-[#F5F6F8] py-1 pl-1.5 pr-2 sm:px-2.5">
-            <Avatar name={user?.displayName ?? '?'} tone="brand" size={20} />
+          <button
+            type="button"
+            onClick={() => nav(user?.role === 'platform_admin' ? '/admin/profile' : '/settings')}
+            aria-label="Open profile settings"
+            className="flex min-w-0 items-center gap-2 rounded-[3px] border border-[#E7EAF1] bg-[#F5F6F8] py-1 pl-1.5 pr-2 hover:bg-[#EEF3FD] sm:px-2.5"
+          >
+            <Avatar
+              name={user?.role === 'platform_admin'
+                  ? (user.displayName ?? '?')
+                  : (tenant?.name ?? user?.displayName ?? '?')}
+              imageUrl={user?.role === 'platform_admin'
+                  ? user.profileImageUrl
+                  : (tenant?.logoUrl ?? user?.profileImageUrl)}
+              tone="brand"
+              size={20}
+            />
             <div className="hidden min-w-0 sm:block">
-              <b className="block truncate text-[11px] leading-tight text-[#0F1115]">{user?.displayName}</b>
+              <b className="block truncate text-[11px] leading-tight text-[#0F1115]">
+                {user?.role === 'platform_admin' ? user.displayName : (tenant?.name ?? user?.displayName)}
+              </b>
               <span className="block truncate text-[9px] capitalize text-[#9AA3B2]">
                 {user?.role.replaceAll('_', ' ')}
               </span>
             </div>
-          </div>
+          </button>
         </header>
 
         {/* page content */}

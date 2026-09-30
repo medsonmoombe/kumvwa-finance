@@ -13,7 +13,7 @@ interface ClientDetail {
   id: string; name: string; nrc: string | null; phone: string; email: string | null;
   dob: string | null; address: string | null;
   employmentStatus: string | null; incomeBand: string | null; incomeSource: string | null;
-  kinName: string | null; kinPhone: string | null;
+  kinName: string | null; kinPhone: string | null; kin2Name: string | null; kin2Phone: string | null;
   nrcPhotoFileId: string | null;
   nrcBackPhotoFileId: string | null;
   lendersCount: number; joinedAt: string;
@@ -170,6 +170,10 @@ export function ClientDetailPage() {
             <Field label="Next of kin">{c.kinName ?? '—'}</Field>
             <Field label="Next of kin phone">
               {c.kinPhone ? <span className="tabular-nums">{c.kinPhone}</span> : '—'}
+            </Field>
+            <Field label="Second next of kin">{c.kin2Name ?? '—'}</Field>
+            <Field label="Second kin phone">
+              {c.kin2Phone ? <span className="tabular-nums">{c.kin2Phone}</span> : '—'}
             </Field>
             <Field label="NRC photos on file">
               {c.nrcPhotoFileId || c.nrcBackPhotoFileId ? (

@@ -10,6 +10,7 @@ import 'package:kumvwa_finance/core/utils/format.dart';
 import 'package:kumvwa_finance/core/widgets/client_dome_header.dart';
 import 'package:kumvwa_finance/core/widgets/skeleton.dart';
 import 'package:kumvwa_finance/features/auth/presentation/auth_controller.dart';
+import 'package:kumvwa_finance/features/auth/presentation/client_gate.dart';
 import 'package:kumvwa_finance/features/loans/data/loan_requests_repository.dart';
 import 'package:kumvwa_finance/features/loans/data/loans_repository.dart';
 import 'package:kumvwa_finance/features/loans/domain/loan.dart';
@@ -35,6 +36,10 @@ class _ClientLoanHistoryScreenState
     final clientId = ref.watch(authControllerProvider).session?.userId ?? '';
     final loansAsync = ref.watch(clientLoansProvider);
     final requestsAsync = ref.watch(loanRequestsByClientProvider(clientId));
+    final lenders = ref.watch(clientGateProvider).valueOrNull?.lenders ?? const [];
+    final logoByLenderId = {
+      for (final lender in lenders) lender.tenantId: lender.logoUrl,
+    };
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -89,7 +94,10 @@ class _ClientLoanHistoryScreenState
                           detail: describeApiError(e),
                           onRetry: () => ref.invalidate(clientLoansProvider),
                         ),
-                        data: (loans) => _LoansSection(loans: loans),
+                        data: (loans) => _LoansSection(
+                          loans: loans,
+                          logoByLenderId: logoByLenderId,
+                        ),
                       )
                     : requestsAsync.when(
                         loading: () => const Skeleton(width: double.infinity, height: 134, radius: 15),
@@ -98,7 +106,10 @@ class _ClientLoanHistoryScreenState
                           detail: describeApiError(e),
                           onRetry: () => ref.invalidate(loanRequestsByClientProvider(clientId)),
                         ),
-                        data: (requests) => _ApplicationsSection(requests: requests),
+                        data: (requests) => _ApplicationsSection(
+                          requests: requests,
+                          logoByLenderId: logoByLenderId,
+                        ),
                       ),
               ),
             ],
@@ -156,9 +167,10 @@ class _SegBtn extends StatelessWidget {
 }
 
 class _LoansSection extends StatelessWidget {
-  const _LoansSection({required this.loans});
+  const _LoansSection({required this.loans, required this.logoByLenderId});
 
   final List<Loan> loans;
+  final Map<String, String?> logoByLenderId;
 
   @override
   Widget build(BuildContext context) {
@@ -196,6 +208,9 @@ class _LoansSection extends StatelessWidget {
                   statusDotColor: _loanDotColor(loan.status),
                   avatarGradient: _loanGradient(loan.status),
                   avatarInitials: Fmt.initials(loan.lenderName),
+                  avatarImageUrl: loan.tenantId == null
+                      ? null
+                      : logoByLenderId[loan.tenantId!],
                   onTap: () => context.push('/c/loan/${loan.id}'),
                 ),
             ],
@@ -206,9 +221,13 @@ class _LoansSection extends StatelessWidget {
 }
 
 class _ApplicationsSection extends StatelessWidget {
-  const _ApplicationsSection({required this.requests});
+  const _ApplicationsSection({
+    required this.requests,
+    required this.logoByLenderId,
+  });
 
   final List<LoanRequest> requests;
+  final Map<String, String?> logoByLenderId;
 
   @override
   Widget build(BuildContext context) {
@@ -246,6 +265,7 @@ class _ApplicationsSection extends StatelessWidget {
                       ? const [AppColors.blue500, AppColors.blue900]
                       : const [Color(0xFFB26A00), Color(0xFF8A5000)],
                   avatarInitials: Fmt.initials(request.lenderName),
+                  avatarImageUrl: logoByLenderId[request.lenderId],
                   onTap: () => context.push('/c/request-status/${request.id}'),
                 ),
             ],

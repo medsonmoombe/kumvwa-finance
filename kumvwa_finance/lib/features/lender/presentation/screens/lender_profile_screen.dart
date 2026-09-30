@@ -8,6 +8,7 @@ import 'package:kumvwa_finance/core/theme/app_effects.dart';
 import 'package:kumvwa_finance/core/theme/app_text.dart';
 import 'package:kumvwa_finance/core/widgets/app_button.dart';
 import 'package:kumvwa_finance/core/widgets/dome_header.dart';
+import 'package:kumvwa_finance/core/widgets/profile_image_picker.dart';
 import 'package:kumvwa_finance/features/auth/presentation/auth_controller.dart';
 
 class LenderProfileScreen extends ConsumerStatefulWidget {
@@ -19,6 +20,8 @@ class LenderProfileScreen extends ConsumerStatefulWidget {
 
 class _LenderProfileScreenState extends ConsumerState<LenderProfileScreen> {
   String? _tenantStatus;
+  String? _businessDescription;
+  String? _logoUrl;
 
   @override
   void initState() {
@@ -28,8 +31,17 @@ class _LenderProfileScreenState extends ConsumerState<LenderProfileScreen> {
 
   Future<void> _loadStatus() async {
     try {
-      final response = await ref.read(apiClientProvider).getA('/tenants/me');
-      if (mounted) setState(() => _tenantStatus = (response.data as Map<String, dynamic>)['status'] as String?);
+      final api = ref.read(apiClientProvider);
+      final response = await api.getA('/tenants/me');
+      final branding = await api.getA('/tenants/me/branding');
+      if (mounted) {
+        final tenant = response.data as Map<String, dynamic>;
+        setState(() {
+          _tenantStatus = tenant['status'] as String?;
+          _businessDescription = tenant['businessDescription'] as String?;
+          _logoUrl = (branding.data as Map<String, dynamic>)['logoUrl'] as String?;
+        });
+      }
     } catch (_) {
       // The session remains usable offline; status is simply omitted until the next refresh.
     }
@@ -44,7 +56,10 @@ class _LenderProfileScreenState extends ConsumerState<LenderProfileScreen> {
     return Scaffold(
       backgroundColor: AppColors.bg,
       body: SafeArea(
-        child: ListView(
+        child: RefreshIndicator(
+          color: AppColors.blue600,
+          onRefresh: _loadStatus,
+          child: ListView(
           padding: EdgeInsets.zero,
           children: [
             // Dome scrolls with content
@@ -78,15 +93,22 @@ class _LenderProfileScreenState extends ConsumerState<LenderProfileScreen> {
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             gradient: AppGradients.brand,
-                            borderRadius:
-                                BorderRadius.circular(AppRadii.chooser),
+                            borderRadius: BorderRadius.circular(AppRadii.chooser),
                           ),
-                          child: Text(
-                            name.isNotEmpty ? name[0].toUpperCase() : 'O',
-                            style: AppText.sheetTitle.copyWith(
-                              color: Colors.white,
-                            ),
-                          ),
+                          child: _logoUrl == null
+                              ? Text(
+                                  name.isNotEmpty ? name[0].toUpperCase() : 'O',
+                                  style: AppText.sheetTitle.copyWith(color: Colors.white),
+                                )
+                              : ClipRRect(
+                                  borderRadius: BorderRadius.circular(AppRadii.chooser),
+                                  child: Image.network(
+                                    _logoUrl!,
+                                    width: 52,
+                                    height: 52,
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
                         ),
                         const SizedBox(width: 14),
                         Expanded(
@@ -118,7 +140,43 @@ class _LenderProfileScreenState extends ConsumerState<LenderProfileScreen> {
                         icon: Icons.business_rounded,
                         label: 'Role',
                         value: 'Lender',
-                        showDivider: false,
+                        showDivider:
+                            _businessDescription?.trim().isNotEmpty == true,
+                      ),
+                      if (_businessDescription?.trim().isNotEmpty == true)
+                        _InfoRow(
+                          icon: Icons.description_outlined,
+                          label: 'Business description',
+                          value: _businessDescription!,
+                          showDivider: false,
+                          multiline: true,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  _InfoSection(
+                    title: 'Personal profile',
+                    rows: [
+                      Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Row(
+                          children: [
+                            ProfileImagePicker(
+                              name: name,
+                              imageUrl: session?.profileImageUrl,
+                              uploadBasePath: '/files',
+                              size: 54,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Tap your photo to update your personal profile image.',
+                                style: AppText.paragraph.copyWith(color: AppColors.muted),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -162,6 +220,7 @@ class _LenderProfileScreenState extends ConsumerState<LenderProfileScreen> {
               ),
             ),
           ],
+        ),
         ),
       ),
     );
@@ -248,29 +307,62 @@ class _InfoRow extends StatelessWidget {
     required this.label,
     required this.value,
     this.showDivider = true,
+    this.multiline = false,
   });
 
   final IconData icon;
   final String label;
   final String value;
   final bool showDivider;
+  final bool multiline;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-          child: Row(
-            children: [
-              Icon(icon, size: 16, color: AppColors.muted),
-              const SizedBox(width: 10),
-              Text(label, style: AppText.rowSub),
-              const Spacer(),
-              Text(value, style: AppText.rowTitle),
-            ],
+        if (multiline)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 11, 14, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(icon, size: 16, color: AppColors.muted),
+                    const SizedBox(width: 10),
+                    Text(label, style: AppText.rowSub),
+                  ],
+                ),
+                const SizedBox(height: 7),
+                Padding(
+                  padding: const EdgeInsets.only(left: 26),
+                  child: Text(
+                    value,
+                    style: AppText.paragraph.copyWith(color: AppColors.ink),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: AppColors.muted),
+                const SizedBox(width: 10),
+                Text(label, style: AppText.rowSub),
+                const Spacer(),
+                Flexible(
+                  child: Text(
+                    value,
+                    textAlign: TextAlign.right,
+                    style: AppText.rowTitle,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
         if (showDivider)
           const Divider(height: 1, indent: 14, color: AppColors.line2),
       ],

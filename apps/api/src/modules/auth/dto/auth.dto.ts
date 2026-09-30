@@ -7,6 +7,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
@@ -74,22 +75,39 @@ export class RegisterTenantDto {
   @MaxLength(200)
   address?: string;
 
-  @ApiProperty({ required: false, example: '1000123456' })
-  @IsOptional()
+  @ApiProperty({ example: '1000123456' })
   @IsString()
+  @IsNotEmpty({ message: 'TPIN is required' })
   @MaxLength(20)
-  tpin?: string;
+  tpin!: string;
 
   /**
    * The human Kumvwa contacts about this business. Required: the reviewer
-   * checks this person against the BOZ certificate, and an approval without a
-   * named contact is not a reviewable application.
+   * reviews this person as the accountable business contact. An approval
+   * without a named contact is not a reviewable application.
    */
   @ApiProperty({ example: 'Ms. Bwalya' })
   @IsString()
   @IsNotEmpty({ message: 'Contact person is required' })
   @MaxLength(120)
   contactPerson!: string;
+
+  @ApiProperty({
+    example: 'Community SACCO providing short-term working-capital loans in Lusaka.',
+  })
+  @IsString()
+  @IsNotEmpty({ message: 'Business description is required' })
+  @MinLength(20, { message: 'Business description must be at least 20 characters' })
+  @MaxLength(1000)
+  businessDescription!: string;
+
+  /** Identity number for the named contact person. */
+  @ApiProperty({ example: '245711/63/1' })
+  @IsString()
+  @Matches(/^\d{6}\/\d{2}\/\d$/, {
+    message: 'Enter a valid contact person NRC, e.g. 245711/63/1',
+  })
+  ownerNrc!: string;
 
   /** The platform terms version shown and agreed to in the UI. */
   @ApiProperty({ example: 1, description: 'Version of the platform terms accepted' })

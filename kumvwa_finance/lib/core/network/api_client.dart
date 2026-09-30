@@ -205,6 +205,8 @@ class ApiClient {
       refreshToken: refresh,
       profileComplete: user['profileComplete'] as bool? ?? true,
       profilePercent: user['profilePercent'] as int? ?? 100,
+      profileFileId: user['profileFileId'] as String?,
+      profileImageUrl: user['profileImageUrl'] as String?,
     );
   }
 

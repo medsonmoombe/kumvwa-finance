@@ -57,9 +57,9 @@ type Step = 1 | 2 | 3;
 const BANNERS: Record<Step, { heading: React.ReactNode; sub: string; footerLabel: string; footerBody: string }> = {
   1: {
     heading: <>Three steps.<br /><em className="not-italic text-[#7FE8AC]">Five minutes.</em></>,
-    sub: 'Register your business and upload your Bank of Zambia certificate. Most businesses are approved within two working days.',
+    sub: 'Register your business for platform review. Most businesses are approved within two working days.',
     footerLabel: 'Before you start',
-    footerBody: 'Have your BOZ registration certificate ready as a PDF or photo.',
+    footerBody: 'Have your TPIN and the contact person\'s NRC ready.',
   },
   2: {
     heading: <>Your account,<br /><em className="not-italic text-[#7FE8AC]">your credentials.</em></>,
@@ -68,8 +68,8 @@ const BANNERS: Record<Step, { heading: React.ReactNode; sub: string; footerLabel
     footerBody: 'Each console account maps to exactly one verified email address.',
   },
   3: {
-    heading: <>The last gate:<br /><em className="not-italic text-[#7FE8AC]">your license.</em></>,
-    sub: "Upload your Bank of Zambia registration certificate. Our team reviews it, and your account goes live the moment it's approved.",
+    heading: <>The last step:<br /><em className="not-italic text-[#7FE8AC]">your identity.</em></>,
+    sub: 'Confirm the responsible contact person. A BOZ certificate is optional supporting documentation.',
     footerLabel: 'What happens next',
     footerBody: "Review takes 1–2 working days. You'll get a notification the moment you're approved.",
   },
@@ -93,6 +93,7 @@ export function RegisterPage() {
   const [rName, setRName] = useState('');
   const [rType, setRType] = useState('sacco');
   const [rContact, setRContact] = useState('');
+  const [rDescription, setRDescription] = useState('');
   const [rPhone, setRPhone] = useState('');
   const [rAddress, setRAddress] = useState('');
   const [rTpin, setRTpin] = useState('');
@@ -134,6 +135,10 @@ export function RegisterPage() {
       ...(rName.trim() ? [] : ['Business name']),
       ...(rType ? [] : ['Business type']),
       ...(rContact.trim() ? [] : ['Contact person']),
+      ...(rDescription.trim().length >= 20
+        ? []
+        : ['Business description (at least 20 characters)']),
+      ...(rTpin.trim() ? [] : ['TPIN']),
       ...(!rPhone
         ? ['Phone number']
         : phoneOk
@@ -148,7 +153,6 @@ export function RegisterPage() {
         : ['Both password fields must match']),
     ],
     3: [
-      ...(rFile ? [] : ['Attach the Bank of Zambia registration certificate']),
       ...(!rNrc
         ? ['Owner NRC']
         : nrcOk
@@ -164,7 +168,7 @@ export function RegisterPage() {
   async function submit() {
     setTouched((t) => ({ ...t, file: true, nrc: true, agreed: true }));
     // The button is disabled while anything is missing; this is the belt to its braces.
-    if (missing[3].length > 0 || !rFile) return;
+    if (missing[3].length > 0) return;
     setBusy(true); setError('');
     try {
       const reg = await api.post('/auth/register/tenant', {
@@ -174,8 +178,10 @@ export function RegisterPage() {
         businessName: rName.trim(),
         businessType: rType,
         contactPerson: rContact.trim(),
+        businessDescription: rDescription.trim(),
         address: rAddress.trim() || undefined,
-        tpin: rTpin.trim() || undefined,
+        tpin: rTpin.trim(),
+        ownerNrc: rNrc,
         acceptedTermsVersion: terms?.version,
       });
       const d = reg.data as { accessToken: string; refreshToken: string };
@@ -184,13 +190,15 @@ export function RegisterPage() {
       // The account exists now, so the certificate can finally be attached:
       // presign → PUT → confirm → submit for review, all with the new token.
       let notice = '';
-      try {
-        const fileId = await uploadFile(rFile, 'boz_certificate');
-        await api.post('/tenants/me/verification', { fileId, ownerNrc: rNrc });
-      } catch (e) {
-        notice =
-          `Your business account was created, but the BOZ certificate was not attached: ` +
-          `${uploadErrorMessage(e)} Attach it on the verification screen to finish.`;
+      if (rFile) {
+        try {
+          const fileId = await uploadFile(rFile, 'boz_certificate');
+          await api.post('/tenants/me/verification', { fileId, ownerNrc: rNrc });
+        } catch (e) {
+          notice =
+            `Your business account was created, but the optional BOZ certificate was not attached: ` +
+            `${uploadErrorMessage(e)} You can add it later from the verification screen.`;
+        }
       }
 
       await refreshSession();
@@ -207,7 +215,7 @@ export function RegisterPage() {
         <>
           <h2 className="mt-5 font-display text-[20px] font-bold tracking-tight text-ink">Business details</h2>
           <p className="mb-4 mt-1 text-[12px] text-[#888]">Tell us who is lending</p>
-          <AuthStepper steps={['Business', 'Account', 'BOZ upload']} current={0} />
+          <AuthStepper steps={['Business', 'Account', 'Identity']} current={0} />
 
           <div className="mb-3">
             <label className={lbl}>Business name <em className="not-italic text-[#C62828]">*</em></label>
@@ -231,6 +239,17 @@ export function RegisterPage() {
             <FieldError message={show('contact') && !rContact.trim() ? 'The person we contact about this business' : ''} />
           </div>
           <div className="mb-3">
+            <label className={lbl}>Business description <em className="not-italic text-[#C62828]">*</em></label>
+            <textarea
+              className={[inp, 'h-16 resize-y py-2'].join(' ')}
+              value={rDescription}
+              onChange={(e) => setRDescription(e.target.value.slice(0, 1000))}
+              onBlur={() => setTouched((t) => ({ ...t, description: true }))}
+              placeholder="Describe your lending business, clients served, and loan products."
+            />
+            <FieldError message={show('description') && rDescription.trim().length < 20 ? 'Enter at least 20 characters about the business' : ''} />
+          </div>
+          <div className="mb-3">
             <label className={lbl}>Phone number <em className="not-italic text-[#C62828]">*</em></label>
             <input className={`${inp} tabular-nums${show('phone') && !phoneOk ? bad : ''}`} type="tel" inputMode="numeric"
               value={rPhone} onChange={(e) => setRPhone(e.target.value.replace(/[\s\-()]/g, ''))}
@@ -239,7 +258,7 @@ export function RegisterPage() {
           </div>
           <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div>
-              <label className={lbl}>TPIN <span className="font-normal text-[#A6ADC0]">optional</span></label>
+              <label className={lbl}>TPIN <em className="not-italic text-[#C62828]">*</em></label>
               <input className={`${inp} tabular-nums`} value={rTpin}
                 onChange={(e) => setRTpin(e.target.value.replace(/[^\dA-Za-z]/g, '').slice(0, 20))}
                 placeholder="1000123456" />
@@ -313,12 +332,12 @@ export function RegisterPage() {
         </>
       )}
 
-      {/* ══ STEP 3 — BOZ ══ */}
+      {/* ══ STEP 3 — contact identity and optional evidence ══ */}
       {step === 3 && (
         <>
-          <h2 className="mt-5 font-display text-[20px] font-bold tracking-tight text-ink">BOZ certificate</h2>
-          <p className="mb-4 mt-1 text-[12px] text-[#888]">Proof of your lending license</p>
-          <AuthStepper steps={['Business', 'Account', 'BOZ upload']} current={2} />
+          <h2 className="mt-5 font-display text-[20px] font-bold tracking-tight text-ink">Contact identity</h2>
+          <p className="mb-4 mt-1 text-[12px] text-[#888]">Confirm the responsible contact person</p>
+          <AuthStepper steps={['Business', 'Account', 'Identity']} current={2} />
 
           <label className={`mb-3 flex cursor-pointer flex-col items-center rounded-[3px] border-[1.5px] border-dashed px-4 py-3.5 text-center hover:border-[#1A4FBF] ${
             rFile
@@ -336,7 +355,7 @@ export function RegisterPage() {
                 </>
               : <>
                   <FiUploadCloud size={20} className="text-[#1A4FBF]" />
-                  <b className="mt-1 block text-[11.5px] text-ink">Attach BOZ registration certificate</b>
+                  <b className="mt-1 block text-[11.5px] text-ink">Attach BOZ registration certificate <span className="font-normal text-[#888]">(optional)</span></b>
                   <span className="text-[9.5px] text-[#888]">PDF, JPG or PNG · max {MAX_UPLOAD_MB}MB</span>
                 </>}
             <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
@@ -350,7 +369,7 @@ export function RegisterPage() {
                 setTouched((t) => ({ ...t, file: true }));
               }} />
           </label>
-          <FieldError message={rFileError || (show('file') && !rFile ? 'Attach the certificate to continue' : '')} />
+          <FieldError message={rFileError} />
 
           <div className="mb-3">
             <label className={lbl}>Owner NRC <em className="not-italic text-[#C62828]">*</em></label>
@@ -360,7 +379,7 @@ export function RegisterPage() {
               onBlur={() => setTouched((t) => ({ ...t, nrc: true }))}
               placeholder="245711/63/1" />
             <FieldError message={show('nrc') ? nrcError(rNrc) : ''} />
-            <p className="mt-1 text-[9.5px] text-[#888]">The reviewer checks this number against the certificate.</p>
+            <p className="mt-1 text-[9.5px] text-[#888]">Required for the person responsible for this business.</p>
           </div>
 
           <div className="relative mb-2 max-h-[110px] overflow-hidden rounded-[3px] border border-[#D9DDE3] bg-[#F5F6F8] p-3">
@@ -392,7 +411,7 @@ export function RegisterPage() {
 
           <MissingList items={missing[3]} />
           <button className={btn} disabled={busy || missing[3].length > 0} onClick={submit}>
-            {busy ? 'Registering & attaching certificate…' : 'Submit for Verification'}{' '}
+            {busy ? 'Registering…' : 'Submit for Verification'}{' '}
             {!busy && <FiArrowRight size={13} />}
           </button>
           <p className="mt-3 text-center text-[11px] text-[#888]">
