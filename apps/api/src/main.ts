@@ -48,6 +48,17 @@ async function bootstrap(): Promise<void> {
   });
   app.useLogger(app.get(Logger));
 
+  // The boot guard allows sandbox in prod only through the explicit opt-in
+  // flag, so say so loudly in the deploy logs — a simulated rail must never
+  // be invisible while real borrowers press "Pay".
+  if (env.PAYMENTS_ALLOW_SANDBOX_IN_PROD) {
+    app
+      .get(Logger)
+      .warn(
+        'PAYMENTS: running the SANDBOX rail in prod — every charge approves without moving money. Set PAYMENTS_DRIVER=live with real provider credentials before taking real payments.',
+      );
+  }
+
   const isProd = env.NODE_ENV === 'prod';
   app.use(
     helmet({

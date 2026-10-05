@@ -209,6 +209,41 @@ describe('loadEnv', () => {
     ).toThrow(/PAYMENTS_DRIVER/);
   });
 
+  // The launch-phase escape hatch: sandbox in prod is allowed ONLY through the
+  // explicit flag, so an accidental default can never boot a simulated rail.
+  it('boots sandbox in prod only through the explicit opt-in flag', () => {
+    const env = loadEnv({
+      ...prodBase,
+      PAYMENTS_DRIVER: 'sandbox',
+      PAYMENTS_ALLOW_SANDBOX_IN_PROD: 'true',
+    });
+    expect(env.PAYMENTS_DRIVER).toBe('sandbox');
+    expect(env.PAYMENTS_ALLOW_SANDBOX_IN_PROD).toBe(true);
+  });
+
+  it('treats any other opt-in value as unset', () => {
+    expect(() =>
+      loadEnv({
+        ...prodBase,
+        PAYMENTS_DRIVER: 'sandbox',
+        PAYMENTS_ALLOW_SANDBOX_IN_PROD: 'yes',
+      }),
+    ).toThrow(/PAYMENTS_DRIVER/);
+  });
+
+  // A forgeable "payment succeeded" callback is a bug in every mode, so the
+  // flag must not waive the webhook-secret rule along with the driver rule.
+  it('does not waive the dev webhook secret when opted in', () => {
+    expect(() =>
+      loadEnv({
+        ...prodBase,
+        PAYMENTS_DRIVER: 'sandbox',
+        PAYMENTS_ALLOW_SANDBOX_IN_PROD: 'true',
+        PAYMENTS_WEBHOOK_SECRET: 'dev-only-payments-webhook-secret',
+      }),
+    ).toThrow(/PAYMENTS_WEBHOOK_SECRET/);
+  });
+
   it('refuses the shipped dev webhook secret in prod', () => {
     expect(() =>
       loadEnv({
@@ -220,5 +255,6 @@ describe('loadEnv', () => {
 
   it('keeps sandbox payments working in dev', () => {
     expect(loadEnv(base).PAYMENTS_DRIVER).toBe('sandbox');
+    expect(loadEnv(base).PAYMENTS_ALLOW_SANDBOX_IN_PROD).toBe(false);
   });
 });

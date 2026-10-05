@@ -93,6 +93,18 @@ const envSchema = z.object({
    * credentials are wired. Prod refuses to boot in sandbox.
    */
   PAYMENTS_DRIVER: z.enum(['sandbox', 'live']).default('sandbox'),
+  /**
+   * Explicit opt-out of the sandbox-in-prod boot guard. Set it ONLY for a
+   * launch/testing deployment: the sandbox rail approves every charge without
+   * moving money, so a real borrower would be reported as paid while nothing
+   * is collected. A real PAYMENTS_WEBHOOK_SECRET is still required even when
+   * this is set — forged "payment succeeded" callbacks are a problem in every
+   * mode, not just live.
+   */
+  PAYMENTS_ALLOW_SANDBOX_IN_PROD: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
   /** HMAC secret used to verify inbound payment webhooks. */
   PAYMENTS_WEBHOOK_SECRET: z
     .string()
@@ -231,13 +243,20 @@ export function assertDeployableStorage(env: Env): void {
  * it would report charges as succeeded without moving any money. And a live
  * deployment must not keep the shipped dev webhook secret, or anyone could
  * forge a "payment succeeded" callback.
+ *
+ * The one deliberate exception: [PAYMENTS_ALLOW_SANDBOX_IN_PROD] opts a
+ * launch/testing deployment into the sandbox knowingly. The webhook-secret
+ * rule is NOT waived by it — a forgeable callback is a bug in every mode.
  */
 export function assertDeployablePayments(env: Env): void {
   if (env.NODE_ENV !== 'prod') return;
   const problems: string[] = [];
-  if (env.PAYMENTS_DRIVER === 'sandbox') {
+  if (
+    env.PAYMENTS_DRIVER === 'sandbox' &&
+    !env.PAYMENTS_ALLOW_SANDBOX_IN_PROD
+  ) {
     problems.push(
-      'PAYMENTS_DRIVER=sandbox in prod — the sandbox approves charges without moving money. Set PAYMENTS_DRIVER=live and wire the provider credentials.',
+      'PAYMENTS_DRIVER=sandbox in prod — the sandbox approves charges without moving money. Set PAYMENTS_DRIVER=live and wire the provider credentials, or set PAYMENTS_ALLOW_SANDBOX_IN_PROD=true to accept the simulation knowingly.',
     );
   }
   if (env.PAYMENTS_WEBHOOK_SECRET === 'dev-only-payments-webhook-secret') {
