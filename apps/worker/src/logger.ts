@@ -10,5 +10,6 @@ function emit(level: string, meta: Meta, msg?: string): void {
 
 export const logger = {
   info: (meta: Meta, msg?: string): void => emit('INFO', meta, msg),
+  warn: (meta: Meta, msg?: string): void => emit('WARN', meta, msg),
   error: (meta: Meta, msg?: string): void => emit('ERROR', meta, msg),
 };

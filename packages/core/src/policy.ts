@@ -73,6 +73,18 @@ export const DEFAULT_CREDIT_POLICY: CreditPolicy = {
   rules: { maxActiveLoans: 1, blockIfOverdue: true, cooldownDaysAfterDefault: 90 },
 };
 
+/**
+ * Tiers in ascending rung order.
+ *
+ * Everything that depends on "the top rung" or "the entry rung" must use this,
+ * never raw array order: a policy is stored as JSON by a tenant and its tiers
+ * arrive in whatever order they were typed, so `tiers[tiers.length - 1]` is not
+ * the top tier.
+ */
+export function orderedTiers(p: CreditPolicy): CreditTier[] {
+  return [...p.tiers].sort((a, b) => a.clearedFrom - b.clearedFrom);
+}
+
 function validatePolicy(p: CreditPolicy): void {
   if (!Array.isArray(p.tiers) || p.tiers.length === 0) {
     throw new Error('Policy needs at least one tier');
@@ -93,10 +105,21 @@ function validatePolicy(p: CreditPolicy): void {
   }
   // Rungs must climb strictly — a duplicate clearedFrom makes "reached"
   // ambiguous and the banner's next-rung copy wrong.
-  const sorted = [...p.tiers].sort((a, b) => a.clearedFrom - b.clearedFrom);
+  const sorted = orderedTiers(p);
   for (let i = 1; i < sorted.length; i++) {
     if (sorted[i]!.clearedFrom <= sorted[i - 1]!.clearedFrom) {
       throw new Error('clearedFrom must strictly increase');
+    }
+    // The whole promise of the ladder is that clearing loans raises your
+    // limit. Without this a policy could reward a repayment history with a
+    // smaller limit, and `ceiling` would be reached by the wrong rung.
+    if (sorted[i]!.limitKwacha <= sorted[i - 1]!.limitKwacha) {
+      throw new Error('limitKwacha must strictly increase');
+    }
+    // Term may legitimately repeat across rungs, but never shrink: a longer
+    // history must never buy a shorter maximum term.
+    if (sorted[i]!.maxTermMonths < sorted[i - 1]!.maxTermMonths) {
+      throw new Error('maxTermMonths must not decrease');
     }
   }
   const r = p.rules;
@@ -118,7 +141,12 @@ export function resolveCreditLimit(
   now: Date = new Date(),
 ): CreditResolution {
   validatePolicy(policy);
-  const ceiling = policy.tiers[policy.tiers.length - 1]!.limitKwacha;
+  const tiers = orderedTiers(policy);
+  const top = tiers[tiers.length - 1]!;
+  // validatePolicy guarantees limitKwacha increases, so the top rung is the
+  // maximum — but take the max explicitly so this stays correct if the rule is
+  // ever relaxed to allow flat rungs.
+  const ceiling = Math.max(...tiers.map((t) => t.limitKwacha));
 
   if (stats.overdueCount > 0 && policy.rules.blockIfOverdue) {
     return {
@@ -155,17 +183,14 @@ export function resolveCreditLimit(
     };
   }
 
+  // Rungs at or below the borrower's cleared count, highest first. clearedFrom
+  // is validated non-negative, so this always matches at least the entry rung.
   const reached =
-    [...policy.tiers]
-      .sort((a, b) => b.clearedFrom - a.clearedFrom)
-      .find((t) => stats.clearedCount >= t.clearedFrom) ?? policy.tiers[0]!;
+    [...tiers].reverse().find((t) => stats.clearedCount >= t.clearedFrom) ?? tiers[0]!;
 
   // The next rung strictly ABOVE the borrower's current cleared count — the
   // home "grow your limit" hero reads this straight off the resolution.
-  const next =
-    [...policy.tiers]
-      .sort((a, b) => a.clearedFrom - b.clearedFrom)
-      .find((t) => t.clearedFrom > stats.clearedCount) ?? null;
+  const next = tiers.find((t) => t.clearedFrom > stats.clearedCount) ?? null;
   const nextTier = next
     ? {
         label: next.label,
@@ -193,7 +218,7 @@ export function resolveCreditLimit(
     return {
       limitKwacha: limit,
       tier: 'manual override',
-      maxTermMonths: policy.tiers[policy.tiers.length - 1]!.maxTermMonths,
+      maxTermMonths: top.maxTermMonths,
       blockedReason:
         stats.pendingRequestCount > 0
           ? 'You have an application under review'

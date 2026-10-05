@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:kumvwa_finance/core/theme/app_colors.dart';
 import 'package:kumvwa_finance/core/theme/app_effects.dart';
 import 'package:kumvwa_finance/core/theme/app_text.dart';
 import 'package:kumvwa_finance/core/utils/format.dart';
 import 'package:kumvwa_finance/core/widgets/client_dome_header.dart';
+import 'package:kumvwa_finance/core/widgets/danger_action_tile.dart';
 import 'package:kumvwa_finance/core/widgets/profile_image_picker.dart';
 import 'package:kumvwa_finance/features/auth/presentation/auth_controller.dart';
 import 'package:kumvwa_finance/features/loans/data/loans_repository.dart';
@@ -83,20 +85,41 @@ class ClientProfileScreen extends ConsumerWidget {
                     title: 'Account',
                     items: [
                       _SectionItem(icon: Icons.phone_rounded, label: 'Phone', value: phone),
-                      _SectionItem(icon: Icons.person_outline_rounded, label: 'Role', value: 'Borrower', showDivider: false),
+                      const _SectionItem(icon: Icons.person_outline_rounded, label: 'Role', value: 'Borrower', showDivider: false),
                     ],
                   ),
                   const SizedBox(height: 12),
                   _Section(
                     title: 'More',
                     items: [
-                      _SectionItem(icon: Icons.people_outline_rounded, label: 'My lenders', onTap: () => _soon(context, 'My lenders')),
-                      _SectionItem(icon: Icons.description_outlined, label: 'Terms of Service', onTap: () => _soon(context, 'Terms of Service')),
-                      _SectionItem(icon: Icons.privacy_tip_outlined, label: 'Privacy Policy', onTap: () => _soon(context, 'Privacy Policy'), showDivider: false),
+                      // Receipts live here as well as on the loan screens: this
+                      // is where a borrower goes when they want "what have I
+                      // paid", not "which loan is it going against".
+                      _SectionItem(
+                        icon: Icons.receipt_long_outlined,
+                        label: 'Payment receipts',
+                        onTap: () => context.push('/c/payments'),
+                      ),
+                      // Platform legal documents are lender-facing for now —
+                      // they live on the lender profile, not here.
+                      _SectionItem(
+                        icon: Icons.people_outline_rounded,
+                        label: 'My lenders',
+                        onTap: () => _soon(context, 'My lenders'),
+                        showDivider: false,
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 20),
-                  _SignOutButton(ref: ref),
+                  const SizedBox(height: 24),
+                  // Its own block, clearly destructive — not another row in
+                  // the list above.
+                  DangerActionTile(
+                    label: 'Sign out',
+                    description: 'You will need your phone number and password to sign back in.',
+                    onConfirm: () async {
+                      await ref.read(authControllerProvider.notifier).logout();
+                    },
+                  ),
                   const SizedBox(height: 20),
                   Center(
                     child: FutureBuilder<PackageInfo>(
@@ -245,70 +268,6 @@ class _SectionItem extends StatelessWidget {
         if (showDivider)
           const Divider(height: 1, indent: 14, color: AppColors.line2),
       ],
-    );
-  }
-}
-
-class _SignOutButton extends ConsumerWidget {
-  const _SignOutButton({required this.ref});
-
-  final WidgetRef ref;
-
-  @override
-  Widget build(BuildContext context, WidgetRef widgetRef) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () async {
-          final ok = await showDialog<bool>(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadii.sheet),
-              ),
-              title: const Text('Sign out?'),
-              content: const Text(
-                'You will need to sign in again to access your account.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: const Text('Cancel'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  style: TextButton.styleFrom(
-                    foregroundColor: AppColors.red,
-                  ),
-                  child: const Text('Sign Out'),
-                ),
-              ],
-            ),
-          );
-          if (ok == true) {
-            await widgetRef.read(authControllerProvider.notifier).logout();
-          }
-        },
-        borderRadius: BorderRadius.circular(AppRadii.card),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-          decoration: BoxDecoration(
-            color: AppColors.red50,
-            borderRadius: BorderRadius.circular(AppRadii.card),
-            border: Border.all(color: AppColors.redLine),
-          ),
-          child: Row(
-            children: [
-              const Icon(Icons.logout_rounded, size: 17, color: AppColors.red),
-              const SizedBox(width: 10),
-              Text(
-                'Sign Out',
-                style: AppText.rowTitle.copyWith(color: AppColors.redInk),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

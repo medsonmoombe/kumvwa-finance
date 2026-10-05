@@ -38,6 +38,13 @@ abstract class AuthRepository {
   Future<UserSession> redeemLenderAccessCode(String code);
 
   Future<void> logout();
+
+  /// Re-reads `/auth/me` for a fresh presigned profile-image URL.
+  ///
+  /// The URL is a short-lived signature, not a permanent address, so an avatar
+  /// left on screen long enough will start failing and fall back to initials.
+  /// Re-fetching mints a new one. Returns null when not signed in.
+  Future<UserSession?> refreshProfileImage();
 }
 
 // ---------- MOCK — swap for ApiAuthRepository when the backend exists ----------
@@ -134,12 +141,38 @@ class MockAuthRepository implements AuthRepository {
 
   @override
   Future<void> logout() => _tokenStore.clear();
+
+  @override
+  Future<UserSession?> refreshProfileImage() async => null;
 }
 
 // ---------- API-backed implementation ----------
 
 /// Real backend auth via `/auth/login`, `/auth/refresh`, `/auth/me` and
 /// `/auth/logout`. Tokens live in [ApiClient]; [TokenStore] persists them.
+/// Maps the `/auth/me` projection onto the session the app runs on.
+///
+/// Shared by sign-in, cold-start restore and profile-image refresh so the three
+/// can never drift on which fields they carry.
+UserSession sessionFromUser(
+  Map<String, dynamic> user, {
+  required String token,
+  String? refreshToken,
+}) {
+  return UserSession(
+    token: token,
+    userId: user['userId'] as String? ?? '',
+    displayName: user['displayName'] as String? ?? '',
+    phone: user['phone'] as String? ?? '',
+    role: toAppRole(user['role'] as String? ?? 'client'),
+    refreshToken: refreshToken,
+    profileComplete: user['profileComplete'] as bool? ?? true,
+    profilePercent: user['profilePercent'] as int? ?? 100,
+    profileFileId: user['profileFileId'] as String?,
+    profileImageUrl: user['profileImageUrl'] as String?,
+  );
+}
+
 class ApiAuthRepository implements AuthRepository {
   ApiAuthRepository({required this.client, required this.tokenStore});
 
@@ -157,17 +190,10 @@ class ApiAuthRepository implements AuthRepository {
     try {
       final res = await client.getA('/auth/me');
       final user = res.data as Map<String, dynamic>;
-      final session = UserSession(
+      final session = sessionFromUser(
+        user,
         token: client.accessToken ?? access,
-        userId: user['userId'] as String? ?? '',
-        displayName: user['displayName'] as String? ?? '',
-        phone: user['phone'] as String? ?? '',
-        role: toAppRole(user['role'] as String? ?? 'client'),
         refreshToken: client.refreshToken,
-        profileComplete: user['profileComplete'] as bool? ?? true,
-        profilePercent: user['profilePercent'] as int? ?? 100,
-        profileFileId: user['profileFileId'] as String?,
-        profileImageUrl: user['profileImageUrl'] as String?,
       );
       await tokenStore.saveSession(session);
       return session;
@@ -262,6 +288,24 @@ class ApiAuthRepository implements AuthRepository {
     }
     client.clearTokens();
     await tokenStore.clear();
+  }
+
+  @override
+  Future<UserSession?> refreshProfileImage() async {
+    final token = client.accessToken;
+    if (token == null || token.isEmpty) return null;
+    try {
+      final res = await client.getA('/auth/me');
+      final session = sessionFromUser(
+        res.data as Map<String, dynamic>,
+        token: client.accessToken ?? token,
+        refreshToken: client.refreshToken,
+      );
+      // The URL is deliberately not persisted, so this only lives in memory.
+      return session;
+    } catch (_) {
+      return null;
+    }
   }
 }
 

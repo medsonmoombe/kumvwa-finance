@@ -140,6 +140,7 @@ export function AuditPage() {
       <AppTable
         columns={cols}
         rows={events}
+        searchKeys={['actor', 'actorRole', 'action', 'resource', 'resourceId', 'severity', 'tenantName', 'ip']}
         filters={FILTERS}
         activeFilter={filter}
         onFilterChange={(v) => { setFilter(v); load(v); }}

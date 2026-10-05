@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { FiBell, FiCheck } from 'react-icons/fi';
 
 import { ErrorBox } from '../../components/ui';
-import { PageActionBar, Pill } from '../../components/kit';
+import { PageActionBar, Pill, SearchInput, rowMatches } from '../../components/kit';
 import { api, apiError } from '../../lib/api';
 import { date } from '../../lib/format';
 
@@ -24,11 +24,14 @@ const TYPE_COLOR: Record<string, string> = {
   system: '#6B7280',
 };
 
+const SEARCH_KEYS = ['title', 'body', 'type'];
+
 export function NotificationsPage() {
   const [items, setItems] = useState<NotificationRow[] | null>(null);
   const [unread, setUnread] = useState(0);
   const [error, setError] = useState('');
   const [markingAll, setMarkingAll] = useState(false);
+  const [q, setQ] = useState('');
 
   const load = useCallback(() => {
     setError('');
@@ -38,6 +41,9 @@ export function NotificationsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // The API returns the most recent 50 with no `q`, so filtering happens here.
+  const visible = items?.filter((n) => rowMatches(n, SEARCH_KEYS, q)) ?? null;
 
   async function markRead(id: string) {
     await api.post(`/notifications/${id}/read`).catch(() => {});
@@ -61,18 +67,21 @@ export function NotificationsPage() {
         title="Notifications"
         sub={unread > 0 ? `${unread} unread` : 'All caught up'}
         actions={
-          unread > 0 ? (
-            <Pill tone="ghost" onClick={() => void markAllRead()} disabled={markingAll}>
-              <FiCheck size={11} /> {markingAll ? 'Marking…' : 'Mark all read'}
-            </Pill>
-          ) : undefined
+          <>
+            <SearchInput value={q} onChange={setQ} placeholder="Search notifications" className="w-[180px]" />
+            {unread > 0 && (
+              <Pill tone="ghost" onClick={() => void markAllRead()} disabled={markingAll}>
+                <FiCheck size={11} /> {markingAll ? 'Marking…' : 'Mark all read'}
+              </Pill>
+            )}
+          </>
         }
       />
 
       {error && <div className="mb-3"><ErrorBox message={error} /></div>}
 
       <div className="overflow-hidden rounded-card border border-line bg-white">
-        {!items ? (
+        {!visible ? (
           <div className="divide-y divide-line-2">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="flex gap-3 px-4 py-3.5">
@@ -84,14 +93,16 @@ export function NotificationsPage() {
               </div>
             ))}
           </div>
-        ) : items.length === 0 ? (
+        ) : visible.length === 0 ? (
           <div className="flex flex-col items-center gap-3 py-16 text-ink-muted">
             <FiBell size={28} className="opacity-30" />
-            <p className="text-[12px]">No notifications yet</p>
+            <p className="text-[12px]">
+              {q.trim() ? 'No notifications match your search' : 'No notifications yet'}
+            </p>
           </div>
         ) : (
           <div className="divide-y divide-line-2">
-            {items.map((n) => (
+            {visible.map((n) => (
               <div
                 key={n.id}
                 onClick={() => { if (!n.readAt) void markRead(n.id); }}

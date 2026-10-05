@@ -8,7 +8,7 @@ import {
   PageHeadSkeleton, StatBandSkeleton,
   CHART_COLORS, PageActionBar, StatBand, baseBarOpts,
 } from '../../components/kit';
-import { api } from '../../lib/api';
+import { api, apiError, downloadFile } from '../../lib/api';
 import { money } from '../../lib/format';
 
 interface Month { month: string; disbursedMinor: string; collectedMinor: string }
@@ -29,6 +29,8 @@ export function ReportsPage() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [par, setPar] = useState<Par | null>(null);
   const [error, setError] = useState('');
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
 
   const barRef = useRef<HTMLCanvasElement>(null);
   const trendRef = useRef<HTMLCanvasElement>(null);
@@ -46,6 +48,24 @@ export function ReportsPage() {
 
   const hasFlow = months ? monthsHaveData(months) : false;
   const hasPar = par ? bucketsHaveData(par) : false;
+
+  /**
+   * Goes through axios rather than an `<a href>`: the access token lives in
+   * memory and is attached by the request interceptor, so a bare navigation
+   * would reach the permission-guarded `/reports/loans.csv` unauthenticated.
+   */
+  const exportCsv = async () => {
+    if (exporting) return;
+    setExporting(true);
+    setExportError('');
+    try {
+      await downloadFile('/reports/loans.csv', 'kumvwa-loans.csv');
+    } catch (e) {
+      setExportError(apiError(e));
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // grouped bars — disbursed vs collected
   useEffect(() => {
@@ -173,14 +193,22 @@ export function ReportsPage() {
         title="Reports"
         sub="Portfolio performance and risk, updated live"
         actions={
-          <a
-            href={`${api.defaults.baseURL}/reports/loans.csv`}
-            className="inline-flex h-[30px] items-center rounded-[3px] border border-brand-600 px-3.5 text-[10.5px] font-extrabold uppercase tracking-wide text-brand-600 hover:bg-brand-50"
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={exporting}
+            className="inline-flex h-[30px] items-center rounded-[3px] border border-brand-600 px-3.5 text-[10.5px] font-extrabold uppercase tracking-wide text-brand-600 hover:bg-brand-50 disabled:opacity-60"
           >
-            Export CSV
-          </a>
+            {exporting ? 'Exporting…' : 'Export CSV'}
+          </button>
         }
       />
+
+      {exportError && (
+        <div className="mb-3.5">
+          <ErrorBox message={exportError} />
+        </div>
+      )}
 
       <StatBand
         cols={4}

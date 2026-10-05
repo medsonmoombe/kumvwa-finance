@@ -4,21 +4,31 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
+  buildLoanTerms,
   buildSchedule,
+  distributeInterest,
   firstDueDateFrom,
   kwachaToMinor,
+  loanTermsCanonicalJson,
   minorToKwacha,
+  nominalInterestMinor,
   originationFee,
   type Frequency,
 } from '@kumvwa/core';
+import { Prisma } from '@prisma/client';
+import { createHash, randomUUID } from 'node:crypto';
 
+import type { TokenClaims } from '../../common/crypto/token.service';
 import { ENV, type Env } from '../../config/env';
 import { PrismaService } from '../../infra/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PaymentsService } from '../payments/payments.service';
+import { PlatformService } from '../admin/platform.service';
 import { PolicyService } from '../policy/policy.service';
 import type {
   ApproveRequestDto,
@@ -32,13 +42,28 @@ type Claims = {
   clientId?: string | null;
 };
 
+/**
+ * The borrower-facing wording depends on whether the money actually left. A
+ * loan that is approved but undisbursed must not tell the borrower the loan is
+ * "active" — from their side nothing has happened yet.
+ */
+function disbursedErrorText(disbursed: boolean): string {
+  return disbursed
+    ? 'Your loan request was approved and the funds have been sent to your mobile-money number.'
+    : 'Your loan request was approved. We are releasing the funds to your mobile-money number.';
+}
+
 @Injectable()
 export class LoanRequestsService {
+  private readonly logger = new Logger(LoanRequestsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly policy: PolicyService,
     private readonly audit: AuditService,
     private readonly notify: NotificationsService,
+    private readonly platform: PlatformService,
+    private readonly payments: PaymentsService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -63,6 +88,16 @@ export class LoanRequestsService {
     if (dto.termCount > this.env.REQUEST_MAX_TERM) {
       throw new BadRequestException(
         `Maximum repayment term is ${this.env.REQUEST_MAX_TERM} months`,
+      );
+    }
+
+    // Platform-wide ceiling, set by a platform admin. It sits above the
+    // per-client credit limit so it is only ever the tighter of the two, and 0
+    // disables it — a lender can always lend up to the borrower's own limit.
+    const platformCapMinor = await this.platform.value<number>('max_loan_amount_minor');
+    if (platformCapMinor > 0 && kwachaToMinor(dto.amount) > BigInt(platformCapMinor)) {
+      throw new BadRequestException(
+        `Amounts above K${minorToKwacha(BigInt(platformCapMinor))} are not available on the platform`,
       );
     }
 
@@ -327,16 +362,48 @@ export class LoanRequestsService {
       // `termCount`-month loan matures exactly `termCount` calendar months
       // later. Anchor it to a fixed day-of-month instead and a 1-month term
       // lands wherever that date happens to fall — up to a month early or late.
-      const disbursedAt = new Date();
+      //
+      // Approval and disbursement are separate events. The schedule is priced
+      // from the approval date (that is when the borrower agreed to the terms)
+      // and `disbursedAt` is stamped by the payments engine when the payout
+      // actually settles — see the disbursement block after this transaction.
+      const approvedAt = new Date();
       const schedule = buildSchedule({
         principalMinor: r.amount,
         rateBps: dto.rateBps,
         termCount: r.termCount,
-        firstDueDate: firstDueDateFrom(disbursedAt, frequency),
+        firstDueDate: firstDueDateFrom(approvedAt, frequency),
         frequency,
         feeMinor: fee.feeMinor,
         structure,
       });
+
+      // ── Immutable terms ──
+      // Freeze the agreement the borrower accepted, as canonical JSON + a
+      // sha256 of it. A rollover later moves due dates and grows totalDue,
+      // but THIS snapshot never moves, so "what did I agree to?" always has
+      // one answer and any tampering breaks the hash.
+      const terms = buildLoanTerms({
+        principalMinor: r.amount,
+        rateBps: dto.rateBps,
+        termCount: r.termCount,
+        frequency,
+        repaymentStructure: structure,
+        feeMinor: fee.feeMinor,
+        disbursementMinor: fee.disbursementMinor,
+        totalDueMinor: schedule.totalDueMinor,
+        installments: schedule.installments,
+      });
+      const termsHash = createHash('sha256')
+        .update(loanTermsCanonicalJson(terms))
+        .digest('hex');
+
+      // Interest accounting: spread the flat interest over the original plan
+      // so each repayment can book its exact interest component.
+      const interestParts = distributeInterest(
+        schedule.installments.map((i) => i.amountMinor),
+        nominalInterestMinor(schedule.totalDueMinor, r.amount, fee.feeMinor),
+      );
 
       const loan = await tx.loan.create({
         data: {
@@ -352,13 +419,17 @@ export class LoanRequestsService {
           feeMinor: fee.feeMinor,
           disbursementMinor: fee.disbursementMinor,
           totalDue: schedule.totalDueMinor,
+          termsSnapshot: terms as unknown as Prisma.InputJsonValue,
+          termsHash,
           status: 'active',
-          disbursedAt,
+          // NOTE: `disbursedAt` is deliberately NOT set here. It is stamped by
+          // the payments engine only once a payout has actually settled.
           installments: {
-            create: schedule.installments.map((i) => ({
+            create: schedule.installments.map((i, idx) => ({
               seq: i.seq,
               dueDate: i.dueDate,
               amount: i.amountMinor,
+              interestMinor: interestParts[idx] ?? 0n,
             })),
           },
         },
@@ -377,6 +448,50 @@ export class LoanRequestsService {
       return { loanId: loan.id, clientId: r.clientId };
     });
 
+    // ── Disbursement ──
+    // Approval is not disbursement. The loan above was created undisbursed and
+    // the payout is now initiated through the payments engine, which is the only
+    // place that moves money over the rail, writes the Payout row, posts the
+    // balanced double-entry ledger lines, and stamps `disbursedAt` on success.
+    //
+    // Previously approval set `disbursedAt` directly. That reported money as
+    // released when nothing had moved, and it made `POST /payments/disbursements`
+    // unusable because that endpoint refuses a loan it already considers
+    // disbursed — so the whole payout + ledger path was dead code.
+    //
+    // `disburse()` records a *failed* payout instead of throwing when a rail is
+    // unavailable or the borrower has no mobile-money number, so a provider
+    // outage can never take the approval down with it. The lender retries from
+    // the loan in the console.
+    let disbursed = false;
+    let disbursementError: string | null = null;
+    try {
+      const intent = await this.payments.disburse(
+        {
+          sub: actorId,
+          role: 'tenant_owner',
+          tenantId,
+          clientId: null,
+          typ: 'access',
+          jti: randomUUID(),
+        } satisfies TokenClaims,
+        { loanId: result.loanId },
+        // A request can only be approved once (guarded by the row lock above),
+        // so this key can never create a second payout for one approval.
+        `approve:${requestId}`,
+      );
+      disbursed = intent.status === 'succeeded';
+      if (!disbursed) disbursementError = 'The payout did not settle';
+    } catch (e) {
+      disbursementError = e instanceof Error ? e.message : 'Disbursement failed';
+    }
+
+    if (disbursementError) {
+      this.logger.warn(
+        `loan ${result.loanId} approved but not disbursed: ${disbursementError}`,
+      );
+    }
+
     // Post-tx: notify + audit (never roll back the money event).
     const clientUser = await this.prisma.user.findFirst({
       where: { clientId: result.clientId, role: 'client' },
@@ -386,22 +501,29 @@ export class LoanRequestsService {
         clientUser.id,
         'request_approved',
         'Loan request approved',
-        'Your loan request was approved. Your loan is now active.',
-        { requestId, loanId: result.loanId },
+        disbursedErrorText(disbursed),
+        { requestId, loanId: result.loanId, disbursed },
       );
     }
 
     await this.audit.record({
       actorId,
       action: 'loan_request.approve',
-      description: `Loan request approved — loan created at ${dto.rateBps / 100}% per month`,
+      description:
+        `Loan request approved — loan created at ${dto.rateBps / 100}% per month` +
+        (disbursed ? ' and disbursed' : ' (disbursement pending)'),
       entity: 'LoanRequest',
       entityId: requestId,
       tenantId,
-      diff: { loanId: result.loanId, rateBps: dto.rateBps },
+      diff: {
+        loanId: result.loanId,
+        rateBps: dto.rateBps,
+        disbursed,
+        ...(disbursementError ? { disbursementError } : {}),
+      },
     });
 
-    return { status: 'approved' as const, loanId: result.loanId };
+    return { status: 'approved' as const, loanId: result.loanId, disbursed };
   }
 
   // ─────────────── lender: reject ───────────────

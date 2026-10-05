@@ -20,6 +20,12 @@ interface Stats {
   outstandingMinor: string;
 }
 interface Par { totalOutstandingMinor: string; buckets: Record<string, string>; par30Pct: number }
+interface PlatformInterest {
+  contractedMinor: string;
+  collectedMinor: string;
+  lenders: number;
+  byLender: Array<{ tenantId: string; tenantName: string; contractedMinor: string; collectedMinor: string }>;
+}
 interface Month { month: string; disbursedMinor: string; collectedMinor: string }
 interface Flag { key: string; label: string; value: boolean; isDefault: boolean }
 interface TenantRow {
@@ -34,6 +40,7 @@ export function AdminOverviewPage() {
   const nav = useNavigate();
   const [stats, setStats] = useState<Stats | null>(null);
   const [par, setPar] = useState<Par | null>(null);
+  const [interest, setInterest] = useState<PlatformInterest | null>(null);
   const [months, setMonths] = useState<Month[] | null>(null);
   const [flags, setFlags] = useState<Flag[] | null>(null);
   const [queue, setQueue] = useState<TenantRow[] | null>(null);
@@ -60,6 +67,9 @@ export function AdminOverviewPage() {
     api.get<Month[]>('/admin/reports/monthly')
       .then((r) => setMonths(r.data))
       .catch(() => setMonths([]));
+    api.get<PlatformInterest>('/admin/reports/interest')
+      .then((r) => setInterest(r.data))
+      .catch(() => setInterest({ contractedMinor: '0', collectedMinor: '0', lenders: 0, byLender: [] }));
   }, []);
 
   // lenders doughnut
@@ -203,7 +213,7 @@ export function AdminOverviewPage() {
   return (
     <div>
       <StatBand
-        cols={6}
+        cols={8}
         items={[
           { label: 'Pending verifications', value: String(stats.tenants.pending),
             color: stats.tenants.pending > 0 ? CHART_COLORS.risk : '#2E7D32' },
@@ -212,9 +222,36 @@ export function AdminOverviewPage() {
           { label: 'Platform outstanding', value: money(stats.outstandingMinor) },
           { label: 'Platform PAR-30', value: par ? `${par.par30Pct.toFixed(1)}%` : '—',
             color: par ? parColor(par.par30Pct) : undefined },
+          // Interest generated across EVERY lender.
+          { label: 'Interest collected', value: interest ? money(interest.collectedMinor) : '—',
+            color: '#2E7D32' },
+          { label: 'Interest booked', value: interest ? money(interest.contractedMinor) : '—' },
           { label: 'Accounts', value: String(stats.users) },
         ]}
       />
+
+      {interest && interest.byLender.length > 0 && (
+        <div className="mb-3.5 overflow-hidden rounded-card border border-line bg-white shadow-c1">
+          <div className="band">
+            <span className="t">Interest by lender</span>
+            <span className="ml-auto text-[9.5px] text-ink-muted">
+              collected vs. booked on the issued book
+            </span>
+          </div>
+          <div className="p-3.5">
+            {interest.byLender.slice(0, 8).map((l) => (
+              <div key={l.tenantId}
+                className="flex items-center justify-between border-b border-line-2 py-2 text-[11.5px] last:border-none">
+                <b className="font-semibold">{l.tenantName}</b>
+                <span className="flex items-center gap-4 tabular-nums">
+                  <span className="text-ink-muted">booked <b className="text-ink-2">{money(l.contractedMinor)}</b></span>
+                  <b className="text-accent-700">{money(l.collectedMinor)}</b>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mb-3.5 grid grid-cols-1 items-start gap-3.5 lg:grid-cols-3">
         <ChartCard title="Lenders by status" height={230}>

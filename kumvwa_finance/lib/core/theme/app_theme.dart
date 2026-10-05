@@ -127,7 +127,7 @@ class AppTheme {
         titleTextStyle: AppText.sheetTitle,
         contentTextStyle: const TextStyle(
           fontSize: 13,
-          fontWeight: FontWeight.w400,
+          fontWeight: FontWeight.w500,
           color: AppColors.ink2,
           height: 1.5,
         ),

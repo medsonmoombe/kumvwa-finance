@@ -196,6 +196,54 @@ class _Body extends StatelessWidget {
                     ),
                   ),
                 ),
+                const SizedBox(height: 14),
+                // "Generated from interest" — contracted (what the book is
+                // written to earn) next to collected (what has been banked).
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: AppColors.card,
+                    borderRadius: BorderRadius.circular(AppRadii.card),
+                    border: Border.all(color: AppColors.line),
+                    boxShadow: AppShadows.sh1,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Generated from interest', style: AppText.cardTitle),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _InterestFigure(
+                              label: 'Contracted',
+                              value: _money(
+                                summary['interestContractedMinor'] as String? ?? '0',
+                              ),
+                              color: AppColors.blue600,
+                              hint: 'Across the whole issued book',
+                            ),
+                          ),
+                          Container(
+                            width: 1,
+                            height: 54,
+                            color: AppColors.line2,
+                          ),
+                          Expanded(
+                            child: _InterestFigure(
+                              label: 'Collected',
+                              value: _money(
+                                summary['interestCollectedMinor'] as String? ?? '0',
+                              ),
+                              color: AppColors.green700,
+                              hint: 'Interest actually banked',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 20),
                 Container(
                   padding: const EdgeInsets.all(14),
@@ -539,6 +587,42 @@ class _StatTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _InterestFigure extends StatelessWidget {
+  const _InterestFigure({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.hint,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label.toUpperCase(), style: AppText.eyebrowTiny),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: AppText.statValue.copyWith(color: color),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(height: 3),
+          Text(hint, style: AppText.fine, maxLines: 2, overflow: TextOverflow.ellipsis),
+        ],
       ),
     );
   }

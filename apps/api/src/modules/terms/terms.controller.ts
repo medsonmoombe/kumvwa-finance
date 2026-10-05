@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -16,8 +17,22 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Public } from '../../common/guards/public.decorator';
 import { Roles } from '../../common/guards/roles.decorator';
 import { RequirePermissions } from '../../common/guards/permissions.decorator';
+import {
+  isLegalDocumentKind,
+  type LegalDocumentKind,
+} from './legal-documents';
 import { textToPdf } from './pdf.util';
 import { TermsService, type AcceptScope } from './terms.service';
+
+/** Turns a bad `:kind` into a 400 rather than a confusing empty document. */
+function parseKind(v: string): LegalDocumentKind {
+  if (!isLegalDocumentKind(v)) {
+    throw new BadRequestException(
+      `Unknown document "${v}". Expected "terms" or "privacy".`,
+    );
+  }
+  return v;
+}
 
 class AcceptTermsDto {
   @IsIn(['platform_business', 'platform_client', 'tenant'])
@@ -42,9 +57,7 @@ export class TermsController {
   @Public()
   @Get('platform')
   async platform() {
-    const p = await this.terms.platformLatest();
-    if (!p) throw new NotFoundException('Platform terms not available');
-    return { version: p.version, body: p.body, publishedAt: p.publishedAt };
+    return this.document('terms');
   }
 
   /**
@@ -52,23 +65,62 @@ export class TermsController {
    * (enforceability + DPA right of access). Public so the app's terms gate
    * and any browser can fetch it; the filename is versioned, so old
    * downloads never change meaning under the user.
+   *
+   * MUST stay declared before `/platform/:kind`, otherwise the parameterised
+   * route captures the literal `pdf` segment and 400s.
    */
   @Public()
   @Get('platform/pdf')
   async platformPdf(@Res() res: Response) {
-    const p = await this.terms.platformLatest();
-    if (!p) throw new NotFoundException('Platform terms not available');
+    return this.platformDocumentPdf('terms', res);
+  }
+
+  /**
+   * Terms and Privacy are both published, versioned documents, so they share
+   * one set of routes instead of growing a parallel pair per document.
+   */
+  @Public()
+  @Get('platform/:kind')
+  async platformDocument(@Param('kind') kind: string) {
+    return this.document(parseKind(kind));
+  }
+
+  @Public()
+  @Get('platform/:kind/pdf')
+  async platformDocumentPdfRoute(
+    @Param('kind') kind: string,
+    @Res() res: Response,
+  ) {
+    return this.platformDocumentPdf(parseKind(kind), res);
+  }
+
+  private async platformDocumentPdf(kind: LegalDocumentKind, res: Response) {
+    const p = await this.terms.platformLatest(kind);
+    if (!p) throw new NotFoundException('Document not available');
+    const title = this.terms.documentTitle(kind);
     const pdf = await textToPdf(
-      'Kumvwa Finance — Platform Terms of Service',
+      `Kumvwa Finance — ${title}`,
       `Version ${p.version} · Published ${p.publishedAt.toDateString()}`,
       p.body,
     );
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="kumvwa-platform-terms-v${p.version}.pdf"`,
+      `attachment; filename="kumvwa-platform-${kind}-v${p.version}.pdf"`,
     );
     res.send(pdf);
+  }
+
+  private async document(kind: LegalDocumentKind) {
+    const p = await this.terms.platformLatest(kind);
+    if (!p) throw new NotFoundException('Document not available');
+    return {
+      kind,
+      title: this.terms.documentTitle(kind),
+      version: p.version,
+      body: p.body,
+      publishedAt: p.publishedAt,
+    };
   }
 
   /** Same as above, per-lender. Public — shown pre-acceptance in the app. */

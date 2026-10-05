@@ -7,10 +7,10 @@ import {
 import type { LoanStatus } from '@prisma/client';
 import {
   allocateRepayment,
+  interestPaidOnInstallment,
   kwachaToMinor,
   minorToKwacha,
-  rolloverBulletPlan,
-  rolloverPlan,
+  nominalInterestMinor,
 } from '@kumvwa/core';
 import { randomUUID } from 'node:crypto';
 import { Inject } from '@nestjs/common';
@@ -19,7 +19,7 @@ import { ENV, type Env } from '../../config/env';
 import { PrismaService } from '../../infra/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { NotificationsService } from '../notifications/notifications.service';
-import type { RecordRepaymentDto } from './dto/loans.dto';
+import type { RecordRepaymentDto, RolloverDto } from './dto/loans.dto';
 
 const LOAN_STATUSES: LoanStatus[] = [
   'active',
@@ -82,6 +82,22 @@ export class LoansService {
             totalDueMinor: l.totalDue.toString(),
             paid: Number(l.paidAmount) / 100,
             paidMinor: l.paidAmount.toString(),
+            // Immutable terms (frozen at issuance) — the borrower can always
+            // see exactly what they agreed to, and verify it never changed.
+            terms: l.termsSnapshot ?? null,
+            termsHash: l.termsHash,
+            interestContractedMinor: nominalInterestMinor(
+              l.totalDue,
+              l.principal,
+              l.feeMinor,
+            ).toString(),
+            interestPaidMinor: l.installments
+              .reduce(
+                (sum, i) =>
+                  sum + interestPaidOnInstallment(i.interestMinor, i.paidAmount, i.amount),
+                0n,
+              )
+              .toString(),
             outstanding: Number(outstanding) / 100,
             outstandingMinor: outstanding.toString(),
             status: l.status,
@@ -173,11 +189,24 @@ export class LoansService {
       const owed = installment.amount + installment.penaltyMinor - installment.paidAmount;
       return sum + (owed > 0n ? owed : 0n);
     }, 0n);
+    const interestPaidMinor = loan.installments.reduce(
+      (sum, i) => sum + interestPaidOnInstallment(i.interestMinor, i.paidAmount, i.amount),
+      0n,
+    );
     return {
       id: loan.id,
       loanRef: loan.loanRef,
       repaymentStructure: loan.repaymentStructure,
       clientId: loan.clientId,
+      // ── Immutable terms (frozen at issuance) + interest split ──
+      terms: loan.termsSnapshot ?? null,
+      termsHash: loan.termsHash,
+      interestContractedMinor: nominalInterestMinor(
+        loan.totalDue,
+        loan.principal,
+        loan.feeMinor,
+      ).toString(),
+      interestPaidMinor: interestPaidMinor.toString(),
       clientName: `${loan.client.firstName} ${loan.client.lastName}`.trim(),
       clientPhone: loan.client.phone,
       productName: loan.product?.name ?? null,
@@ -205,6 +234,7 @@ export class LoansService {
         amountMinor: i.amount.toString(),
         paidAmountMinor: i.paidAmount.toString(),
         penaltyMinor: i.penaltyMinor.toString(),
+        interestMinor: i.interestMinor.toString(),
         status: i.status,
         paidAt: i.paidAt,
         // Beyond the original term => appended by a rollover: an extension
@@ -267,6 +297,9 @@ export class LoansService {
     loanId: string,
     dto: RecordRepaymentDto,
     idempotencyKey?: string,
+    // Set when the money arrived through the payments engine, so the repayment
+    // row links back to the intent that moved it.
+    opts?: { paymentIntentId?: string },
   ) {
     const key = idempotencyKey?.trim() || randomUUID();
 
@@ -345,7 +378,26 @@ export class LoansService {
         })),
       );
 
+      // Interest booked by THIS payment: the change in each touched
+      // installment's pro-rata interest-paid, derived from its own
+      // `interestMinor`. Penalties are excluded (they are not interest), and
+      // flooring keeps the running total at or below interest actually charged.
+      let interestBooked = 0n;
       for (const change of allocation.changes) {
+        const before = installments.find((i) => i.id === change.id);
+        if (before) {
+          interestBooked +=
+            interestPaidOnInstallment(
+              before.interestMinor,
+              change.paidAmountMinor,
+              before.amount,
+            ) -
+            interestPaidOnInstallment(
+              before.interestMinor,
+              before.paidAmount,
+              before.amount,
+            );
+        }
         await tx.installment.update({
           where: { id: change.id },
           data: {
@@ -382,10 +434,12 @@ export class LoansService {
           loanId,
           tenantId: loan.tenantId,
           amount: amountMinor,
+          interestMinor: interestBooked < 0n ? 0n : interestBooked,
           kind: 'repayment',
           method: dto.method,
           reference: dto.reference?.trim() || null,
           idempotencyKey: key,
+          paymentIntentId: opts?.paymentIntentId ?? null,
           recordedBy: actorId,
         },
       });
@@ -432,20 +486,25 @@ export class LoansService {
   }
 
   /**
-   * "Pay interest & extend": the borrower pays one month's interest share now,
-   * every unpaid due date shifts +1 month, and an interest-only installment is
-   * appended at the end. Outstanding is UNCHANGED (paid and totalDue both grow
-   * by the share). Capped by ROLLOVER_MAX; idempotent like repayments.
+   * "Pay remaining interest & extend due dates by one month."
+   *
+   * Rules enforced:
+   *  - Max 1 extension per loan lifetime (rolloverCount >= ROLLOVER_MAX → reject)
+   *  - Loan must be active or overdue (not cleared/defaulted)
+   *  - Extension fee = sum of remaining interest on unpaid installments only
+   *  - Total cost cap: totalDue + fee must not exceed 2× principal
+   *  - No new installment appended — fee recorded in repayment history only
+   *  - Idempotent on Idempotency-Key header
    */
   async rollover(
     actorId: string,
     loanId: string,
     scope: { tenantId?: string; clientId?: string },
+    dto: RolloverDto,
     idempotencyKey?: string,
   ) {
     const key = idempotencyKey?.trim() || randomUUID();
 
-    // Fast path: replay of an already-processed rollover.
     const existing = await this.prisma.repayment.findUnique({
       where: { idempotencyKey: key },
     });
@@ -457,14 +516,12 @@ export class LoansService {
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
-      // Serialize concurrent rollovers/repayments on the same loan.
       await tx.$queryRaw`SELECT id FROM "Loan" WHERE id = ${loanId} FOR UPDATE`;
 
       const loan = await tx.loan.findUnique({
         where: { id: loanId },
         include: { installments: { orderBy: { seq: 'asc' } } },
       });
-      // 404 (never 403) so loan ids can't be probed across scopes.
       if (
         !loan ||
         (scope.tenantId != null && loan.tenantId !== scope.tenantId) ||
@@ -473,139 +530,112 @@ export class LoansService {
         throw new NotFoundException('Loan not found');
       }
 
-      // Flat interest share of ONE installment (floor) — the fixed price of
-      // carrying over. Sub-ngwee drift ≤ term count, documented & immaterial.
-      const interestShare =
-        (loan.principal * BigInt(loan.rateBps)) / 10000n / BigInt(loan.termCount);
-      if (interestShare <= 0n) {
-        throw new BadRequestException('This loan has no interest to carry');
+      // ── Validation ──────────────────────────────────────────────────────
+      if (loan.status === 'cleared') {
+        throw new BadRequestException('This loan is already fully repaid — no extension needed.');
       }
-
-      let plan: {
-        paymentMinor: bigint;
-        newTotalDueMinor: bigint;
-        shifts: Array<{ seq: number; newDueDate: Date }>;
-        bumps: Array<{
-          seq: number;
-          amountMinor: bigint;
-          paidAmountMinor?: bigint;
-        }>;
-        appended: { seq: number; dueDate: Date; amountMinor: bigint } | null;
-      };
-      try {
-        if (loan.repaymentStructure === 'bullet') {
-          const inst = loan.installments[0];
-          if (!inst) throw new Error('Loan has no schedule to extend');
-          // Bullet: one installment — pay the interest share, push maturity
-          // +1 month, grow that installment (and totalDue) by the share.
-          // Outstanding stays unchanged (paidAmount grows too, via repayment).
-          const bullet = rolloverBulletPlan({
-            dueDate: inst.dueDate,
-            amountMinor: inst.amount,
-            paidAmountMinor: inst.paidAmount,
-            interestShareMinor: interestShare,
-            rolloverCount: loan.rolloverCount,
-            maxRollovers: this.env.ROLLOVER_MAX,
-          });
-          plan = {
-            paymentMinor: bullet.paymentMinor,
-            newTotalDueMinor: bullet.newTotalDueMinor,
-            shifts: [{ seq: inst.seq, newDueDate: bullet.newDueDate }],
-            // The paid side grows with the amount: this one installment
-            // documents the whole obligation, and the carry cost was collected
-            // as a repayment — so Σ installment.paidAmount stays equal to
-            // loan.paidAmount instead of drifting by the share each rollover.
-            bumps: [
-              {
-                seq: inst.seq,
-                amountMinor: inst.amount + bullet.amountIncreaseMinor,
-                paidAmountMinor: inst.paidAmount + bullet.paymentMinor,
-              },
-            ],
-            appended: null,
-          };
-        } else {
-          const p = rolloverPlan({
-            installments: loan.installments.map((i) => ({
-              seq: i.seq,
-              dueDate: i.dueDate,
-              amountMinor: i.amount,
-              paidAmountMinor: i.paidAmount,
-            })),
-            interestShareMinor: interestShare,
-            today: new Date(),
-            rolloverCount: loan.rolloverCount,
-            maxRollovers: this.env.ROLLOVER_MAX,
-          });
-          plan = {
-            paymentMinor: p.paymentMinor,
-            newTotalDueMinor: p.newTotalDueMinor,
-            shifts: p.shifts,
-            bumps: [],
-            appended: p.appended,
-          };
-        }
-      } catch (e) {
+      if (loan.status === 'defaulted') {
+        throw new BadRequestException('Defaulted loans cannot be extended.');
+      }
+      if (loan.rolloverCount >= this.env.ROLLOVER_MAX) {
         throw new BadRequestException(
-          e instanceof Error ? e.message : 'Rollover not allowed',
+          'This loan has already been extended once. No further extensions are allowed.',
         );
       }
 
-      for (const shift of plan.shifts) {
-        await tx.installment.updateMany({
-          where: { loanId, seq: shift.seq },
-          data: { dueDate: shift.newDueDate },
-        });
+      const unpaidInstallments = loan.installments.filter(
+        (i) => i.paidAmount < i.amount,
+      );
+      if (unpaidInstallments.length === 0) {
+        throw new BadRequestException('All installments are paid — no extension needed.');
       }
-      for (const bump of plan.bumps) {
-        await tx.installment.updateMany({
-          where: { loanId, seq: bump.seq },
-          data: {
-            amount: bump.amountMinor,
-            ...(bump.paidAmountMinor != null
-              ? { paidAmount: bump.paidAmountMinor }
-              : {}),
-          },
-        });
+
+      // ── Extension fee = remaining interest on unpaid installments ────────
+      // For each unpaid installment: remaining interest = interestMinor - already collected pro-rata.
+      // Example: K200 loan, 15% flat, 2 months. Client paid K50 on installment 1 (K115, interestMinor=K15).
+      //   Interest already collected on inst 1 = floor(15 * 50 / 115) = K6
+      //   Remaining on inst 1 = K15 - K6 = K9
+      //   Inst 2 unpaid, interestMinor = K15, remaining = K15
+      //   Extension fee = K9 + K15 = K24
+      let extensionFeeMinor = 0n;
+      for (const i of unpaidInstallments) {
+        if (i.interestMinor <= 0n) continue;
+        const interestAlreadyPaid =
+          i.paidAmount > 0n && i.amount > 0n
+            ? (i.interestMinor * i.paidAmount) / i.amount
+            : 0n;
+        const remaining = i.interestMinor - interestAlreadyPaid;
+        if (remaining > 0n) extensionFeeMinor += remaining;
       }
-      if (plan.appended) {
-        // BORN PAID. This installment documents the interest charge this
-        // rollover just collected — `loan.paidAmount` grows by the same share
-        // below. Created unpaid it books the fee twice (once collected, once
-        // owed), which left fully-paid loans reading as "cleared" with a pay
-        // button: outstanding 0, yet an installment still showing as due.
-        await tx.installment.create({
-          data: {
-            loanId,
-            seq: plan.appended.seq,
-            dueDate: plan.appended.dueDate,
-            amount: plan.appended.amountMinor,
-            paidAmount: plan.appended.amountMinor,
-            status: 'paid',
-            paidAt: new Date(),
-          },
+
+      if (extensionFeeMinor <= 0n) {
+        throw new BadRequestException(
+          'No interest remains on this loan — extension is not applicable.',
+        );
+      }
+
+      // ── Total-cost cap: principal + all interest must not exceed 2× principal ──
+      const newTotalDue = loan.totalDue + extensionFeeMinor;
+      const cap = loan.principal * 2n;
+      if (newTotalDue > cap) {
+        throw new BadRequestException(
+          `Extension would cause total repayable (K${minorToKwacha(newTotalDue)}) to exceed 2× the principal (K${minorToKwacha(cap)}). Extension not allowed.`,
+        );
+      }
+
+      // ── Shift every unpaid due date +1 month ────────────────────────────
+      for (const i of unpaidInstallments) {
+        const newDueDate = new Date(
+          Date.UTC(
+            i.dueDate.getUTCFullYear(),
+            i.dueDate.getUTCMonth() + 1,
+            i.dueDate.getUTCDate(),
+          ),
+        );
+        await tx.installment.update({
+          where: { id: i.id },
+          data: { dueDate: newDueDate },
         });
       }
 
-      const newPaidTotal = loan.paidAmount + plan.paymentMinor;
-      const cleared = newPaidTotal >= plan.newTotalDueMinor;
+      // ── For bullet loans: grow the single installment by the fee ─────────
+      // This keeps Σ installment.amount === totalDue after the update.
+      if (loan.repaymentStructure === 'bullet') {
+        const inst = loan.installments[0];
+        if (inst) {
+          await tx.installment.update({
+            where: { id: inst.id },
+            data: {
+              amount: inst.amount + extensionFeeMinor,
+              paidAmount: inst.paidAmount + extensionFeeMinor,
+              interestMinor: { increment: extensionFeeMinor },
+            },
+          });
+        }
+      }
+
+      // ── Update loan totals ───────────────────────────────────────────────
+      const newPaidTotal = loan.paidAmount + extensionFeeMinor;
       await tx.loan.update({
         where: { id: loanId },
         data: {
-          totalDue: plan.newTotalDueMinor,
+          totalDue: newTotalDue,
           rolloverCount: { increment: 1 },
           paidAmount: newPaidTotal,
-          status: cleared ? 'cleared' : loan.status,
+          // Status stays active/overdue — the extension doesn't clear the loan.
         },
       });
 
+      // ── Record extension fee as repayment (history only, no installment) ─
       const repayment = await tx.repayment.create({
         data: {
           loanId,
           tenantId: loan.tenantId,
-          amount: plan.paymentMinor,
+          amount: extensionFeeMinor,
+          interestMinor: extensionFeeMinor, // extension fee is pure interest
           kind: 'rollover_interest',
-          method: 'mobile_money',
+          method: dto.method ?? 'mobile_money',
+          reference: dto.reference?.trim() || null,
           idempotencyKey: key,
           recordedBy: actorId,
         },
@@ -615,11 +645,10 @@ export class LoansService {
         repaymentId: repayment.id,
         clientId: loan.clientId,
         tenantId: loan.tenantId,
-        shareMinor: plan.paymentMinor,
+        extensionFeeMinor,
       };
     });
 
-    // Post-tx: notify + audit (never roll back the money event).
     const clientUser = await this.prisma.user.findFirst({
       where: { clientId: result.clientId, role: 'client' },
       select: { id: true },
@@ -629,8 +658,8 @@ export class LoansService {
         clientUser.id,
         'payment_received',
         'Loan extended',
-        `We recorded your K${minorToKwacha(result.shareMinor)} interest payment ` +
-          'and moved your remaining due dates one month later.',
+        `Your extension fee of K${minorToKwacha(result.extensionFeeMinor)} has been recorded. ` +
+          'Your due dates have been moved one month forward.',
         { loanId },
       );
     }
@@ -638,11 +667,11 @@ export class LoansService {
     await this.audit.record({
       actorId,
       action: 'loan.rollover',
-      description: `Loan extended — interest share of K${minorToKwacha(result.shareMinor)} collected and due dates shifted by one month`,
+      description: `Loan extended — extension fee of K${minorToKwacha(result.extensionFeeMinor)} collected, all unpaid due dates shifted +1 month`,
       entity: 'Loan',
       entityId: loanId,
       tenantId: result.tenantId,
-      diff: { shareMinor: result.shareMinor.toString() },
+      diff: { extensionFeeMinor: result.extensionFeeMinor.toString() },
     });
 
     return this.rolloverReceipt(loanId, false);

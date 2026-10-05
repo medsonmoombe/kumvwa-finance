@@ -41,9 +41,8 @@ class _LenderClientsScreenState extends ConsumerState<LenderClientsScreen> {
     try {
       final client = ref.read(apiClientProvider);
       final res = await client.getA('/clients');
-      final items =
-          ((res.data as Map<String, dynamic>)['items'] as List? ?? [])
-              .cast<Map<String, dynamic>>();
+      final items = ((res.data as Map<String, dynamic>)['items'] as List? ?? [])
+          .cast<Map<String, dynamic>>();
       setState(() {
         _clients = items;
         _loading = false;
@@ -65,9 +64,11 @@ class _LenderClientsScreenState extends ConsumerState<LenderClientsScreen> {
     if (_query.isEmpty) return _clients;
     final q = _query.toLowerCase();
     return _clients
-        .where((c) =>
-            (c['name'] as String? ?? '').toLowerCase().contains(q) ||
-            (c['phone'] as String? ?? '').contains(q))
+        .where(
+          (c) =>
+              (c['name'] as String? ?? '').toLowerCase().contains(q) ||
+              (c['phone'] as String? ?? '').contains(q),
+        )
         .toList();
   }
 
@@ -87,14 +88,41 @@ class _LenderClientsScreenState extends ConsumerState<LenderClientsScreen> {
                 child: DomeTitle(
                   title: 'Clients',
                   subtitle: '${_clients.length} borrowers',
+                  // Add-client lives in the dome rather than a FAB so it is
+                  // reachable without scrolling a long list, and so the
+                  // affordance sits where every other "create" action in the
+                  // app already sits.
+                  trailing: Semantics(
+                    button: true,
+                    label: 'Add client',
+                    child: InkWell(
+                      onTap: () => context.push('/lender/clients/new'),
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.18),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.28),
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.person_add_alt_1_rounded,
+                          color: Colors.white,
+                          size: 19,
+                        ),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
-              child: _SearchBar(
-                onChanged: (v) => setState(() => _query = v),
-              ),
+              child: _SearchBar(onChanged: (v) => setState(() => _query = v)),
             ),
             const SizedBox(height: 10),
             Expanded(
@@ -136,7 +164,9 @@ class _LenderClientsScreenState extends ConsumerState<LenderClientsScreen> {
                         separatorBuilder: (_, __) => const SizedBox(height: 8),
                         itemBuilder: (_, i) => _ClientRow(
                           client: _filtered[i],
-                          onTap: () => context.push('/lender/clients/${_filtered[i]['id']}'),
+                          onTap: () => context.push(
+                            '/lender/clients/${_filtered[i]['id']}',
+                          ),
                         ),
                       ),
               ),
@@ -187,7 +217,7 @@ class _SearchBar extends StatelessWidget {
                 hintStyle: TextStyle(
                   fontSize: 13,
                   color: AppColors.muted,
-                  fontWeight: FontWeight.w400,
+                  fontWeight: FontWeight.w500,
                 ),
                 contentPadding: EdgeInsets.zero,
               ),
@@ -224,74 +254,76 @@ class _ClientRow extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(AppRadii.card),
         child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(AppRadii.card),
-        border: Border.all(color: AppColors.line),
-        boxShadow: AppShadows.sh1,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: AppColors.blue50,
-              shape: BoxShape.circle,
-            ),
-            child: Text(
-              Fmt.initials(name),
-              style: AppText.cardTitle.copyWith(
-                color: AppColors.blue600,
-                fontSize: 12,
-              ),
-            ),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(AppRadii.card),
+            border: Border.all(color: AppColors.line),
+            boxShadow: AppShadows.sh1,
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name, style: AppText.rowTitle),
-                const SizedBox(height: 2),
-                Text(
-                  client['phone'] as String? ?? '',
-                  style: AppText.rowSub,
-                ),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
+          child: Row(
             children: [
-              if (outstanding != null)
-                Text(
-                  Fmt.money((int.tryParse(outstanding) ?? 0) / 100),
-                  style: AppText.rowAmount,
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: AppColors.blue50,
+                  shape: BoxShape.circle,
                 ),
-              if (status.isNotEmpty)
-                Container(
-                  margin: const EdgeInsets.only(top: 3),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: statusColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(AppRadii.pill),
-                  ),
-                  child: Text(
-                    status,
-                    style: AppText.chipLabel.copyWith(color: statusColor),
+                child: Text(
+                  Fmt.initials(name),
+                  style: AppText.cardTitle.copyWith(
+                    color: AppColors.blue600,
+                    fontSize: 12,
                   ),
                 ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name, style: AppText.rowTitle),
+                    const SizedBox(height: 2),
+                    Text(
+                      client['phone'] as String? ?? '',
+                      style: AppText.rowSub,
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (outstanding != null)
+                    Text(
+                      Fmt.money((int.tryParse(outstanding) ?? 0) / 100),
+                      style: AppText.rowAmount,
+                    ),
+                  if (status.isNotEmpty)
+                    Container(
+                      margin: const EdgeInsets.only(top: 3),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(AppRadii.pill),
+                      ),
+                      child: Text(
+                        status,
+                        style: AppText.chipLabel.copyWith(color: statusColor),
+                      ),
+                    ),
+                ],
+              ),
             ],
           ),
-        ],
+        ),
       ),
-    ),
-      ),
-  );
+    );
   }
 }
 
@@ -306,8 +338,11 @@ class _Empty extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.people_outline_rounded,
-              size: 40, color: AppColors.muted),
+          const Icon(
+            Icons.people_outline_rounded,
+            size: 40,
+            color: AppColors.muted,
+          ),
           const SizedBox(height: 10),
           Text(
             hasQuery ? 'No clients match your search' : 'No clients yet',
@@ -333,8 +368,11 @@ class _ErrorBody extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.cloud_off_rounded,
-                size: 40, color: AppColors.muted),
+            const Icon(
+              Icons.cloud_off_rounded,
+              size: 40,
+              color: AppColors.muted,
+            ),
             const SizedBox(height: 10),
             Text(message, style: AppText.fine, textAlign: TextAlign.center),
             const SizedBox(height: 16),

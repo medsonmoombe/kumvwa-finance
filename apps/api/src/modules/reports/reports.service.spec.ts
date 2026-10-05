@@ -30,6 +30,10 @@ function summarySetup(
   const prisma = {
     loan: {
       groupBy: jest.fn().mockResolvedValue(grouped),
+      // Whole-book interest aggregate (contracted = totalDue − principal − fee).
+      aggregate: jest.fn().mockResolvedValue({
+        _sum: { principal: 180_000n, totalDue: 216_000n, feeMinor: 0n },
+      }),
       findMany: jest.fn().mockResolvedValue([
         {
           id: 'L1',
@@ -45,7 +49,14 @@ function summarySetup(
       aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 25_000n } }),
     },
     repayment: {
-      aggregate: jest.fn().mockResolvedValue({ _sum: { amount: 12_000n } }),
+      // Two aggregates share this method: this-month cash vs collected interest.
+      aggregate: jest.fn().mockImplementation((args: { _sum?: object }) =>
+        Promise.resolve(
+          args?._sum && 'interestMinor' in args._sum
+            ? { _sum: { interestMinor: 15_000n } }
+            : { _sum: { amount: 12_000n } },
+        ),
+      ),
     },
   };
   return { service: new ReportsService(asPrisma(prisma), stubStorage), prisma };
@@ -115,6 +126,18 @@ describe('ReportsService.summary', () => {
     expect(res.counts).toEqual({ active: 0, overdue: 0, cleared: 0 });
     expect(res.outstandingMinor).toBe('0');
     expect(res.disbursedMinor).toBe('0');
+  });
+
+  it('reports contracted and collected interest side by side', async () => {
+    const { service } = summarySetup();
+
+    const res = await service.summary('t1');
+
+    // 216000 − 180000 − 0
+    expect(res.interestContractedMinor).toBe('36000');
+    expect(res.interestContracted).toBe(360);
+    expect(res.interestCollectedMinor).toBe('15000');
+    expect(res.interestCollected).toBe(150);
   });
 });
 
@@ -222,12 +245,12 @@ describe('ReportsService.par', () => {
   }
 
   /** One loan whose single installment fell due `daysLate` days ago. */
-  function loan(daysLate: number, amount = 10_000n) {
+  function loan(daysLate: number, amount = 10_000n, penaltyMinor = 0n) {
     return {
       totalDue: amount,
       paidAmount: 0n,
       installments: [
-        { dueDate: daysAgo(daysLate), amount, paidAmount: 0n },
+        { dueDate: daysAgo(daysLate), amount, paidAmount: 0n, penaltyMinor },
       ],
     };
   }
@@ -281,9 +304,9 @@ describe('ReportsService.par', () => {
         totalDue: 30_000n,
         paidAmount: 0n,
         installments: [
-          { dueDate: daysAgo(75), amount: 10_000n, paidAmount: 0n },
-          { dueDate: daysAgo(5), amount: 10_000n, paidAmount: 0n },
-          { dueDate: daysAgo(-20), amount: 10_000n, paidAmount: 0n },
+          { dueDate: daysAgo(75), amount: 10_000n, paidAmount: 0n, penaltyMinor: 0n },
+          { dueDate: daysAgo(5), amount: 10_000n, paidAmount: 0n, penaltyMinor: 0n },
+          { dueDate: daysAgo(-20), amount: 10_000n, paidAmount: 0n, penaltyMinor: 0n },
         ],
       },
     ]);
@@ -303,8 +326,8 @@ describe('ReportsService.par', () => {
         paidAmount: 0n,
         installments: [
           // Paid 100 days ago would be 90+, but it is settled.
-          { dueDate: daysAgo(100), amount: 10_000n, paidAmount: 10_000n },
-          { dueDate: daysAgo(40), amount: 10_000n, paidAmount: 0n },
+          { dueDate: daysAgo(100), amount: 10_000n, paidAmount: 10_000n, penaltyMinor: 0n },
+          { dueDate: daysAgo(40), amount: 10_000n, paidAmount: 0n, penaltyMinor: 0n },
         ],
       },
       { totalDue: 10_000n, paidAmount: 10_000n, installments: [] }, // cleared
@@ -342,5 +365,50 @@ describe('ReportsService.par', () => {
       d61_90: '0',
       d90p: '0',
     });
+  });
+
+  it('counts accrued penalties as part of what the borrower owes', async () => {
+    // 10 000 owed + 1 500 of late penalty = 11 500 outstanding.
+    const { service } = parSetup([loan(45, 10_000n, 1_500n)]);
+
+    const res = await service.par('t1');
+
+    expect(res.totalOutstandingMinor).toBe('11500');
+    expect(res.buckets.d31_60).toBe('11500');
+    // Penalties count against the lender, so PAR-30 rises too.
+    expect(res.par30Minor).toBe('11500');
+  });
+
+  it('penalises a partly repaid loan by its unpaid balance, not its amount', async () => {
+    const { service } = parSetup([
+      {
+        totalDue: 10_000n,
+        paidAmount: 6_000n,
+        installments: [
+          {
+            dueDate: daysAgo(45),
+            amount: 10_000n,
+            paidAmount: 6_000n,
+            penaltyMinor: 500n,
+          },
+        ],
+      },
+    ]);
+
+    const res = await service.par('t1');
+
+    // (10 000 − 6 000) + 500 penalty = 4 500, not the full 10 000.
+    expect(res.totalOutstandingMinor).toBe('4500');
+    expect(res.buckets.d31_60).toBe('4500');
+  });
+
+  it('defaults do not disappear from the outstanding book', async () => {
+    const { service } = parSetup([loan(100, 25_000n, 2_500n)]);
+
+    const res = await service.par('t1');
+
+    // Written off, but still recoverable — excluding it would shrink the book.
+    expect(res.totalOutstandingMinor).toBe('27500');
+    expect(res.buckets.d90p).toBe('27500');
   });
 });

@@ -21,6 +21,10 @@ interface ClientDetail {
   repayments: Array<{ id: string; loanId: string; loanRef: string; amount: string; method: string; reference: string | null; recordedAt: string }>;
   risk: { score: number | null; band: string | null; source: string; checkedAt: string } | null;
   limitOverride: { limitKwacha: number; reason: string; grantedAt: string } | null;
+  performance: {
+    onTimeRate: number; hasHistory: boolean; settled: number;
+    onTime: number; late: number; overdueNow: number;
+  } | null;
 }
 
 const EMPLOYMENT: Record<string, string> = {
@@ -34,6 +38,9 @@ const INCOME: Record<string, string> = {
 const loanStatusColor: Record<string, 'green' | 'red' | 'blue' | 'grey'> = {
   active: 'green', overdue: 'red', cleared: 'blue', defaulted: 'grey',
 };
+
+const onTimeColor = (pct: number): string =>
+  pct >= 90 ? '#2E7D32' : pct >= 70 ? '#B26A00' : '#C62828';
 
 function limitFromScore(score: number): number {
   if (score >= 750) return 15000;
@@ -195,7 +202,7 @@ export function ClientDetailPage() {
         </FormSection>
 
         <FormSection title="Credit Profile" defaultOpen>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
             <div className="border border-line bg-surface p-2.5">
               <div className="text-[9px] font-bold uppercase tracking-wide text-ink-muted">Score</div>
               <div className="mt-1 font-display text-[17px] font-extrabold" style={{ color: riskColor }}>
@@ -222,6 +229,24 @@ export function ClientDetailPage() {
               </div>
               {c.limitOverride && (
                 <div className="mt-0.5 text-[9px] text-warn-500">override · {c.limitOverride.reason}</div>
+              )}
+            </div>
+            {/* On-time payment percentage — the "would you recommend them?" signal. */}
+            <div className="border border-line bg-surface p-2.5">
+              <div className="text-[9px] font-bold uppercase tracking-wide text-ink-muted">On-time payments</div>
+              {c.performance?.hasHistory ? (
+                <>
+                  <div className="mt-1 font-display text-[15px] font-extrabold"
+                    style={{ color: onTimeColor(c.performance.onTimeRate) }}>
+                    {c.performance.onTimeRate}%
+                  </div>
+                  <div className="mt-0.5 text-[9px] text-ink-muted">
+                    {c.performance.onTime} of{' '}
+                    {c.performance.onTime + c.performance.late + c.performance.overdueNow} due
+                  </div>
+                </>
+              ) : (
+                <div className="mt-1 font-display text-[13px] font-extrabold text-ink-muted">No history</div>
               )}
             </div>
           </div>

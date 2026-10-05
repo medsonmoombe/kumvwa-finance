@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { Avatar, Badge, ErrorBox } from '../../components/ui';
-import { DataGrid, StatBand, StatBandSkeleton, type Column } from '../../components/kit';
+import { DataGrid, SearchInput, StatBand, StatBandSkeleton, rowMatches, type Column } from '../../components/kit';
 import { api } from '../../lib/api';
 import { date, money } from '../../lib/format';
 
@@ -15,9 +15,12 @@ interface Req {
 
 const statusColor = { pending: 'amber', approved: 'green', rejected: 'red' } as const;
 
+const SEARCH_KEYS = ['clientName', 'phone', 'purpose', 'status', 'id'];
+
 export function RequestsPage() {
   const [items, setItems] = useState<Req[] | null>(null);
   const [error, setError] = useState('');
+  const [q, setQ] = useState('');
   const nav = useNavigate();
 
   const load = useCallback(() => {
@@ -34,6 +37,9 @@ export function RequestsPage() {
   const pendingValue = items
     ?.filter((r) => r.status === 'pending')
     .reduce((a, r) => a + BigInt(r.amountMinor), 0n).toString() ?? '0';
+
+  // The inbox endpoint has no `q` parameter, so the whole inbox is filtered here.
+  const visible = items?.filter((r) => rowMatches(r, SEARCH_KEYS, q)) ?? null;
 
   const columns: Array<Column<Req>> = [
     {
@@ -83,15 +89,18 @@ export function RequestsPage() {
       <div className="overflow-hidden rounded-card border border-line bg-white shadow-c1">
         <div className="band">
           <span className="t">Loan Requests</span>
-          <span className="ml-auto text-[9.5px] text-ink-muted">
-            approving creates the loan atomically · declining requires feedback
-          </span>
+          <div className="ml-auto flex items-center gap-3">
+            <span className="hidden text-[9.5px] text-ink-muted lg:inline">
+              approving creates the loan atomically · declining requires feedback
+            </span>
+            <SearchInput value={q} onChange={setQ} placeholder="Search requests" />
+          </div>
         </div>
         <DataGrid
           columns={columns}
-          rows={items}
+          rows={visible}
           onRowClick={(r) => nav(`/requests/${r.id}`)}
-          empty="No loan requests yet. Client applications appear here for review."
+          empty={q.trim() ? 'No requests match your search' : 'No loan requests yet. Client applications appear here for review.'}
         />
       </div>
     </div>

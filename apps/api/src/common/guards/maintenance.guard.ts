@@ -23,8 +23,11 @@ export class MaintenanceGuard implements CanActivate {
 
     const maintenance = await this.platform.getFlag('maintenance_mode');
     if (maintenance) {
+      // The wording is an operator-facing setting: a scheduled window and an
+      // incident need different messages, and support reads this one.
+      const message = await this.platform.value<string>('maintenance_message');
       throw new HttpException(
-        { message: 'Kumvwa is in scheduled maintenance. Please try again shortly.', code: 'MAINTENANCE' },
+        { message: message || 'Kumvwa is in scheduled maintenance. Please try again shortly.', code: 'MAINTENANCE' },
         HttpStatus.SERVICE_UNAVAILABLE,
       );
     }

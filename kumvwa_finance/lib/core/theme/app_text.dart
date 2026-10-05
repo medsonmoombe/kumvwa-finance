@@ -14,10 +14,16 @@ import 'package:kumvwa_finance/core/theme/app_colors.dart';
 ///   Screen title  22–24 / 700
 ///   Section head  16–17 / 600
 ///   Card title    15    / 600
-///   Body          14–15 / 400
-///   Meta/sub      12.5–13 / 400–500
+///   Body          14–15 / 500
+///   Meta/sub      12.5–13 / 500
 ///   Button        15–16 / 600
 ///   Badge/tag     11–12 / 700
+///
+/// Weight floor: nothing that a human reads as prose drops below 500. Running
+/// text at 400 is the single most common legibility complaint on cheap phone
+/// panels (low contrast, glare, bright sun), and the reading voice is what
+/// carries the content — headings at 600/700 already separate themselves
+/// without help from below. Keep 400 for decoration only.
 class AppText {
   AppText._();
 
@@ -106,10 +112,10 @@ class AppText {
 
   // ─── reading voice ───────────────────────────────────────────────────────
 
-  /// Primary body — 14 / 400, lh 1.5.
+  /// Primary body — 14 / 500, lh 1.5.
   static const body = TextStyle(
     fontSize: 14,
-    fontWeight: FontWeight.w400,
+    fontWeight: FontWeight.w500,
     color: AppColors.ink,
     height: 1.5,
   );
@@ -122,17 +128,17 @@ class AppText {
     height: 1.5,
   );
 
-  /// Text the user types — 14 / 400.
+  /// Text the user types — 14 / 500.
   static const fieldInput = TextStyle(
     fontSize: 14,
-    fontWeight: FontWeight.w400,
+    fontWeight: FontWeight.w500,
     color: AppColors.ink,
   );
 
-  /// Secondary / meta — 13 / 400, muted, lh 1.45.
+  /// Secondary / meta — 13 / 500, muted, lh 1.45.
   static const subText = TextStyle(
     fontSize: 13,
-    fontWeight: FontWeight.w400,
+    fontWeight: FontWeight.w500,
     color: AppColors.muted,
     height: 1.45,
   );
@@ -151,26 +157,26 @@ class AppText {
     color: AppColors.ink,
   );
 
-  /// List row secondary line — 12 / 400, muted.
+  /// List row secondary line — 12 / 500, muted.
   static const rowSub = TextStyle(
     fontSize: 12,
-    fontWeight: FontWeight.w400,
+    fontWeight: FontWeight.w500,
     color: AppColors.muted,
     height: 1.4,
   );
 
-  /// Sheet subtitle — 13 / 400, muted.
+  /// Sheet subtitle — 13 / 500, muted.
   static const sheetSub = TextStyle(
     fontSize: 13,
-    fontWeight: FontWeight.w400,
+    fontWeight: FontWeight.w500,
     color: AppColors.muted,
     height: 1.45,
   );
 
-  /// Paragraph / explanatory copy — 13 / 400, lh 1.5.
+  /// Paragraph / explanatory copy — 13 / 500, lh 1.5.
   static const paragraph = TextStyle(
     fontSize: 13,
-    fontWeight: FontWeight.w400,
+    fontWeight: FontWeight.w500,
     color: AppColors.ink2,
     height: 1.5,
   );
@@ -201,10 +207,10 @@ class AppText {
     color: AppColors.ink2,
   );
 
-  /// Inline validation — 11 / 500, red.
+  /// Inline validation — 11 / 600, red.
   static const fieldError = TextStyle(
     fontSize: 11,
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w600,
     color: AppColors.redInk,
   );
 
@@ -215,10 +221,10 @@ class AppText {
     color: AppColors.ink2,
   );
 
-  /// Fine print — 11 / 400, muted, lh 1.5.
+  /// Fine print — 11 / 500, muted, lh 1.5.
   static const fine = TextStyle(
     fontSize: 11,
-    fontWeight: FontWeight.w400,
+    fontWeight: FontWeight.w500,
     color: AppColors.muted,
     height: 1.5,
   );
@@ -291,10 +297,10 @@ class AppText {
     color: AppColors.muted,
   );
 
-  /// Notification timestamp — 10 / 400, muted.
+  /// Notification timestamp — 10 / 500, muted.
   static const timeStamp = TextStyle(
     fontSize: 10,
-    fontWeight: FontWeight.w400,
+    fontWeight: FontWeight.w500,
     color: AppColors.muted,
   );
 

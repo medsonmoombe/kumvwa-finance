@@ -300,12 +300,14 @@ class _DomeDelegate extends MultiChildLayoutDelegate {
   @override
   void performLayout(Size size) {
     // The header takes its natural height; the body gets everything left over.
-    // Use a width-only constraint so the header never expands to fill the
-    // full viewport height (which happens when loose(size) is passed and the
-    // header's subtree has no intrinsic height limit).
+    // The width must be TIGHT: with only a loose max-width the header — a
+    // gradient box wrapping content-sized text — shrinks to its child's
+    // natural width instead of spanning the screen (the dome only reached as
+    // far as its title). Height stays unbounded so the header keeps its own
+    // height rather than expanding to fill the viewport.
     final header = layoutChild(
       _headerId,
-      BoxConstraints(maxWidth: size.width),
+      BoxConstraints.tightFor(width: size.width),
     );
     positionChild(_headerId, Offset.zero);
 

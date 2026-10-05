@@ -132,6 +132,7 @@ export function LenderAuditPage() {
       <AppTable
         columns={cols}
         rows={events}
+        searchKeys={['actor', 'actorRole', 'action', 'resource', 'resourceId', 'severity', 'ip']}
         filters={FILTERS}
         activeFilter={filter}
         onFilterChange={(v) => { setFilter(v); load(v); }}

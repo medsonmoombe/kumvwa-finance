@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { createHmac, randomBytes, randomInt } from 'node:crypto';
@@ -188,6 +189,17 @@ export class AuthService {
   // ─────────────────── Registration (OTP-verified when offered) ───────────────────
 
   async registerTenant(dto: RegisterTenantDto, req: Request) {
+    // The signup kill-switch: existing lenders keep working, but the platform
+    // stops accepting new applications. Checked first so a closed platform
+    // never leaks "this phone is registered" style information.
+    const signupsOpen = await this.platform.getFlag('signup_enabled');
+    if (!signupsOpen) {
+      throw new ServiceUnavailableException({
+        message: 'New business registrations are temporarily closed. Please try again shortly.',
+        code: 'SIGNUP_DISABLED',
+      });
+    }
+
     const phone = this.mustPhone(dto.phone);
     const tpin = dto.tpin?.trim();
     if (!tpin) throw new BadRequestException('TPIN is required');
@@ -233,8 +245,10 @@ export class AuthService {
           businessDescription: dto.businessDescription.trim(),
           ownerNrcEncrypted: this.nrc.encrypt(dto.ownerNrc.trim()),
           // Dev convenience: skip the BOZ gate so the whole loop is testable
-          // without object storage. The gate itself stays in place for prod.
-          status: this.env.DEV_AUTO_VERIFY_TENANTS
+          // without object storage. The gate itself stays in place for prod,
+          // and a platform that has turned manual review off opts out too.
+          status: this.env.DEV_AUTO_VERIFY_TENANTS ||
+            !(await this.platform.getFlag('new_registrations_require_review'))
             ? 'active'
             : 'pending_verification',
         },

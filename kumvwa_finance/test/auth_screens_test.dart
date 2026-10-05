@@ -111,35 +111,41 @@ void main() {
   }
 
   group('SplashScreen', () {
-    testWidgets('shows the brand lockup, tagline and a spinner', (
+    testWidgets('heads with the brand lockup, pinned top-left', (
       tester,
     ) async {
       await pumpAt(tester, const SplashScreen());
 
-      expect(find.byType(BrandLockup), findsOneWidget);
-      expect(find.text('Kumvwa'), findsOneWidget);
-      expect(find.text('FINANCE'), findsOneWidget);
-      expect(find.text('Your vehicle. Your freedom.'), findsOneWidget);
-      expect(find.byType(AppSpinner), findsOneWidget);
+      // The header must draw the brand sheet itself, not a stand-in.
+      final image = tester.widget<Image>(find.byType(Image));
+      expect(
+        (image.image as AssetImage).assetName,
+        'assets/brand/kumvwa_finance.png',
+      );
+
+      // Small, and on the page gutter at the top — 18dp in, 16dp down. A wide
+      // lockup, so it is clearly wider than it is tall.
+      final logo = tester.getRect(find.byKey(SplashScreen.logoKey));
+      expect(logo.left, 18);
+      expect(logo.top, 16);
+      expect(logo.width, 120);
+      expect(logo.height, lessThan(logo.width));
+    });
+
+    testWidgets('shows the tagline and both calls to action', (tester) async {
+      await pumpAt(tester, const SplashScreen());
+
+      expect(find.text('Lending, made simple.'), findsOneWidget);
+      expect(find.widgetWithText(AppButton, 'Sign in'), findsOneWidget);
+      expect(
+        find.text("Don't have an account? Register here"),
+        findsOneWidget,
+      );
     });
 
     testWidgets('does not overflow on the narrowest phone', (tester) async {
       await pumpAt(tester, const SplashScreen(), size: const Size(320, 568));
       expect(tester.takeException(), isNull);
-    });
-
-    testWidgets('stays a launch screen — nothing on it is tappable', (
-      tester,
-    ) async {
-      await pumpAt(tester, const SplashScreen());
-      // A marketing CTA here would be unreachable: the router redirects as soon
-      // as session restore resolves, usually in well under a second.
-      expect(find.byType(AppButton), findsNothing);
-      expect(
-        find.byType(GestureDetector),
-        findsNothing,
-        reason: 'the splash must not present an action it cannot wait for',
-      );
     });
   });
 

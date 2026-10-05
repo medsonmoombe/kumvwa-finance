@@ -199,4 +199,65 @@ void main() {
       );
     });
   });
+
+  // Regression guard: the Terms/Privacy rows on the profile screens push
+  // `/legal/terms` and `/legal/privacy`. Those paths start with neither `/c`
+  // nor `/lender`, so the role redirects used to bounce them home before the
+  // document screen could open. They are public content and must pass in
+  // every auth state, for both roles, KYC complete or not.
+  group('appRedirect — legal documents are public', () {
+    const legalPaths = ['/legal/terms', '/legal/privacy'];
+
+    test('reachable in every auth state', () {
+      for (final status in AuthStatus.values) {
+        for (final path in legalPaths) {
+          expect(
+            appRedirect(
+              status: status,
+              needsProfile: false,
+              location: path,
+              registration: _decision(RegistrationGateAction.complete),
+              role: 'client',
+            ),
+            isNull,
+            reason: '$status $path',
+          );
+        }
+      }
+    });
+
+    test('reachable from both the borrower and lender surfaces', () {
+      for (final role in ['client', 'business']) {
+        for (final path in legalPaths) {
+          expect(
+            appRedirect(
+              status: AuthStatus.authenticated,
+              needsProfile: false,
+              location: path,
+              registration: _decision(RegistrationGateAction.complete),
+              role: role,
+            ),
+            isNull,
+            reason: '$role $path',
+          );
+        }
+      }
+    });
+
+    test('reachable while the borrower still owes the KYC wizard', () {
+      for (final path in legalPaths) {
+        expect(
+          appRedirect(
+            status: AuthStatus.authenticated,
+            needsProfile: true,
+            location: path,
+            registration: _decision(RegistrationGateAction.clearLoanFirst),
+            role: 'client',
+          ),
+          isNull,
+          reason: path,
+        );
+      }
+    });
+  });
 }

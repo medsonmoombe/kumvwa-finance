@@ -11,7 +11,9 @@ import { CenteredSpinner } from './components/ui';
 import { useAuth } from './lib/auth';
 import { AdminQueuePage } from './features/admin/AdminQueuePage';
 import { AdminOverviewPage } from './features/admin/AdminOverviewPage';
+import { AdminBillingPage } from './features/admin/billing/AdminBillingPage';
 import { AdminClientsPage } from './features/admin/AdminClientsPage';
+import { AdminSettingsPage } from './features/admin/AdminSettingsPage';
 import { AdminTenantDetailPage } from './features/admin/AdminTenantDetailPage';
 import { AuthPage } from './features/auth/AuthPage';
 import { ForgotPasswordPage } from './features/auth/ForgotPasswordPage';
@@ -62,6 +64,28 @@ function Guard({ children }: { children: ReactNode }) {
     <RequireTenant>
       <>{children}</>
     </RequireTenant>
+  );
+}
+
+/**
+ * Platform-admin only.
+ *
+ * The `/admin/*` routes used to rely on nav-hiding alone: a tenant owner who
+ * typed the URL reached admin screens and only a 403 stopped them. The API
+ * still guards every endpoint, but the console should not offer the screen.
+ */
+function RequireAdmin({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== 'platform_admin') return <Home />;
+  return <>{children}</>;
+}
+
+function AdminGuard({ children }: { children: ReactNode }) {
+  return (
+    <RequireAdmin>
+      <>{children}</>
+    </RequireAdmin>
   );
 }
 
@@ -194,13 +218,24 @@ export default function App() {
             }
           />
           <Route path="/verify" element={<PendingPage />} />
-          <Route path="/admin" element={<AdminOverviewPage />} />
-          <Route path="/admin/queue" element={<AdminQueuePage />} />
-          <Route path="/admin/tenants/:id" element={<AdminTenantDetailPage />} />
-          <Route path="/admin/borrowers" element={<AdminClientsPage />} />
-          <Route path="/admin/audit" element={<AuditPage />} />
+          <Route path="/admin" element={<AdminGuard><AdminOverviewPage /></AdminGuard>} />
+          <Route path="/admin/queue" element={<AdminGuard><AdminQueuePage /></AdminGuard>} />
+          <Route path="/admin/billing" element={<AdminGuard><AdminBillingPage /></AdminGuard>} />
+          <Route
+            path="/admin/settings"
+            element={<AdminGuard><AdminSettingsPage /></AdminGuard>}
+          />
+          <Route
+            path="/admin/tenants/:id"
+            element={<AdminGuard><AdminTenantDetailPage /></AdminGuard>}
+          />
+          <Route path="/admin/borrowers" element={<AdminGuard><AdminClientsPage /></AdminGuard>} />
+          <Route path="/admin/audit" element={<AdminGuard><AuditPage /></AdminGuard>} />
           <Route path="/admin/profile" element={<UserProfilePage />} />
-          <Route path="/admin/audit/:id" element={<AuditDetailPage />} />
+          <Route
+            path="/admin/audit/:id"
+            element={<AdminGuard><AuditDetailPage /></AdminGuard>}
+          />
           <Route path="/audit" element={<Guard><LenderAuditPage /></Guard>} />
           <Route path="/audit/:id" element={<Guard><LenderAuditDetailPage /></Guard>} />
           <Route path="*" element={<Home />} />

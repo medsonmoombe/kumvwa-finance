@@ -6,112 +6,161 @@ export interface RolloverInstallment {
   dueDate: Date;
   amountMinor: Ngwee;
   paidAmountMinor: Ngwee;
+  /** Interest baked into this installment (from distributeInterest). */
+  interestMinor: Ngwee;
 }
 
 export interface RolloverInput {
   installments: RolloverInstallment[];
-  /** One month's interest share — the fixed cost of carrying over. */
-  interestShareMinor: Ngwee;
-  today: Date;
   rolloverCount: number;
   maxRollovers: number;
+  /** Principal of the loan — used for the total-cost cap. */
+  principalMinor: Ngwee;
 }
 
 export interface RolloverPlan {
-  /** The interest-only payment the client makes now. */
+  /** The interest-only fee the client pays now to extend. */
+  extensionFeeMinor: Ngwee;
+  /** Backward-compat alias — same value as extensionFeeMinor. */
   paymentMinor: Ngwee;
   shifts: Array<{ seq: number; newDueDate: Date }>;
-  appended: { seq: number; dueDate: Date; amountMinor: Ngwee };
   newTotalDueMinor: Ngwee;
 }
 
 /**
- * "Pay interest & carry over by one month":
- *  - client pays [interestShare] now (recorded as a repayment),
- *  - every UNPAID due date shifts +1 month,
- *  - one interest-only installment is appended at the end.
+ * "Pay remaining interest & extend all due dates by one month."
  *
- * Invariants: Σ amounts after = Σ before + share; outstanding unchanged
- * (paid and totalDue both grow by share); dates strictly increasing.
+ * Rules:
+ *  1. Only one extension is allowed per loan lifetime (maxRollovers = 1).
+ *  2. The extension fee = sum of interestMinor on ALL unpaid installments.
+ *     This is the interest the client still owes — not a new charge.
+ *     Example: K200 loan, 15% flat, 2 months, client paid installment 1 (K115):
+ *       remaining interest = interestMinor on installment 2 only = K15
+ *       extension fee = K15
+ *  3. Total cost cap: principal + all interest ever charged (original + fee)
+ *     must not exceed 2× principal. Rejects if it would.
+ *  4. Every UNPAID installment shifts +1 month. Paid installments are untouched.
+ *  5. NO new installment is appended. The extension fee is recorded only as a
+ *     repayment row (kind='rollover_interest') — the schedule stays clean.
+ *  6. totalDue grows by the fee; paidAmount grows by the fee via the repayment
+ *     row → outstanding is UNCHANGED by the extension itself.
  */
 export function rolloverPlan(input: RolloverInput): RolloverPlan {
   if (input.rolloverCount >= input.maxRollovers) {
-    throw new Error('Rollover limit reached');
+    throw new Error(
+      'This loan has already been extended once. No further extensions are allowed.',
+    );
   }
-  if (input.interestShareMinor <= 0n) {
-    throw new Error('Nothing to carry');
-  }
+
   const unpaid = input.installments.filter(
     (i) => i.paidAmountMinor < i.amountMinor,
   );
-  if (unpaid.length === 0) throw new Error('Loan already cleared');
+  if (unpaid.length === 0) {
+    throw new Error('This loan is already fully repaid.');
+  }
 
-  const last = input.installments.reduce((a, b) => (b.seq > a.seq ? b : a));
-  const sumBefore = input.installments.reduce(
-    (a, i) => a + i.amountMinor,
+  // Extension fee = sum of remaining interest on unpaid installments only.
+  // interestPaidOnInstallment is floored, so remaining = interestMinor - paid share.
+  const extensionFeeMinor = unpaid.reduce((sum, i) => {
+    if (i.interestMinor <= 0n) return sum;
+    // Interest already collected on this installment (pro-rata of what was paid).
+    const interestAlreadyPaid =
+      i.paidAmountMinor > 0n && i.amountMinor > 0n
+        ? (i.interestMinor * i.paidAmountMinor) / i.amountMinor
+        : 0n;
+    const remaining = i.interestMinor - interestAlreadyPaid;
+    return sum + (remaining > 0n ? remaining : 0n);
+  }, 0n);
+
+  if (extensionFeeMinor <= 0n) {
+    throw new Error(
+      'No interest remains on this loan — extension is not applicable.',
+    );
+  }
+
+  // Total-cost cap: the client must never pay more than 2× the principal.
+  // totalDue already includes original interest; adding the fee must not breach the cap.
+  const currentTotalDue = input.installments.reduce(
+    (s, i) => s + i.amountMinor,
     0n,
   );
-
-  // The appended installment must land strictly AFTER every shifted due
-  // date — so anchor it one month past the latest post-shift obligation,
-  // not one month past the original last date (those coincide when the
-  // last installment itself is unpaid, and would collide).
-  const lastShiftedDate = unpaid.reduce(
-    (a, i) => {
-      const shifted = addFrequency(i.dueDate, 1, 'monthly');
-      return shifted > a ? shifted : a;
-    },
-    new Date(0),
-  );
+  const cap = input.principalMinor * 2n;
+  if (currentTotalDue + extensionFeeMinor > cap) {
+    throw new Error(
+      `Extension would cause total repayable to exceed 2× the principal (K${Number(cap) / 100}). Extension not allowed.`,
+    );
+  }
 
   return {
-    paymentMinor: input.interestShareMinor,
+    extensionFeeMinor,
+    paymentMinor: extensionFeeMinor, // backward-compat
     shifts: unpaid.map((i) => ({
       seq: i.seq,
       newDueDate: addFrequency(i.dueDate, 1, 'monthly'),
     })),
-    appended: {
-      seq: last.seq + 1,
-      dueDate: addFrequency(lastShiftedDate, 1, 'monthly'),
-      amountMinor: input.interestShareMinor,
-    },
-    newTotalDueMinor: sumBefore + input.interestShareMinor,
+    newTotalDueMinor: currentTotalDue + extensionFeeMinor,
   };
 }
 
+// ── Bullet loan extension ────────────────────────────────────────────────────
+
 export interface BulletRolloverPlan {
+  extensionFeeMinor: Ngwee;
   paymentMinor: Ngwee;
   newDueDate: Date;
-  /** Grows the single installment (and totalDue) by the carry cost. */
   amountIncreaseMinor: Ngwee;
   newTotalDueMinor: Ngwee;
 }
 
 /**
- * "Pay interest & extend +1 month" for bullet loans: the client pays one
- * month's interest share, the maturity moves +1 month, and totalDue grows by
- * the share. Invariant: outstanding is UNCHANGED by the rollover itself
- * (paidAmount and totalDue both grow by the share via the repayment row).
+ * Extension for bullet loans (single installment).
+ * Same rules as above — fee = remaining interest on the installment,
+ * maturity shifts +1 month, no new installment appended.
  */
 export function rolloverBulletPlan(input: {
   dueDate: Date;
   amountMinor: Ngwee;
   paidAmountMinor: Ngwee;
-  interestShareMinor: Ngwee;
+  interestMinor: Ngwee;
   rolloverCount: number;
   maxRollovers: number;
+  principalMinor: Ngwee;
 }): BulletRolloverPlan {
   if (input.rolloverCount >= input.maxRollovers) {
-    throw new Error('Rollover limit reached');
+    throw new Error(
+      'This loan has already been extended once. No further extensions are allowed.',
+    );
   }
-  if (input.interestShareMinor <= 0n) throw new Error('Nothing to carry');
   if (input.paidAmountMinor >= input.amountMinor) {
-    throw new Error('Loan already cleared');
+    throw new Error('This loan is already fully repaid.');
   }
+
+  // Remaining interest = total interest - interest already collected pro-rata.
+  const interestAlreadyPaid =
+    input.paidAmountMinor > 0n && input.amountMinor > 0n
+      ? (input.interestMinor * input.paidAmountMinor) / input.amountMinor
+      : 0n;
+  const extensionFeeMinor = input.interestMinor - interestAlreadyPaid;
+
+  if (extensionFeeMinor <= 0n) {
+    throw new Error(
+      'No interest remains on this loan — extension is not applicable.',
+    );
+  }
+
+  // Total-cost cap.
+  const cap = input.principalMinor * 2n;
+  if (input.amountMinor + extensionFeeMinor > cap) {
+    throw new Error(
+      `Extension would cause total repayable to exceed 2× the principal (K${Number(cap) / 100}). Extension not allowed.`,
+    );
+  }
+
   return {
-    paymentMinor: input.interestShareMinor,
+    extensionFeeMinor,
+    paymentMinor: extensionFeeMinor,
     newDueDate: addFrequency(input.dueDate, 1, 'monthly'),
-    amountIncreaseMinor: input.interestShareMinor,
-    newTotalDueMinor: input.amountMinor + input.interestShareMinor,
+    amountIncreaseMinor: extensionFeeMinor,
+    newTotalDueMinor: input.amountMinor + extensionFeeMinor,
   };
 }

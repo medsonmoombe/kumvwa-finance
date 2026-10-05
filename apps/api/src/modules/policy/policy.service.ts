@@ -7,6 +7,7 @@ import {
 import { Prisma } from '@prisma/client';
 import {
   DEFAULT_CREDIT_POLICY,
+  orderedTiers,
   resolveCreditLimit,
   type BorrowerStats,
   type CreditPolicy,
@@ -138,12 +139,16 @@ export class PolicyService {
     const prev = await this.prisma.creditPolicy.findUnique({
       where: { tenantId },
     });
+    // Store the rungs in ascending order. Resolution no longer depends on it,
+    // but canonical storage means the JSON a lender downloads, the console
+    // renders and the engine evaluates can never disagree.
+    const canonical: CreditPolicy = { ...policy, tiers: orderedTiers(policy) };
     const saved = await this.prisma.creditPolicy.upsert({
       where: { tenantId },
-      create: { tenantId, version: 1, policy: policy as unknown as Prisma.InputJsonValue },
+      create: { tenantId, version: 1, policy: canonical as unknown as Prisma.InputJsonValue },
       update: {
         version: (prev?.version ?? 0) + 1,
-        policy: policy as unknown as Prisma.InputJsonValue,
+        policy: canonical as unknown as Prisma.InputJsonValue,
         publishedAt: new Date(),
       },
     });
@@ -252,7 +257,9 @@ export class PolicyService {
     if (!link) throw new NotFoundException('Client not in your book');
 
     const policy = await this.getPolicy(tenantId);
-    const ceiling = policy.tiers[policy.tiers.length - 1]!.limitKwacha;
+    // Must match resolveCreditLimit's ceiling exactly, or a lender could be
+    // refused an override that the resolution would happily have honoured.
+    const ceiling = Math.max(...policy.tiers.map((t) => t.limitKwacha));
     if (dto.limitKwacha > ceiling) {
       throw new ForbiddenException(`Above your policy ceiling of K${ceiling}`);
     }

@@ -17,6 +17,8 @@ interface Summary {
   counts: { active: number; overdue: number; cleared: number };
   outstandingMinor: string;
   clientsCount: number;
+  interestContractedMinor: string;
+  interestCollectedMinor: string;
   recentLoans: Array<{ id: string; clientName: string; principalMinor: string; status: string; createdAt: string }>;
 }
 interface Month { month: string; disbursedMinor: string; collectedMinor: string }
@@ -280,6 +282,24 @@ export function DashboardPage() {
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="rounded-card border border-line bg-white p-3.5">
+            <div className="mb-2 text-[10px] font-extrabold uppercase tracking-[0.08em] text-ink-muted">
+              Interest generated
+            </div>
+            <div className="flex justify-between border-b border-line-2 py-1.5 text-[11.5px]">
+              <span className="text-ink-muted">Collected to date</span>
+              <b className="tabular-nums text-accent-700">{money(s.interestCollectedMinor)}</b>
+            </div>
+            <div className="flex justify-between py-1.5 text-[11.5]">
+              <span className="text-ink-muted">Booked on issued loans</span>
+              <b className="tabular-nums">{money(s.interestContractedMinor)}</b>
+            </div>
+            <p className="mt-2 text-[9.5px] leading-relaxed text-ink-muted">
+              Interest actually banked vs. interest the book is written to earn
+              (including rollover extensions).
+            </p>
           </div>
 
           <div className="rounded-card border border-line bg-white p-3.5">

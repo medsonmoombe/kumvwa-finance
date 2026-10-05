@@ -9,9 +9,13 @@ import 'package:kumvwa_finance/features/clients/domain/client_invite.dart';
 
 abstract class InviteRepository {
   /// Lender-side: mint a short invite code for a client.
+  ///
+  /// `email` is required by the API — the invite is delivered by email (there
+  /// is no SMS channel yet), so a create without it is rejected with a 400.
   Future<ClientInvite> createInvite({
     required String clientName,
     required String phone,
+    required String email,
   });
 
   /// Public lookup so the app can show who invited whom before the client
@@ -38,6 +42,7 @@ class MockInviteRepository implements InviteRepository {
   Future<ClientInvite> createInvite({
     required String clientName,
     required String phone,
+    required String email,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 700));
     final code = 'KMV-${1000 + _counter++}';
@@ -96,6 +101,7 @@ class ApiInviteRepository implements InviteRepository {
   Future<ClientInvite> createInvite({
     required String clientName,
     required String phone,
+    required String email,
   }) async {
     try {
       final results = await Future.wait([
@@ -104,6 +110,7 @@ class ApiInviteRepository implements InviteRepository {
           data: {
             'clientName': clientName.trim(),
             'phone': toE164(phone.trim()),
+            'email': email.trim(),
           },
         ),
         _client.getA('/tenants/me'),
@@ -169,6 +176,14 @@ class ApiInviteRepository implements InviteRepository {
   static String _friendly(ApiException e) => switch (e.statusCode) {
     404 => 'This invite code is invalid or has expired.',
     409 => e.message,
+    // A 402 here is the *lender's* plan, not the borrower's — the slot is
+    // paid for by whoever invited them, and the server's message says "buy an
+    // extra client slot", which is meaningless (and un-actionable) on a
+    // borrower's phone. Never show it verbatim: it would tell someone to go
+    // buy something they cannot buy, and imply the fault is theirs.
+    402 when e.isClientLimit =>
+      'This lender has used all the client places on their plan. '
+      'Ask them to add a place, then use this code again.',
     _ => e.message,
   };
 }

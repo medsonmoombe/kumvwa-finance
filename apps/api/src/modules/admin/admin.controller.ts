@@ -1,15 +1,22 @@
 import {
+  BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   NotFoundException,
   Param,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { IsString, MaxLength, MinLength } from 'class-validator';
 import { ReportsService } from '../reports/reports.service';
+import {
+  isLegalDocumentKind,
+  type LegalDocumentKind,
+} from '../terms/legal-documents';
 
 import type { TokenClaims } from '../../common/crypto/token.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -21,6 +28,7 @@ import { AdminService } from './admin.service';
 import {
   ReviewVerificationDto,
   SetFlagDto,
+  SetSettingDto,
   UpdateTenantStatusDto,
   UpdateUserStatusDto,
 } from './dto/admin.dto';
@@ -32,6 +40,15 @@ class PublishPlatformTermsDto {
   @MinLength(50, { message: 'Terms must be at least 50 characters' })
   @MaxLength(20000)
   body!: string;
+}
+
+function adminParseKind(v: string): LegalDocumentKind {
+  if (!isLegalDocumentKind(v)) {
+    throw new BadRequestException(
+      `Unknown document "${v}". Expected "terms" or "privacy".`,
+    );
+  }
+  return v;
 }
 
 @Roles('platform_admin')
@@ -120,11 +137,23 @@ export class AdminPlatformController {
     return this.reports.platformPar();
   }
 
+  /** Interest generated platform-wide, and per lender (contracted vs collected). */
+  @Get('reports/interest')
+  platformInterest() {
+    return this.reports.platformInterest();
+  }
+
   @Get('terms/platform')
   async getPlatformTerms() {
-    const t = await this.terms.platformLatest();
+    const t = await this.terms.platformLatest('terms');
     if (!t) throw new NotFoundException('Platform terms not available');
-    return { version: t.version, body: t.body, publishedAt: t.publishedAt };
+    return {
+      kind: 'terms',
+      title: this.terms.documentTitle('terms'),
+      version: t.version,
+      body: t.body,
+      publishedAt: t.publishedAt,
+    };
   }
 
   @Post('terms/platform')
@@ -132,7 +161,98 @@ export class AdminPlatformController {
     @CurrentUser() u: TokenClaims,
     @Body() dto: PublishPlatformTermsDto,
   ) {
-    return this.terms.publishPlatformTerms(u.sub, dto.body);
+    return this.terms.publishPlatformDocument(u.sub, 'terms', dto.body);
+  }
+
+  /**
+   * Terms and the Privacy Policy are the same kind of object — published,
+   * versioned platform documents — so they share these routes rather than
+   * growing a parallel set per document.
+   *
+   * `/history` MUST stay declared before the bare `/terms/platform/:kind`,
+   * otherwise the parameterised route captures the literal `history` segment.
+   */
+  @Get('terms/platform/:kind/history')
+  async platformDocumentHistory(@Param('kind') kind: string) {
+    return this.terms.platformHistory(adminParseKind(kind));
+  }
+
+  @Get('terms/platform/:kind')
+  async getPlatformDocument(@Param('kind') kind: string) {
+    const k = adminParseKind(kind);
+    const t = await this.terms.platformLatest(k);
+    if (!t) throw new NotFoundException('Document not available');
+    return {
+      kind: k,
+      title: this.terms.documentTitle(k),
+      version: t.version,
+      body: t.body,
+      publishedAt: t.publishedAt,
+    };
+  }
+
+  @Post('terms/platform/:kind')
+  publishPlatformDocument(
+    @CurrentUser() u: TokenClaims,
+    @Param('kind') kind: string,
+    @Body() dto: PublishPlatformTermsDto,
+  ) {
+    return this.terms.publishPlatformDocument(
+      u.sub,
+      adminParseKind(kind),
+      dto.body,
+    );
+  }
+}
+
+/**
+ * Platform settings CRUD.
+ *
+ * The keys are a fixed catalogue (see SETTING_DEFS) — an operator can change
+ * and reset anything in it, but cannot invent a setting that no code reads.
+ * Literal `restore` is declared before `:key` so it is not captured as a key.
+ */
+@Roles('platform_admin')
+@Controller('admin/settings')
+export class AdminSettingsController {
+  constructor(private readonly platform: PlatformService) {}
+
+  @Get()
+  list() {
+    return this.platform.list();
+  }
+
+  @Post('restore')
+  restore(@CurrentUser() u: TokenClaims) {
+    return this.platform.restoreDefaults(u.sub);
+  }
+
+  @Get(':key')
+  getOne(@Param('key') key: string) {
+    return this.platform.get(key);
+  }
+
+  /** Create-or-update: the first write for a key creates its override row. */
+  @Post(':key')
+  create(@CurrentUser() u: TokenClaims, @Param('key') key: string, @Body() dto: SetSettingDto) {
+    if (dto.key !== key) {
+      throw new BadRequestException('Body key must match the path key');
+    }
+    return this.platform.set(key, dto.value, u.sub);
+  }
+
+  @Put(':key')
+  update(@CurrentUser() u: TokenClaims, @Param('key') key: string, @Body() dto: SetSettingDto) {
+    if (dto.key !== key) {
+      throw new BadRequestException('Body key must match the path key');
+    }
+    return this.platform.set(key, dto.value, u.sub);
+  }
+
+  /** Removes the override, so the catalogue default applies again. */
+  @Delete(':key')
+  remove(@CurrentUser() u: TokenClaims, @Param('key') key: string) {
+    return this.platform.remove(key, u.sub);
   }
 }
 

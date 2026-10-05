@@ -4,9 +4,9 @@ import type { NotificationType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../infra/prisma.module';
 
 /**
- * In-app notification center. SMS/push fan-out lives in the notification
- * worker (B5); this service is the single writer of Notification rows, so
- * every channel sees the same events.
+ * In-app notification center. The push/SMS fan-out lives in the worker, which
+ * reads the rows this service writes — so a single write here feeds every
+ * channel and no caller has to know which channels are configured.
  */
 @Injectable()
 export class NotificationsService {
@@ -58,14 +58,5 @@ export class NotificationsService {
       data: { readAt: new Date() },
     });
     return { read: true };
-  }
-
-  /** Push fan-out helper for B5's worker. */
-  async deviceTokens(userId: string): Promise<string[]> {
-    const rows = await this.prisma.devicePushToken.findMany({
-      where: { userId },
-      select: { token: true },
-    });
-    return rows.map((r) => r.token);
   }
 }

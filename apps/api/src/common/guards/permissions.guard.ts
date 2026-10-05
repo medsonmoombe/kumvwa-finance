@@ -28,14 +28,16 @@ export class PermissionsGuard implements CanActivate {
     if (!required?.length) return true;
 
     const request = context.switchToHttp().getRequest<AuthedRequest>();
-    // These two payment actions are deliberately shared with the borrower app.
-    // Object-level ownership is enforced in LoansService; lender calls still
-    // require the matching permission below.
+    // These payment actions are deliberately shared with the borrower app.
+    // Object-level ownership is enforced in LoansService / PaymentsService;
+    // lender calls still require the matching permission below.
     if (
       request.user?.role === 'client' &&
       required.every(
         (permission) =>
-          permission === 'loans.repayment' || permission === 'loans.rollover',
+          permission === 'loans.repayment' ||
+          permission === 'loans.rollover' ||
+          permission === 'payments.charge',
       )
     ) {
       return true;

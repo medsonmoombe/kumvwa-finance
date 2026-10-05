@@ -7,6 +7,8 @@ import {
   businessMonthLabels,
   daysBetween,
   minorToKwacha,
+  minorToKwachaString,
+  nominalInterestMinor,
   startOfBusinessMonth,
   startOfBusinessMonthsAgo,
   startOfNextBusinessMonth,
@@ -37,7 +39,7 @@ export class ReportsService {
     const collectedFrom = startOfBusinessMonth();
     const collectedTo = startOfNextBusinessMonth();
 
-    const [grouped, clientsCount, recent, dueThisMonth, collectedThisMonth] =
+    const [grouped, clientsCount, recent, dueThisMonth, collectedThisMonth, interest] =
       await Promise.all([
         this.prisma.loan.groupBy({
           by: ['status'],
@@ -77,6 +79,21 @@ export class ReportsService {
           where: { tenantId, createdAt: { gte: collectedFrom, lt: collectedTo } },
           _sum: { amount: true },
         }),
+        // Interest, both sides of the same coin:
+        //  • contracted — what the issued book is written to earn
+        //    (totalDue − principal − fee, including rollover extensions);
+        //  • collected — the interest component actually banked, summed from
+        //    each repayment's own split (see LoansService.recordRepayment).
+        Promise.all([
+          this.prisma.loan.aggregate({
+            where: { tenantId },
+            _sum: { principal: true, totalDue: true, feeMinor: true },
+          }),
+          this.prisma.repayment.aggregate({
+            where: { tenantId },
+            _sum: { interestMinor: true },
+          }),
+        ]),
       ]);
 
     const bucket = (status: LoanStatus) => {
@@ -100,6 +117,14 @@ export class ReportsService {
     const dueMinor = dueThisMonth._sum.amount ?? 0n;
     const collectedMinor = collectedThisMonth._sum.amount ?? 0n;
 
+    const [interestBook, interestCollected] = interest;
+    const interestContractedMinor = nominalInterestMinor(
+      interestBook._sum.totalDue ?? 0n,
+      interestBook._sum.principal ?? 0n,
+      interestBook._sum.feeMinor ?? 0n,
+    );
+    const interestCollectedMinor = interestCollected._sum.interestMinor ?? 0n;
+
     return {
       counts: {
         active: active.count,
@@ -114,6 +139,12 @@ export class ReportsService {
       dueThisMonthMinor: dueMinor.toString(),
       collectedThisMonth: minorToKwacha(collectedMinor),
       collectedThisMonthMinor: collectedMinor.toString(),
+      // "Generated from interest" — shown side by side so a lender sees both
+      // what the book will earn and what it has actually earned so far.
+      interestContracted: minorToKwacha(interestContractedMinor),
+      interestContractedMinor: interestContractedMinor.toString(),
+      interestCollected: minorToKwacha(interestCollectedMinor),
+      interestCollectedMinor: interestCollectedMinor.toString(),
       clientsCount,
       recentLoans: await Promise.all(
         recent.map(async (l) => {
@@ -249,6 +280,77 @@ export class ReportsService {
   }
 
   /**
+   * Platform-wide interest across ALL lenders, plus a per-lender breakdown so
+   * an operator can see which books are actually earning. Same two definitions
+   * as the lender summary (contracted vs collected), aggregated here rather
+   * than summed from the per-tenant calls.
+   */
+  async platformInterest() {
+    const [loanAgg, repayAgg, loanByTenant, repayByTenant, tenants] =
+      await Promise.all([
+        this.prisma.loan.aggregate({
+          _sum: { principal: true, totalDue: true, feeMinor: true },
+        }),
+        this.prisma.repayment.aggregate({ _sum: { interestMinor: true } }),
+        this.prisma.loan.groupBy({
+          by: ['tenantId'],
+          _sum: { principal: true, totalDue: true, feeMinor: true },
+        }),
+        this.prisma.repayment.groupBy({
+          by: ['tenantId'],
+          _sum: { interestMinor: true },
+        }),
+        this.prisma.tenant.findMany({ select: { id: true, name: true } }),
+      ]);
+
+    const contractedMinor = nominalInterestMinor(
+      loanAgg._sum.totalDue ?? 0n,
+      loanAgg._sum.principal ?? 0n,
+      loanAgg._sum.feeMinor ?? 0n,
+    );
+    const collectedMinor = repayAgg._sum.interestMinor ?? 0n;
+
+    const contractBy = new Map(
+      loanByTenant.map((r) => [
+        r.tenantId,
+        nominalInterestMinor(
+          r._sum.totalDue ?? 0n,
+          r._sum.principal ?? 0n,
+          r._sum.feeMinor ?? 0n,
+        ),
+      ]),
+    );
+    const collectedBy = new Map(
+      repayByTenant.map((r) => [r.tenantId, r._sum.interestMinor ?? 0n]),
+    );
+
+    const byLender = tenants
+      .map((t) => {
+        const contracted = contractBy.get(t.id) ?? 0n;
+        const collected = collectedBy.get(t.id) ?? 0n;
+        return {
+          tenantId: t.id,
+          tenantName: t.name,
+          contractedMinor: contracted.toString(),
+          contracted: minorToKwachaString(contracted),
+          collectedMinor: collected.toString(),
+          collected: minorToKwachaString(collected),
+        };
+      })
+      .filter((r) => r.contractedMinor !== '0' || r.collectedMinor !== '0')
+      .sort((a, b) => Number(BigInt(b.collectedMinor) - BigInt(a.collectedMinor)));
+
+    return {
+      contractedMinor: contractedMinor.toString(),
+      contracted: minorToKwachaString(contractedMinor),
+      collectedMinor: collectedMinor.toString(),
+      collected: minorToKwachaString(collectedMinor),
+      lenders: byLender.length,
+      byLender,
+    };
+  }
+
+  /**
    * Portfolio at risk. A loan is aged by its MOST-late unpaid installment and
    * its whole remaining balance follows that bucket, because a lender cannot
    * recover part of a loan that is 60 days late on part of it.
@@ -260,12 +362,22 @@ export class ReportsService {
     const loans = await this.prisma.loan.findMany({
       where: {
         ...(tenantId ? { tenantId } : {}),
-        status: { in: ['active', 'overdue'] },
+        // `defaulted` is included on purpose: a written-off loan still carries
+        // recoverable principal, and excluding it would let total outstanding
+        // fall precisely when a portfolio is doing worst.
+        status: { in: ['active', 'overdue', 'defaulted'] },
       },
       select: {
         totalDue: true,
         paidAmount: true,
-        installments: { select: { dueDate: true, amount: true, paidAmount: true } },
+        installments: {
+          select: {
+            dueDate: true,
+            amount: true,
+            paidAmount: true,
+            penaltyMinor: true,
+          },
+        },
       },
     });
     const today = businessDate();
@@ -274,7 +386,12 @@ export class ReportsService {
     let totalOutstanding = 0n;
 
     for (const l of loans) {
-      const outstanding = l.totalDue - l.paidAmount;
+      // What the borrower actually owes INCLUDES accrued late penalties.
+      // Reporting `totalDue - paidAmount` alone understates every delinquent
+      // loan and flatters PAR-30, which is the number lenders use to decide
+      // whether to write off — so penalties have to be in the balance.
+      const penalty = l.installments.reduce((sum, i) => sum + i.penaltyMinor, 0n);
+      const outstanding = l.totalDue - l.paidAmount + penalty;
       if (outstanding <= 0n) continue;
       totalOutstanding += outstanding;
 

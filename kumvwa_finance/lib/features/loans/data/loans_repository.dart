@@ -46,8 +46,8 @@ final MockLoansRepository mockLoansRepository = MockLoansRepository();
 /// Mock data with realistic latency so skeletons are visible in dev.
 /// Swap for the API-backed implementation when the backend lands.
 class MockLoansRepository implements LoansRepository {
-  /// Mirror of the API's `ROLLOVER_MAX` (apps/api config, default 2).
-  static const maxRollovers = 2;
+  /// Mirror of the API's `ROLLOVER_MAX` (apps/api config, default 1).
+  static const maxRollovers = 1;
 
   final Map<String, Loan> _db = {};
   var _loanSeq = 900;
@@ -390,116 +390,43 @@ class MockLoansRepository implements LoansRepository {
     return updated;
   }
 
-  /// Mirrors the server contract (core's `rolloverPlan`): the borrower pays one
-  /// installment's interest share now, every UNPAID due date moves +1 month, and
-  /// an interest-only installment is appended at the end. Outstanding is
-  /// unchanged — `amountPaid` and `totalDue` both grow by the share, so
-  /// Σ installments still equals `totalDue`. The API stays authoritative in live
-  /// mode (it also enforces `ROLLOVER_MAX` and records the repayment row).
+  /// Mirrors the server contract: client pays remaining interest now,
+  /// every UNPAID due date moves +1 month. No installment appended.
+  /// Max 1 extension per loan (ROLLOVER_MAX = 1).
   @override
   Future<Loan> rollover(String loanId) async {
     await Future<void>.delayed(const Duration(milliseconds: 1300));
     final loan = _db[loanId];
     if (loan == null) throw StateError('Loan not found');
     if (loan.nextInstallment == null) throw StateError('Loan already cleared');
-    // Same cap as the API (`ROLLOVER_MAX`): extensions are counted per loan
-    // and a payment does not reset the count. Without this the demo could
-    // extend forever, which is not how the service behaves.
     if (loan.rolloverCount >= maxRollovers) {
-      throw StateError('Rollover limit reached');
+      throw StateError('This loan has already been extended once. No further extensions are allowed.');
     }
 
-    final share =
-        loan.principal * loan.interestRatePct / 100 / loan.termInstallments;
-    if (share <= 0) throw StateError('Nothing to carry');
+    // Extension fee = remaining interest on unpaid installments.
+    // Simple approximation for mock: total interest / termInstallments per unpaid.
+    final totalInterest = loan.totalDue - loan.principal;
+    final perInstallmentInterest = totalInterest / loan.termInstallments;
+    final unpaidCount = loan.schedule
+        .where((i) => i.status != InstallmentStatus.paid && !i.rolloverFee)
+        .length;
+    final extensionFee = perInstallmentInterest * unpaidCount;
+    if (extensionFee <= 0) throw StateError('No interest remains — extension not applicable.');
 
-    // Bullet parity with the API (`rolloverBulletPlan`): pay the month's
-    // interest share, maturity moves +1 month, the SINGLE lump grows by the
-    // share. outstanding stays unchanged (amountPaid grows too).
-    if (loan.repaymentStructure == 'bullet') {
-      final inst = loan.schedule.single;
-      if (inst.status == InstallmentStatus.paid) {
-        throw StateError('Loan already cleared');
-      }
-      final newInst = Installment(
-        number: inst.number,
-        dueDate: addMonthsClamped(inst.dueDate, 1),
-        amount: inst.amount + share,
-        penalty: inst.penalty,
-        status: inst.status,
+    // Shift only unpaid due dates +1 month. No new installment appended.
+    final schedule = loan.schedule.map((i) {
+      if (i.status == InstallmentStatus.paid || i.rolloverFee) return i;
+      return Installment(
+        number: i.number,
+        dueDate: addMonthsClamped(i.dueDate, 1),
+        amount: i.amount,
+        penalty: i.penalty,
+        status: i.status,
       );
-      final paid = loan.amountPaid + share;
-      final total = loan.totalDue + share;
-      final updated = Loan(
-        id: loan.id,
-        clientId: loan.clientId,
-        clientName: loan.clientName,
-        lenderName: loan.lenderName,
-        nrc: loan.nrc,
-        principal: loan.principal,
-        interestRatePct: loan.interestRatePct,
-        termInstallments: loan.termInstallments,
-        totalDue: total,
-        amountPaid: paid,
-        status: paid >= total ? LoanStatus.cleared : loan.status,
-        schedule: [newInst],
-        tenantId: loan.tenantId,
-        frequency: loan.frequency,
-        rolloverCount: loan.rolloverCount + 1,
-        risk: loan.risk,
-        loanRef: loan.loanRef,
-        repaymentStructure: loan.repaymentStructure,
-      );
-      _db[loanId] = updated;
-      return updated;
-    }
+    }).toList();
 
-    final unpaidNumbers = loan.schedule
-        .where((i) => i.status != InstallmentStatus.paid)
-        .map((i) => i.number)
-        .toSet();
-    final lastSeq = loan.schedule
-        .map((i) => i.number)
-        .reduce((a, b) => a > b ? a : b);
-
-    // Only unpaid installments move; settled history keeps its dates.
-    final schedule = loan.schedule
-        .map(
-          (i) => unpaidNumbers.contains(i.number)
-              ? Installment(
-                  number: i.number,
-                  dueDate: addMonthsClamped(i.dueDate, 1),
-                  amount: i.amount,
-                  penalty: i.penalty,
-                  status: i.status,
-                )
-              : i,
-        )
-        .toList();
-
-    // Anchor the appended installment a month past the latest SHIFTED date so
-    // the schedule stays strictly increasing (same rule as core/rollover.ts).
-    final lastShifted = schedule
-        .map((i) => i.dueDate)
-        .reduce((a, b) => a.isAfter(b) ? a : b);
-    // Born PAID, mirroring the API: this row records the interest charge the
-    // rollover just collected (amountPaid grows by the same share below).
-    // Appending it unpaid would leave phantom debt on an otherwise settled
-    // loan — outstanding 0, yet an installment showing as due.
-    schedule.add(
-      Installment(
-        number: lastSeq + 1,
-        dueDate: addMonthsClamped(lastShifted, 1),
-        amount: share,
-        status: InstallmentStatus.paid,
-        // Beyond the original term => an extension fee, not an installment,
-        // so the detail screen shows it under Extensions (mirrors the API).
-        rolloverFee: true,
-      ),
-    );
-
-    final paid = loan.amountPaid + share;
-    final total = loan.totalDue + share;
+    final paid = loan.amountPaid + extensionFee;
+    final total = loan.totalDue + extensionFee;
     final updated = Loan(
       id: loan.id,
       clientId: loan.clientId,
@@ -675,6 +602,7 @@ class ApiLoansRepository implements LoansRepository {
     try {
       await _client.postA(
         '/loans/$loanId/rollover',
+        data: {'method': 'in_app'},
         headers: {'Idempotency-Key': key},
       );
       _completeOperation(operation);

@@ -31,6 +31,24 @@ function setup(
     installments?: Record<string, unknown>[];
   } = {},
 ) {
+  // One mutable schedule shared by the tx mock and the receipt re-read, so
+  // receiptFor observes the same rows the allocation just credited.
+  const rows = (overrides.installments ?? defaultInstallments) as Array<
+    Record<string, unknown>
+  >;
+  const schedule = rows.map((row) => ({
+    id: row['id'] as string,
+    seq: row['seq'] as number,
+    amount: row['amount'] as bigint,
+    paidAmount: row['paidAmount'] as bigint,
+    status: row['status'] as string,
+    dueDate: new Date('2026-10-01T00:00:00Z'),
+    penaltyMinor: (row['penaltyMinor'] as bigint | undefined) ?? 0n,
+    // Split-of-payment interest, stamped at issuance. Fixtures that predate
+    // the column default to 0 so `recordRepayment` books no interest.
+    interestMinor: (row['interestMinor'] as bigint | undefined) ?? 0n,
+  }));
+
   const tx = {
     $queryRaw: jest.fn().mockResolvedValue([]),
     loan: {
@@ -38,10 +56,24 @@ function setup(
       update: jest.fn().mockResolvedValue({}),
     },
     installment: {
-      findMany: jest
+      findMany: jest.fn().mockResolvedValue(schedule),
+      // Mutate the shared schedule so a later receipt re-read sees the credit.
+      update: jest
         .fn()
-        .mockResolvedValue(overrides.installments ?? defaultInstallments),
-      update: jest.fn().mockResolvedValue({}),
+        .mockImplementation(
+          (args: { where: { id: string }; data?: Record<string, unknown> }) => {
+            const row = schedule.find((r) => r.id === args.where.id);
+            if (row && args.data) {
+              if ('paidAmount' in args.data) {
+                row.paidAmount = args.data['paidAmount'] as bigint;
+              }
+              if ('status' in args.data) {
+                row.status = args.data['status'] as string;
+              }
+            }
+            return Promise.resolve(row);
+          },
+        ),
     },
     repayment: { create: jest.fn().mockResolvedValue({ id: 'rep1' }) },
   };
@@ -65,7 +97,12 @@ function setup(
         paidAmount: 10_000n,
       }),
     },
-    installment: { findFirst: jest.fn().mockResolvedValue(null) },
+    installment: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      // receiptFor re-reads the schedule AFTER the tx commits, so it shares
+      // the same mutable rows the allocation just credited.
+      findMany: jest.fn().mockResolvedValue(schedule),
+    },
     user: { findFirst: jest.fn().mockResolvedValue({ id: 'u1' }) },
     $transaction: jest.fn((fn: (t: unknown) => Promise<unknown>) => fn(tx)),
   };
@@ -321,5 +358,38 @@ describe('LoansService.recordRepayment â€” receipt & side effects', () => {
     await service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', dto, 'k1');
 
     expect(notify.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('LoansService.recordRepayment — interest booking', () => {
+  const bullet = {
+    loan: { ...defaultLoan, totalDue: 11_500n },
+    installments: [
+      {
+        id: 'i1',
+        seq: 1,
+        amount: 11_500n,
+        paidAmount: 0n,
+        status: 'pending' as const,
+        interestMinor: 1_500n,
+      },
+    ],
+  };
+
+  it('books the whole installment interest when the payment settles it', async () => {
+    const { service, tx } = setup(bullet);
+
+    await service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', { amount: 115, method: 'cash' }, 'k1');
+
+    expect(callData(tx.repayment.create)['interestMinor']).toBe(1_500n);
+  });
+
+  it('books a pro-rata share of interest on a partial payment', async () => {
+    const { service, tx } = setup(bullet);
+
+    await service.recordRepayment({ tenantId: 't1' }, 'u1', 'L1', { amount: 57.5, method: 'cash' }, 'k1');
+
+    // floor(1_500 * 5_750 / 11_500) = 750
+    expect(callData(tx.repayment.create)['interestMinor']).toBe(750n);
   });
 });

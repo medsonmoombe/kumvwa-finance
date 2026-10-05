@@ -1,5 +1,5 @@
 /**
- * Seed: platform admin account + platform terms v1.
+ * Seed: platform admin account + platform legal documents (v1).
  * Run: pnpm prisma:seed
  *
  * Safe to re-run — all upserts are idempotent.
@@ -7,50 +7,48 @@
 import { PrismaClient } from '@prisma/client';
 import { hash } from '@node-rs/argon2';
 
+// The copy lives with the service so the runtime bootstrap and this seed can
+// never ship different text.
+import {
+  DEFAULT_LEGAL_DOCUMENTS,
+  LEGAL_DOCUMENT_KINDS,
+} from '../src/modules/terms/legal-documents';
+
 const prisma = new PrismaClient();
 
 const ADMIN_EMAIL = 'admin@kumvwa.co.zm';
 const ADMIN_PHONE = '+260000000000';
 const ADMIN_PASSWORD = 'Admin@1234'; // change after first login
 
-const PLATFORM_TERMS_V1 = `KUMVWA FINANCE — PLATFORM TERMS OF SERVICE (v1 · DRAFT)
-
-1. WHAT KUMVWA IS
-Kumvwa Finance is a software platform providing loan management tools to
-verified lending businesses ("Lenders"). Kumvwa is NOT a lender and does not
-provide credit.
-
-2. LENDING DECISIONS ARE YOURS
-Each Lender is solely responsible for assessing borrowers, setting loan terms,
-approving or declining loans, and collecting repayments. Kumvwa does not assess
-credit risk on any borrower's behalf, and any risk indicator shown in the
-platform is informational only.
-
-3. NO LIABILITY FOR LENDING OUTCOMES
-To the maximum extent permitted by law, Kumvwa is not liable for any loss
-arising from lending decisions, borrower default, repayment behaviour, or the
-use of information provided through the platform.
-
-4. LENDER ELIGIBILITY
-Lender accounts are available only to businesses holding a valid Bank of Zambia
-registration, which must be maintained in good standing. Kumvwa may suspend
-accounts whose registration lapses.
-
-5. DATA AND PRIVACY
-Personal data is processed per the Privacy Policy and the Zambia Data
-Protection Act, 2021. Lenders are independently responsible for their lawful
-basis for processing borrower data they enter into the platform.
-
-[FULL TEXT PENDING LEGAL REVIEW — v1 placeholder]`;
-
 async function main() {
-  // 1. Platform terms v1
-  await prisma.platformTerms.upsert({
-    where: { version: 1 },
-    create: { version: 1, body: PLATFORM_TERMS_V1 },
-    update: {},
+  // 1. Platform legal documents v1 — Terms of Service and Privacy Policy.
+  //    `update: {}` is deliberate: re-seeding must not rewrite a version that
+  //    users may already have accepted.
+  for (const kind of LEGAL_DOCUMENT_KINDS) {
+    await prisma.platformTerms.upsert({
+      where: { kind_version: { kind, version: 1 } },
+      create: { kind, version: 1, body: DEFAULT_LEGAL_DOCUMENTS[kind] },
+      update: {},
+    });
+    console.log(`✓ Platform ${kind} v1 seeded`);
+  }
+
+  // 2. Default billing plan — the free floor every lender starts on.
+  //    3 clients included; each additional client is K100 / month.
+  await prisma.billingPlan.upsert({
+    where: { key: 'free' },
+    create: {
+      key: 'free',
+      name: 'Free',
+      includedClients: 3,
+      pricePerExtraClientMinor: 10_000n, // K100.00
+      interval: 'monthly',
+      isDefault: true,
+      active: true,
+    },
+    update: { isDefault: true },
   });
-  console.log('✓ Platform terms v1 seeded');
+  console.log('✓ Default billing plan (3 free clients, K100/extra) seeded');
 
   // 2. Platform admin user
   const existing = await prisma.user.findUnique({ where: { email: ADMIN_EMAIL } });

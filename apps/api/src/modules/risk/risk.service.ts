@@ -37,20 +37,36 @@ export class RiskService {
     let installmentsLate = 0;
     let daysOverdueWorst = 0;
     let loansCleared = 0;
+    // Money still owed, and money ever billed, so lateness can be weighted by
+    // how much is actually outstanding rather than by installment count alone.
+    let arrearsMinor = 0n;
+    let billedMinor = 0n;
 
     for (const loan of loans) {
       if (loan.status === 'cleared') loansCleared++;
       for (const inst of loan.installments) {
-        if (inst.status === 'paid' && inst.paidAt) {
+        // Money, not the status flag, decides whether an installment is
+        // settled: the overdue worker flips status on its own tick, so between
+        // a due date passing and that tick a genuinely late installment is
+        // still `pending` and used to be counted in NEITHER bucket — which
+        // scored a defaulting borrower as clean.
+        const unpaid = inst.amount - inst.paidAmount;
+        const settled = inst.status === 'paid' && unpaid <= 0n;
+        const pastDue = inst.dueDate < now;
+
+        billedMinor += inst.amount;
+
+        if (settled) {
           // On time means settled by the end of the ZAMBIAN day it fell due -
           // 22:00 UTC, not midnight UTC.
-          if (inst.paidAt <= endOfBusinessDay(inst.dueDate)) {
+          if (inst.paidAt && inst.paidAt <= endOfBusinessDay(inst.dueDate)) {
             installmentsPaidOnTime++;
           } else {
             installmentsLate++;
           }
-        } else if (inst.status === 'overdue') {
+        } else if (pastDue) {
           installmentsLate++;
+          arrearsMinor += unpaid > 0n ? unpaid : 0n;
           const days = daysBetween(inst.dueDate, now);
           if (days > daysOverdueWorst) daysOverdueWorst = days;
         }
@@ -63,6 +79,7 @@ export class RiskService {
       installmentsPaidOnTime,
       installmentsLate,
       daysOverdueWorst,
+      arrearsShare: ratio(arrearsMinor, billedMinor),
     };
   }
 
@@ -79,4 +96,17 @@ export class RiskService {
       source: 'internal' as const,
     };
   }
+}
+
+/** Precision of the arrears ratio — enough to be stable, cheap to compute. */
+const RATIO_SCALE = 1000n;
+
+/**
+ * `part / whole` as a 0–1 number, computed in integer space so large ngwee
+ * amounts never lose precision to float rounding.
+ */
+function ratio(part: bigint, whole: bigint): number {
+  if (whole <= 0n || part <= 0n) return 0;
+  const scaled = (part * RATIO_SCALE) / whole;
+  return Number(scaled) / Number(RATIO_SCALE);
 }

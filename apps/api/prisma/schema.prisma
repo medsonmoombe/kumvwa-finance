@@ -146,6 +146,48 @@ enum TermsScope {
   tenant
 }
 
+// ── payments engine enums ──
+enum PaymentPurpose {
+  loan_repayment
+  loan_disbursement
+  client_slots
+  invoice
+  other
+}
+
+enum PaymentMethod {
+  mobile_money
+  card
+}
+
+enum PaymentProvider {
+  mtn_momo
+  airtel_money
+  zamtel_kwacha
+  card_psp
+  sandbox
+}
+
+enum PaymentStatus {
+  requires_action
+  processing
+  succeeded
+  failed
+  cancelled
+  expired
+  refunded
+  partially_refunded
+}
+
+/// Double-entry ledger account the transaction line posts to.
+enum LedgerAccount {
+  external_provider
+  loan_receivable
+  tenant_payable
+  platform_slot_revenue
+  platform_fee
+}
+
 // ───────────────────────── models ────────────────────────
 // Money rule: all amounts are BigInt MINOR units (ngwee).
 // Rate rule: Int basis points (15% = 1500).
@@ -197,6 +239,8 @@ model Tenant {
   creditPolicy CreditPolicy?
   overrides    ClientLimitOverride[]
   reviewEvents TenantReviewEvent[]
+  subscription TenantSubscription?
+  slotPurchases ClientSlotPurchase[]
 }
 
 /// Immutable audit trail for a lender's registration review lifecycle.
@@ -400,6 +444,14 @@ model Loan {
   // ── M5: friendly human reference (LN-2026-00001) + structure snapshot ──
   loanRef           String     @unique
   repaymentStructure String    @default("installments") // bullet | installments
+  // ── Immutable terms: the conditions this loan was ISSUED at ──
+  // Frozen at disbursement as canonical JSON + a sha256 of that JSON. Nothing
+  // afterwards may rewrite these; the hash makes any attempt detectable, which
+  // is what settles "I never agreed to that rate" disputes. `termsSnapshot` is
+  // deliberately separate from the live columns (a rollover moves due dates and
+  // grows totalDue — the ORIGINAL agreement must not move with them).
+  termsSnapshot     Json?
+  termsHash         String?
   status            LoanStatus @default(active)
   disbursedAt       DateTime?
   createdAt         DateTime   @default(now())
@@ -425,24 +477,40 @@ model Installment {
   paidAmount   BigInt            @default(0)
   // ── M4: accrued late penalty riding with this installment ──
   penaltyMinor BigInt            @default(0)
-  status       InstallmentStatus @default(pending)
-  paidAt       DateTime?
+  // ── Interest accounting: the interest baked into THIS installment ──
+  // Flat interest spread across the original plan (see core `distributeInterest`).
+  // A rollover-appended extension row is pure interest; a bullet bump grows it.
+  interestMinor BigInt           @default(0)
+status       InstallmentStatus @default(pending)
+    paidAt       DateTime?
+    // Last Zambian civil day a late penalty was accrued for this installment.
+    // Persistent on purpose: an in-memory day gate re-accrues a day whenever the
+    // worker restarts, and two overlapping ticks race on the read-modify-write.
+    lastPenaltyDate DateTime?      @db.Date
 
-  loan Loan @relation(fields: [loanId], references: [id])
+    loan Loan @relation(fields: [loanId], references: [id])
 
-  @@unique([loanId, seq])
-  @@index([status, dueDate]) // overdue-scan job hot path
-}
+    @@unique([loanId, seq])
+    @@index([status, dueDate]) // overdue-scan job hot path
+    @@index([lastPenaltyDate]) // penalty-sweep hot path
+  }
 
 model Repayment {
   id             String          @id @default(cuid())
   loanId         String
   tenantId       String
   amount         BigInt
+  // ── How much of this cash was INTEREST (the rest is principal/penalty) ──
+  // Derived exactly at record time from each installment's own `interestMinor`
+  // pro-rata to the amount credited, so "interest generated" is a ledger sum,
+  // not a fuzzy estimate. A `rollover_interest` row is interest in full.
+  interestMinor  BigInt          @default(0)
   kind           String          @default("repayment") // repayment | rollover_interest
   method         RepaymentMethod
   reference      String?
   idempotencyKey String          @unique
+  // ── payments engine: the intent that moved the money (loose ref, no FK) ──
+  paymentIntentId String?        @unique
   recordedBy     String? // userId
   createdAt      DateTime        @default(now())
 
@@ -451,6 +519,10 @@ model Repayment {
 
   @@index([loanId])
   @@index([tenantId, createdAt])
+  // Reporting reads sum interest per tenant (migration
+  // 20261002120000_loan_terms_and_interest). Declared here so the schema and
+  // the applied migration agree — otherwise the next `migrate dev` drops it.
+  @@index([tenantId, interestMinor])
 }
 
 model LoanRequest {
@@ -500,10 +572,14 @@ model Notification {
   data      Json? // deep-link payload, e.g. { "loanId": "..." }
   readAt    DateTime?
   createdAt DateTime         @default(now())
+  /// Set by the worker once this notification has been fanned out to the user's
+  /// devices. Null = still owed a push. In-app delivery never depends on it.
+  pushedAt  DateTime?
 
   user User @relation(fields: [userId], references: [id])
 
   @@index([userId, createdAt])
+  @@index([pushedAt, createdAt])
 }
 
 model DevicePushToken {
@@ -514,6 +590,9 @@ model DevicePushToken {
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
+
+  // The push fan-out looks tokens up by user on every notification.
+  @@index([userId])
 }
 
 model SmsOutbox {
@@ -602,17 +681,31 @@ model File {
   bozCertOf    Tenant? @relation("BozCert", fields: [bozCertOfId], references: [id])
   bozCertOfId  String? @unique
   logoOfTenant Tenant? @relation("TenantLogo")
+
+  // Declared to match migration 20260930120000_user_profile_images, which
+  // already created this index in the database.
+  @@index([uploadedById])
 }
 
 // ───────────────── terms (two-layer, versioned) ─────────────────
 // Platform terms are Kumvwa-wide; tenant terms belong to one lender. Both
 // are append-only version streams — acceptances reference a specific version.
 
+enum LegalDocumentKind {
+  terms
+  privacy
+}
+
 model PlatformTerms {
-  id          String   @id @default(cuid())
-  version     Int      @unique
-  body        String   @db.Text
-  publishedAt DateTime @default(now())
+  id          String            @id @default(cuid())
+  kind        LegalDocumentKind @default(terms)
+  version     Int
+  body        String            @db.Text
+  publishedAt DateTime          @default(now())
+
+  // Versioning is per-document: terms v3 and privacy v1 are unrelated.
+  @@unique([kind, version])
+  @@index([kind, version])
 }
 
 model TenantTerms {
@@ -712,4 +805,178 @@ model PlatformConfig {
   value     Json
   updatedBy String?
   updatedAt DateTime @updatedAt
+}
+
+// ───────────────── payments engine ─────────────────
+// Every money movement on the platform flows through a PaymentIntent: loan
+// repayments, loan disbursements, client-slot purchases. The intent is the
+// client-facing idempotency + status object; PaymentTransaction is the
+// append-only ledger; Payout is the disbursement leg. The domain effect is
+// applied by PaymentsService only once the intent is settled (succeeded).
+//
+// tenantId/clientId/loanId are loose refs (no FK), like AuditLog, so the
+// ledger survives independently of the rows it describes.
+
+model PaymentIntent {
+  id             String          @id @default(cuid())
+  reference      String          @unique // PAY-2026-00001
+  purpose        PaymentPurpose
+  tenantId       String?
+  payerUserId    String?
+  clientId       String?
+  loanId         String?
+  amountMinor    BigInt
+  currency       String          @default("ZMW")
+  method         PaymentMethod
+  provider       PaymentProvider
+  payerPhone     String? // MoMo push target ("their current number")
+  status         PaymentStatus   @default(requires_action)
+  idempotencyKey String          @unique
+  providerRef    String? // PSP charge id
+  failureReason  String?
+  metadata       Json            @default("{}")
+  expiresAt      DateTime?
+  /// Times the reconciler has polled the provider for a stuck `processing`
+  /// charge. Caps retries so an unanswerable charge is left for a human
+  /// instead of being polled forever.
+  reconcileAttempts Int          @default(0)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  transactions PaymentTransaction[]
+  payout       Payout?
+
+  @@index([tenantId, status])
+  @@index([clientId])
+  @@index([status, createdAt])
+}
+
+model PaymentTransaction {
+  id          String        @id @default(cuid())
+  intentId    String
+  entryType   String // charge | disbursement | refund | fee | adjustment
+  account     LedgerAccount
+  direction   String // debit | credit
+  amountMinor BigInt
+  providerRef String?
+  rawPayload  Json?
+  createdAt   DateTime      @default(now())
+
+  intent PaymentIntent @relation(fields: [intentId], references: [id], onDelete: Cascade)
+
+  @@index([intentId])
+}
+
+model PaymentWebhookEvent {
+  id          String          @id @default(cuid())
+  provider    PaymentProvider
+  eventId     String // provider's event id → replay protection
+  signatureOk Boolean         @default(false)
+  payload     Json
+  processedAt DateTime?
+  status      String          @default("received") // received | processed | failed | ignored
+  error       String?
+  createdAt   DateTime        @default(now())
+
+  @@unique([provider, eventId])
+  @@index([status, createdAt])
+}
+
+model Payout {
+  id          String          @id @default(cuid())
+  intentId    String?         @unique
+  tenantId    String
+  clientId    String
+  loanId      String
+  amountMinor BigInt
+  provider    PaymentProvider
+  phone       String
+  status      PaymentStatus   @default(requires_action)
+  providerRef String?
+  /// Set by the worker's payout watchdog when a disbursement goes unresolved
+  /// past the settlement window. NOT a status change — a human reconciles it.
+  failureReason String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  intent PaymentIntent? @relation(fields: [intentId], references: [id])
+
+  @@index([tenantId, status])
+  @@index([loanId])
+}
+
+// ───────────────── billing: client slots ─────────────────
+// Free floor (default 3 clients) per lender; each additional client is a paid
+// monthly slot (default K100). Slots lapse after one month. Platform admins
+// override the plan, price and floor per lender (promotions) and every change
+// is recorded as a BillingEvent.
+
+model BillingPlan {
+  id                       String   @id @default(cuid())
+  key                      String   @unique
+  name                     String
+  includedClients          Int      @default(3)
+  pricePerExtraClientMinor BigInt
+  interval                 String   @default("monthly")
+  active                   Boolean  @default(true)
+  isDefault                Boolean  @default(false)
+  features                 Json     @default("{}")
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  subscriptions TenantSubscription[]
+}
+
+model TenantSubscription {
+  id                      String    @id @default(cuid())
+  tenantId                String    @unique
+  planId                  String
+  status                  String    @default("active") // active | past_due | grace | suspended | cancelled
+  includedClientsOverride Int?
+  priceOverrideMinor      BigInt?
+  extraSlots              Int       @default(0)
+  slotsExpireAt           DateTime?
+  currentPeriodStart      DateTime?
+  currentPeriodEnd        DateTime?
+  promoNote               String?
+  updatedBy               String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id])
+  plan   BillingPlan @relation(fields: [planId], references: [id])
+
+  @@index([planId])
+  @@index([status])
+}
+
+model ClientSlotPurchase {
+  id              String   @id @default(cuid())
+  tenantId        String
+  purchasedCount  Int
+  unitPriceMinor  BigInt
+  amountMinor     BigInt
+  periodStart     DateTime
+  periodEnd       DateTime // exactly one month after activation
+  paymentIntentId String?  @unique
+  status          String   @default("pending") // pending | active | expired | refunded
+  createdBy       String?
+  createdAt       DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status])
+}
+
+model BillingEvent {
+  id        String   @id @default(cuid())
+  tenantId  String?
+  type      String // plan_change | override | promotion | suspend | grant_grace | slots_expired
+  fromValue Json?
+  toValue   Json?
+  actorId   String?
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, createdAt])
 }

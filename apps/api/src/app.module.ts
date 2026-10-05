@@ -17,6 +17,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { PlatformModule } from './modules/admin/platform.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { BillingModule } from './modules/billing/billing.module';
 import { ClientsModule } from './modules/clients/clients.module';
 import { ComplianceModule } from './modules/compliance/compliance.module';
 import { FilesModule } from './modules/files/files.module';
@@ -26,6 +27,7 @@ import { LoanProductsModule } from './modules/loan-products/loan-products.module
 import { LoanRequestsModule } from './modules/loan-requests/loan-requests.module';
 import { LoansModule } from './modules/loans/loans.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 import { PolicyModule } from './modules/policy/policy.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { RiskModule } from './modules/risk/risk.module';
@@ -76,6 +78,8 @@ const env = loadEnv();
     PolicyModule,
     PlatformModule, // feature flags — also feeds the root MaintenanceGuard
     AdminModule,
+    BillingModule,
+    PaymentsModule,
     ReportsModule,
     ComplianceModule,
     HealthModule,

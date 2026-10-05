@@ -16,6 +16,8 @@ import 'package:kumvwa_finance/features/auth/presentation/client_gate.dart';
 import 'package:kumvwa_finance/features/auth/presentation/lender_branding.dart';
 import 'package:kumvwa_finance/features/loans/data/loans_repository.dart';
 import 'package:kumvwa_finance/features/loans/domain/loan.dart';
+import 'package:kumvwa_finance/features/payments/data/payments_repository.dart';
+import 'package:kumvwa_finance/features/payments/domain/payment_intent.dart';
 
 enum _Stage {
   select,
@@ -27,21 +29,13 @@ enum _Stage {
   failed,
 }
 
-enum _Method { airtel, mtn, zamtel, bank }
-
-extension _MethodX on _Method {
-  PayProvider get provider =>
-      PayProvider.values.firstWhere((e) => e.name == name);
-  String get label => provider.label;
-}
-
 /// 097/077/057 → Airtel, 096/056/076 → MTN, 095 → Zamtel, else → MTN.
-_Method _detectProvider(String phone) {
+PayProvider _detectProvider(String phone) {
   final digits = phone.replaceAll(RegExp(r'[^0-9]'), '');
   final local = digits.startsWith('260') ? digits.substring(3) : digits;
-  if (local.startsWith('97') || local.startsWith('77') || local.startsWith('57')) return _Method.airtel;
-  if (local.startsWith('95')) return _Method.zamtel;
-  return _Method.mtn; // 96/56/76 and fallback
+  if (local.startsWith('97') || local.startsWith('77') || local.startsWith('57')) return PayProvider.airtelMoney;
+  if (local.startsWith('95')) return PayProvider.zamtelKwacha;
+  return PayProvider.mtnMomo; // 96/56/76 and fallback
 }
 
 String _maskedPhone(String phone) {
@@ -52,7 +46,7 @@ String _maskedPhone(String phone) {
 
 class _MethodRow {
   const _MethodRow(this.method, this.detail, {required this.instant});
-  final _Method method;
+  final PayProvider method;
   final String detail;
   final bool instant;
 }
@@ -81,13 +75,15 @@ Future<void> showPaySheet(
     ),
   );
 
-  // Refresh every provider that shows loan state.
+  /// Refresh every provider that shows loan state.
   ref.invalidate(clientLoansProvider);
   ref.invalidate(loansProvider);
   ref.invalidate(loanByIdProvider(loan.id));
   // Settling the last instalment is what releases a borrower who owes
   // registration — the gate has to be re-judged, not just the loan list.
   ref.invalidate(clientGateProvider);
+  // A payment changed the receipts list.
+  ref.invalidate(paymentReceiptsProvider);
 }
 
 class _PaySheet extends ConsumerStatefulWidget {
@@ -109,7 +105,7 @@ class _PaySheet extends ConsumerStatefulWidget {
 
 class _PaySheetState extends ConsumerState<_PaySheet> {
   _Stage _stage = _Stage.select;
-  late _Method _method;
+  late PayProvider _method;
   late String _phone;
   late final TextEditingController _amountCtrl = TextEditingController(
     text: widget.amount.toStringAsFixed(2),
@@ -121,6 +117,11 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
   bool _busy = false;
   String? _failureMsg;
 
+  /// The live charge. Its `reference` is what the borrower is shown on success
+  /// — the API mints it, so the number on screen is the one the ledger and the
+  /// lender's console hold.
+  PaymentIntent? _intent;
+
   @override
   void initState() {
     super.initState();
@@ -131,7 +132,7 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
 
   List<_MethodRow> get _rows => [
     _MethodRow(_method, '${_maskedPhone(_phone)} · PIN on your phone', instant: true),
-    const _MethodRow(_Method.bank, 'Bank transfer · lender confirms', instant: false),
+    const _MethodRow(PayProvider.bank, 'Bank transfer · lender confirms', instant: false),
   ];
 
   @override
@@ -143,7 +144,7 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
 
   double get _amount => double.tryParse(_amountCtrl.text.trim()) ?? 0;
 
-  PayProvider get _provider => _method.provider;
+  PayProvider get _provider => _method;
 
   // ───────────────────────── actions ─────────────────────────
 
@@ -155,8 +156,16 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
     if (mounted) setState(() => _stage = _Stage.failed);
   }
 
+  /// Drives one mobile-money payment from intent to a settled verdict.
+  ///
+  /// The important property here is that **the app never decides a payment
+  /// succeeded**. It creates the intent, then asks the API what the provider
+  /// said, and only shows the success screen on a server answer of `succeeded`.
+  /// A local timer or a hopeful UI transition would let a declined or merely
+  /// unapproved charge show a green tick — and the loan balance is only
+  /// settled server-side, so the app and the ledger would disagree.
   Future<void> _send() async {
-    if (_method == _Method.bank) {
+    if (_method == PayProvider.bank) {
       setState(() => _stage = _Stage.bankDetails);
       return;
     }
@@ -165,32 +174,102 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
       _secondsLeft = 60;
       _apiDone = false;
       _failureMsg = null;
+      _intent = null;
     });
 
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) return t.cancel();
-      setState(() => _secondsLeft = 60 - t.tick);
-      // Simulated PIN-entry latency: success surfaces after a short beat
-      // once the API confirms. Production is driven by provider callback.
-      if (t.tick >= 4 && _apiDone) {
-        t.cancel();
-        setState(() => _stage = _Stage.success);
-      } else if (t.tick >= 60) {
-        t.cancel();
-        setState(() => _stage = _Stage.failed);
-      }
-    });
-
+    final repo = ref.read(paymentsRepositoryProvider);
     try {
-      await ref
-          .read(loansRepositoryProvider)
-          .recordPayment(widget.loan.id, amount: _amount);
-      _apiDone = true;
+      final intent = await repo.payLoan(
+        loanId: widget.loan.id,
+        amountKwacha: _amount,
+        provider: _provider,
+      );
+      if (!mounted) return;
+      setState(() => _intent = intent);
+
+      // A provider that answers synchronously (the sandbox does) needs no
+      // polling at all — settle immediately rather than making the borrower
+      // stare at a spinner for four seconds.
+      if (intent.status.isFinal) {
+        _settleFromStatus(intent.status);
+        return;
+      }
+
+      _startCountdown();
+      await _pollUntilFinal(repo, intent.id);
     } on ApiException catch (e) {
       _fail(e.message);
     } catch (_) {
       _fail(null);
+    }
+  }
+
+  void _startCountdown() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) return t.cancel();
+      setState(() => _secondsLeft = 60 - t.tick);
+      if (t.tick >= 60) {
+        t.cancel();
+        // Stopping the countdown is not the same as the payment failing. The
+        // charge may still settle later, so say so rather than implying the
+        // money is safe to spend.
+        _fail(
+          'We have not heard back from your provider yet. If you approved the '
+          'prompt, the payment will still go through — check your receipts in '
+          'a few minutes before trying again.',
+        );
+      }
+    });
+  }
+
+  /// Polls the API (which re-syncs against the provider) until the charge
+  /// reaches a verdict or the window closes.
+  Future<void> _pollUntilFinal(PaymentsRepository repo, String intentId) async {
+    for (var attempt = 0; attempt < 10; attempt++) {
+      if (!mounted) return;
+      await Future<void>.delayed(const Duration(seconds: 3));
+      if (!mounted) return;
+      try {
+        final fresh = await repo.status(intentId);
+        if (!mounted) return;
+        setState(() => _intent = fresh);
+        if (fresh.status.isFinal) {
+          _settleFromStatus(fresh.status);
+          return;
+        }
+      } on ApiException catch (e) {
+        // One missed poll is not a failure — the charge is still live. Keep
+        // trying; the countdown is what gives up.
+        if (e.isUnauthorized) {
+          _fail(e.message);
+          return;
+        }
+      }
+    }
+  }
+
+  void _settleFromStatus(PaymentStatus status) {
+    _timer?.cancel();
+    if (!mounted) return;
+    if (status.isPaid) {
+      setState(() {
+        _apiDone = true;
+        _stage = _Stage.success;
+      });
+    } else {
+      setState(() {
+        _failureMsg = switch (status) {
+          PaymentStatus.failed =>
+            'Your provider declined this payment. No money has left your wallet.',
+          PaymentStatus.expired =>
+            'The payment request expired before it was approved. No money has '
+                'left your wallet.',
+          PaymentStatus.cancelled => 'Payment cancelled.',
+          _ => 'The payment did not complete.',
+        };
+        _stage = _Stage.failed;
+      });
     }
   }
 
@@ -499,7 +578,7 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
                   ),
                   child: Row(
                     children: [
-                      ProviderLogo(provider: r.method.provider),
+                      ProviderLogo(provider: r.method),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(
@@ -615,7 +694,7 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
                 SizedBox(width: 5),
                 Text(
                   'Your provider may charge a small transaction fee',
-                  style: TextStyle(fontSize: 12, color: AppColors.muted),
+                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
                 ),
               ],
             ),
@@ -743,7 +822,7 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
               ),
               child: Text(
                 _maskedPhone(_phone),
-                style: TextStyle(fontSize: 12, color: AppColors.muted),
+                style: const TextStyle(fontSize: 12, color: AppColors.muted),
               ),
             ),
             const SizedBox(height: 16),
@@ -783,6 +862,11 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
             if (Env.isDev)
               TextButton(
                 onPressed: () {
+                  // Dev-only: lets a designer see the success screen without
+                  // approving a real PIN. It moves the *view* forward and
+                  // leaves the payment itself alone — the server is still the
+                  // only thing that can mark money paid — so it cannot produce
+                  // a fake receipt in the ledger.
                   _timer?.cancel();
                   setState(() => _stage = _Stage.success);
                 },
@@ -875,7 +959,11 @@ class _PaySheetState extends ConsumerState<_PaySheet> {
                   _brow('Amount', Fmt.money(_amount, decimals: 2)),
                   _brow(
                     'Reference',
-                    'KX-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}',
+                    // The API mints this, so it matches the console ledger and
+                    // what support will ask for. Never generated on-device.
+                    _intent?.reference.isNotEmpty == true
+                        ? _intent!.reference
+                        : 'Pending',
                   ),
                   _brow('Method', '${_provider.label} ${_maskedPhone(_phone)}'),
                   _brow('Date', Fmt.date(DateTime.now())),

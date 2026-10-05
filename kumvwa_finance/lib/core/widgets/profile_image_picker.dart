@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:kumvwa_finance/core/network/api_client.dart';
 import 'package:kumvwa_finance/core/theme/app_colors.dart';
+import 'package:kumvwa_finance/features/auth/presentation/auth_controller.dart';
 
 class ProfileImagePicker extends ConsumerStatefulWidget {
   const ProfileImagePicker({
@@ -27,11 +28,32 @@ class ProfileImagePicker extends ConsumerStatefulWidget {
 class _ProfileImagePickerState extends ConsumerState<ProfileImagePicker> {
   String? _imageUrl;
   var _busy = false;
+  var _retrying = false;
 
   @override
   void initState() {
     super.initState();
     _imageUrl = widget.imageUrl;
+  }
+
+  /// The URL arrives asynchronously from `/auth/me`, so it is normally null on
+  /// the first frame. Without this the widget would keep that stale null and
+  /// sit on the initial forever, even though the borrower has a photo on file.
+  @override
+  void didUpdateWidget(covariant ProfileImagePicker oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final incoming = widget.imageUrl;
+    if (incoming != null && incoming != _imageUrl) {
+      setState(() => _imageUrl = incoming);
+    }
+  }
+
+  /// A presigned URL stops working after its TTL, at which point the image
+  /// would silently fall back to a letter. Ask for a fresh one instead.
+  Future<void> _refreshExpiredUrl() async {
+    if (_retrying) return; // one attempt per widget, no reload loop
+    _retrying = true;
+    await ref.read(authControllerProvider.notifier).refreshProfileImage();
   }
 
   Future<void> _pick() async {
@@ -107,6 +129,19 @@ class _ProfileImagePickerState extends ConsumerState<ProfileImagePicker> {
                       width: widget.size,
                       height: widget.size,
                       fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) {
+                        _refreshExpiredUrl();
+                        return Center(
+                          child: Text(
+                            initial,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
           ),

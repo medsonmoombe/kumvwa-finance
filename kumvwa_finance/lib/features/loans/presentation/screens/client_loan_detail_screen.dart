@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import 'package:kumvwa_finance/core/domain/loan_status.dart';
+import 'package:kumvwa_finance/core/network/api_exception.dart';
 import 'package:kumvwa_finance/core/theme/app_colors.dart';
 import 'package:kumvwa_finance/core/theme/app_effects.dart';
 import 'package:kumvwa_finance/core/theme/app_text.dart';
@@ -16,6 +17,7 @@ import 'package:kumvwa_finance/core/widgets/skeleton.dart';
 import 'package:kumvwa_finance/features/loans/data/loans_repository.dart';
 import 'package:kumvwa_finance/features/loans/domain/loan.dart';
 import 'package:kumvwa_finance/features/loans/presentation/widgets/pay_sheet.dart';
+import 'package:kumvwa_finance/features/payments/data/payments_repository.dart';
 
 class ClientLoanDetailScreen extends ConsumerWidget {
   const ClientLoanDetailScreen({super.key, required this.loanId});
@@ -39,10 +41,6 @@ class ClientLoanDetailScreen extends ConsumerWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Scaffold: dome header + scrolling body
-// ─────────────────────────────────────────────────────────────────────────────
-
 class _DetailScaffold extends ConsumerWidget {
   const _DetailScaffold({required this.loan});
 
@@ -51,6 +49,7 @@ class _DetailScaffold extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isActive = loan.status != LoanStatus.cleared;
+    final canExtend = isActive && loan.rolloverCount == 0 && loan.outstanding > 0;
 
     return ListView(
       padding: EdgeInsets.zero,
@@ -76,9 +75,7 @@ class _DetailScaffold extends ConsumerWidget {
             children: [
               _AmountBox(loan: loan),
               const SizedBox(height: 11),
-              if (isActive &&
-                  loan.nextInstallment != null &&
-                  loan.outstanding > 0)
+              if (isActive && loan.nextInstallment != null && loan.outstanding > 0)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 11),
                   child: AppButton(
@@ -89,11 +86,35 @@ class _DetailScaffold extends ConsumerWidget {
                     onPressed: () => showPaySheet(context, ref, loan),
                   ),
                 ),
+              // Extend button — only when eligible (active, not yet extended)
+              if (canExtend)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 11),
+                  child: _ExtendButton(loan: loan),
+                ),
               _ScheduleCard(loan: loan),
               if (loan.rolloverCount > 0) ...[
                 const SizedBox(height: 11),
                 _ExtensionsCard(loan: loan),
               ],
+              // Already extended notice
+              if (!canExtend && isActive && loan.rolloverCount > 0) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.amber50,
+                    borderRadius: BorderRadius.circular(AppRadii.card),
+                    border: Border.all(color: AppColors.amberLine),
+                  ),
+                  child: Text(
+                    'This loan has been extended once. No further extensions are allowed.',
+                    style: AppText.fine.copyWith(color: AppColors.amberInk),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 11),
+              _PaymentHistoryLink(loan: loan),
             ],
           ),
         ),
@@ -103,7 +124,91 @@ class _DetailScaffold extends ConsumerWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Amount box — matches HTML .amtbox with progress bar
+// Extend button — one-time only, confirmation dialog
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _ExtendButton extends ConsumerStatefulWidget {
+  const _ExtendButton({required this.loan});
+  final Loan loan;
+  @override
+  ConsumerState<_ExtendButton> createState() => _ExtendButtonState();
+}
+
+class _ExtendButtonState extends ConsumerState<_ExtendButton> {
+  bool _busy = false;
+  String? _error;
+
+  Future<void> _extend() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Extend loan by 1 month?'),
+        content: const Text(
+          'You will be charged the remaining interest on this loan now. '
+          'All unpaid due dates will shift one month forward.\n\n'
+          'This can only be done once.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Extend'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    setState(() { _busy = true; _error = null; });
+    try {
+      await ref.read(loansRepositoryProvider).rollover(widget.loan.id);
+      ref.invalidate(loanByIdProvider(widget.loan.id));
+    } on ApiException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        OutlinedButton.icon(
+          onPressed: _busy ? null : _extend,
+          icon: _busy
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.amber),
+                )
+              : const Icon(Icons.update_rounded, size: 16, color: AppColors.amber),
+          label: Text(_busy ? 'Processing…' : 'Extend by 1 month · pay remaining interest'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.amberInk,
+            side: const BorderSide(color: AppColors.amberLine),
+            backgroundColor: AppColors.amber50,
+            textStyle: AppText.buttonLabel.copyWith(fontSize: 13),
+            padding: const EdgeInsets.symmetric(vertical: 13),
+          ),
+        ),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(_error!, style: AppText.fine.copyWith(color: AppColors.redInk)),
+          ),
+      ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Amount box
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _AmountBox extends StatelessWidget {
@@ -126,13 +231,11 @@ class _AmountBox extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Label — matches HTML .amtbox span
           Text(
             (isCleared ? 'Total repaid' : 'Balance outstanding').toUpperCase(),
             style: AppText.eyebrowTiny,
           ),
           const SizedBox(height: 4),
-          // Big figure — matches HTML .amtbox b
           Text.rich(
             TextSpan(
               children: [
@@ -146,8 +249,7 @@ class _AmountBox extends StatelessWidget {
                   ),
                 ),
                 TextSpan(
-                  text: NumberFormat.decimalPattern()
-                      .format(displayAmount),
+                  text: NumberFormat.decimalPattern().format(displayAmount),
                   style: GoogleFonts.poppins(
                     fontSize: 28,
                     fontWeight: FontWeight.w800,
@@ -159,7 +261,6 @@ class _AmountBox extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          // Sub-line
           Text(
             isCleared
                 ? 'Fully settled · thank you'
@@ -170,14 +271,10 @@ class _AmountBox extends StatelessWidget {
             style: AppText.rowSub.copyWith(color: AppColors.blue600),
           ),
           const SizedBox(height: 12),
-          // Progress row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Repaid ${Fmt.money(loan.amountPaid)}',
-                style: AppText.rowSub,
-              ),
+              Text('Repaid ${Fmt.money(loan.amountPaid)}', style: AppText.rowSub),
               Text(
                 '${(loan.progress * 100).toStringAsFixed(0)}%',
                 style: const TextStyle(
@@ -189,7 +286,6 @@ class _AmountBox extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 6),
-          // Progress bar
           ClipRRect(
             borderRadius: BorderRadius.circular(99),
             child: SizedBox(
@@ -217,7 +313,7 @@ class _AmountBox extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Schedule card — matches HTML .trow pattern inside a SectionCard
+// Schedule card
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ScheduleCard extends StatelessWidget {
@@ -260,7 +356,6 @@ class _ScheduleRow extends StatelessWidget {
     final isPaid = inst.status == InstallmentStatus.paid;
     final isOverdue = inst.status == InstallmentStatus.overdue;
 
-    // Icon tile colors — matches HTML .tico .t-g / .t-r / .t-b
     final (Color tileBg, Color tileFg) = isPaid
         ? (AppColors.green50, AppColors.green700)
         : isOverdue
@@ -273,14 +368,10 @@ class _ScheduleRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 10),
           child: Row(
             children: [
-              // Circular icon tile — matches HTML .tico
               Container(
                 width: 40,
                 height: 40,
-                decoration: BoxDecoration(
-                  color: tileBg,
-                  shape: BoxShape.circle,
-                ),
+                decoration: BoxDecoration(color: tileBg, shape: BoxShape.circle),
                 child: Icon(
                   isPaid ? Icons.check_rounded : Icons.schedule_rounded,
                   size: 16,
@@ -288,7 +379,6 @@ class _ScheduleRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 11),
-              // Title + sub — matches HTML .tr-m
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -326,7 +416,6 @@ class _ScheduleRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              // Amount — matches HTML .amt
               Text(
                 Fmt.money(inst.remaining, decimals: 2),
                 style: AppText.rowAmount.copyWith(
@@ -336,15 +425,14 @@ class _ScheduleRow extends StatelessWidget {
             ],
           ),
         ),
-        if (!isLast)
-          const Divider(height: 1, color: AppColors.line2),
+        if (!isLast) const Divider(height: 1, color: AppColors.line2),
       ],
     );
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Extensions card — rollover fees in their own section
+// Extensions card — simple info banner (no longer uses rolloverFee installments)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _ExtensionsCard extends StatelessWidget {
@@ -354,102 +442,46 @@ class _ExtensionsCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final rollovers = loan.schedule.where((i) => i.rolloverFee).toList();
-
     return Container(
-      padding: const EdgeInsets.fromLTRB(15, 13, 15, 4),
+      padding: const EdgeInsets.all(15),
       decoration: BoxDecoration(
-        color: AppColors.card,
+        color: AppColors.amber50,
         borderRadius: BorderRadius.circular(AppRadii.card),
-        border: Border.all(color: AppColors.line),
+        border: Border.all(color: AppColors.amberLine),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Text('Extensions (${loan.rolloverCount})', style: AppText.sectionTitle),
-          const SizedBox(height: 8),
-          if (rollovers.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Text(
-                'Interest was paid to extend this bullet-loan maturity. The updated due date is shown in the repayment schedule.',
-                style: AppText.rowSub,
-              ),
-            )
-          else
-            for (final inst in rollovers)
-              _ExtensionRow(inst: inst, isLast: inst == rollovers.last),
+          Container(
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(color: AppColors.card, shape: BoxShape.circle),
+            child: const Icon(Icons.update_rounded, size: 16, color: AppColors.amberInk),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Extended ${loan.rolloverCount}×',
+                  style: AppText.rowTitle.copyWith(color: AppColors.amberInk),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Remaining interest was paid. Due dates shifted +1 month. No further extensions allowed.',
+                  style: AppText.fine.copyWith(color: AppColors.amberInk),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 }
 
-class _ExtensionRow extends StatelessWidget {
-  const _ExtensionRow({required this.inst, required this.isLast});
-
-  final Installment inst;
-  final bool isLast;
-
-  @override
-  Widget build(BuildContext context) {
-    final isPaid = inst.status == InstallmentStatus.paid;
-
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: isPaid ? AppColors.green50 : AppColors.amber50,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  isPaid ? Icons.check_rounded : Icons.update_rounded,
-                  size: 16,
-                  color: isPaid ? AppColors.green700 : AppColors.amberInk,
-                ),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Extension · ${isPaid ? 'Paid' : 'Pending'}',
-                      style: AppText.rowTitle,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Deadline moved to ${Fmt.date(inst.dueDate)}',
-                      style: AppText.rowSub,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                Fmt.money(inst.amount, decimals: 2),
-                style: AppText.rowAmount.copyWith(
-                  color: isPaid ? AppColors.green700 : AppColors.blue600,
-                ),
-              ),
-            ],
-          ),
-        ),
-        if (!isLast)
-          const Divider(height: 1, color: AppColors.line2),
-      ],
-    );
-  }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
-// Status chip — matches HTML .chip
+// Status chip
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _StatusChip extends StatelessWidget {
@@ -471,9 +503,62 @@ class _StatusChip extends StatelessWidget {
         color: bg,
         borderRadius: BorderRadius.circular(AppRadii.pill),
       ),
-      child: Text(
-        label,
-        style: AppText.chipLabel.copyWith(color: fg),
+      child: Text(label, style: AppText.chipLabel.copyWith(color: fg)),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Payment history link
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _PaymentHistoryLink extends ConsumerWidget {
+  const _PaymentHistoryLink({required this.loan});
+
+  final Loan loan;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final all = ref.watch(paymentReceiptsProvider).valueOrNull;
+    final count = all?.where((p) => p.loanId == loan.id).length ?? 0;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(AppRadii.card),
+      onTap: () => context.push(
+        '/c/payments?loanId=${Uri.encodeComponent(loan.id)}'
+        '&loanRef=${Uri.encodeComponent(loan.loanRef ?? loan.id)}',
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(AppInsets.page),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(AppRadii.card),
+          border: Border.all(color: AppColors.line),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.receipt_long_outlined, size: 19, color: AppColors.blue600),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Payment history', style: AppText.cardTitle),
+                  const SizedBox(height: 1),
+                  Text(
+                    count == 0
+                        ? 'No payments recorded yet'
+                        : count == 1
+                            ? '1 payment · tap for receipts'
+                            : '$count payments · tap for receipts',
+                    style: AppText.fine,
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, size: 19, color: AppColors.muted),
+          ],
+        ),
       ),
     );
   }
@@ -490,7 +575,6 @@ class _LoadingSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Dome skeleton
         const Skeleton(width: double.infinity, height: 110, radius: 0),
         Padding(
           padding: const EdgeInsets.all(AppInsets.page),

@@ -13,8 +13,12 @@ import 'package:kumvwa_finance/core/widgets/skeleton.dart';
 import 'package:kumvwa_finance/features/notifications/data/notifications_repository.dart';
 import 'package:kumvwa_finance/features/notifications/domain/app_notification.dart';
 
-/// Notification center — embedded as the client "Alerts" tab and pushed
-/// from the business home bell.
+/// Notification center — embedded as the client/lender "Alerts" tab and pushed
+/// as a standalone page.
+///
+/// Both modes render the same column: dome header, then the feed. Previously
+/// `embedded` returned the bare list, which meant the dome below was
+/// unreachable and the tab looked unlike every other tab in the app.
 class NotificationsScreen extends ConsumerWidget {
   const NotificationsScreen({
     super.key,
@@ -25,13 +29,22 @@ class NotificationsScreen extends ConsumerWidget {
   final String role;
   final bool embedded;
 
+  /// Title/subtitle pair per role, so the lender tab does not say "your
+  /// activity feed" in a borrower voice.
+  ({String title, String subtitle}) get _heading => role == 'lender'
+      ? (title: 'Alerts', subtitle: 'Activity across your borrowers')
+      : (title: 'Notifications', subtitle: 'Your activity feed');
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(notificationsProvider(role));
+    final items = async.valueOrNull ?? const <AppNotification>[];
+
+    final header = _header(ref);
 
     final body = async.when(
       loading: () => ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
         children: const [
           SkeletonCard(),
           SizedBox(height: 9),
@@ -50,16 +63,11 @@ class NotificationsScreen extends ConsumerWidget {
           onRetry: () => ref.invalidate(notificationsProvider(role)),
         );
       },
-      data: (items) {
+      data: (raw) {
         if (items.isEmpty) return _EmptyNotifications(role: role);
         final today = _isToday(items.first.time);
         return ListView.builder(
-          padding: EdgeInsets.fromLTRB(
-            16,
-            embedded ? 8 : 4,
-            16,
-            embedded ? 90 : 24,
-          ),
+          padding: EdgeInsets.fromLTRB(16, 8, 16, embedded ? 90 : 24),
           itemCount: items.length + 1,
           itemBuilder: (_, i) {
             if (i == 0) {
@@ -67,11 +75,7 @@ class NotificationsScreen extends ConsumerWidget {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Text(
                   today ? 'Today' : 'Earlier',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.muted,
-                  ),
+                  style: AppText.eyebrowInk.copyWith(fontSize: 11),
                 ),
               );
             }
@@ -105,7 +109,18 @@ class NotificationsScreen extends ConsumerWidget {
       },
     );
 
-    if (embedded) return body;
+    // Header stays put above the feed; only the feed itself scrolls. On a tab
+    // the whole thing is returned bare because the shell already provides the
+    // Scaffold and bottom nav.
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        header,
+        Expanded(child: body),
+      ],
+    );
+
+    if (embedded) return content;
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -113,31 +128,28 @@ class NotificationsScreen extends ConsumerWidget {
         child: RefreshIndicator(
           color: AppColors.blue600,
           onRefresh: () async => ref.invalidate(notificationsProvider(role)),
-          child: CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              SliverToBoxAdapter(
-                child: ClientDomeHeader(
-                  title: 'Notifications',
-                  subtitle: 'Your activity feed',
-                  trailing: GestureDetector(
-                    onTap: () async {
-                      await ref
-                          .read(notificationsRepositoryProvider)
-                          .markAllRead(role: role);
-                      ref.invalidate(notificationsProvider(role));
-                    },
-                    child: Text(
-                      'Mark all read',
-                      style: AppText.linkLabel.copyWith(
-                        color: Colors.white.withValues(alpha: 0.85),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              SliverFillRemaining(child: body),
-            ],
+          child: content,
+        ),
+      ),
+    );
+  }
+
+  Widget _header(WidgetRef ref) {
+    final h = _heading;
+    return ClientDomeHeader(
+      title: h.title,
+      subtitle: h.subtitle,
+      trailing: GestureDetector(
+        onTap: () async {
+          await ref
+              .read(notificationsRepositoryProvider)
+              .markAllRead(role: role);
+          ref.invalidate(notificationsProvider(role));
+        },
+        child: Text(
+          'Mark all read',
+          style: AppText.linkLabel.copyWith(
+            color: Colors.white.withValues(alpha: 0.85),
           ),
         ),
       ),
@@ -303,7 +315,7 @@ class _EmptyNotifications extends StatelessWidget {
                       : Icons.check_circle_outline_rounded,
                   label: isLender ? 'Approvals' : 'Loan updates',
                 ),
-                _HintChip(
+                const _HintChip(
                   icon: Icons.info_outline_rounded,
                   label: 'System alerts',
                 ),
@@ -336,10 +348,7 @@ class _HintChip extends StatelessWidget {
         children: [
           Icon(icon, size: 13, color: AppColors.muted),
           const SizedBox(width: 5),
-          Text(
-            label,
-            style: AppText.caption.copyWith(fontSize: 11),
-          ),
+          Text(label, style: AppText.caption.copyWith(fontSize: 11)),
         ],
       ),
     );

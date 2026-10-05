@@ -75,6 +75,14 @@ export function daysBetween(from: Date, to: Date): number {
 }
 
 /**
+ * Shifts a date-only value back by whole days. Exact in both directions because
+ * a business day is always 24h in Zambia (no DST), so no calendar is involved.
+ */
+export function subtractBusinessDays(date: Date, days: number): Date {
+  return new Date(date.getTime() - Math.round(days) * MS_PER_DAY);
+}
+
+/**
  * The UTC instant at which the current Zambian month began, i.e. 00:00 Lusaka
  * time on the 1st. Use this to range-filter columns holding real instants
  * (`Repayment.createdAt` and friends are stored naive-UTC).

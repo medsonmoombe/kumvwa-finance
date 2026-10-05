@@ -1,40 +1,37 @@
 import 'package:flutter/material.dart';
 
+import 'package:kumvwa_finance/core/domain/pay_provider.dart';
 import 'package:kumvwa_finance/core/theme/app_colors.dart';
 
-enum PayProvider { airtel, mtn, zamtel, bank }
-
-extension PayProviderX on PayProvider {
-  String get label => switch (this) {
-    PayProvider.airtel => 'Airtel Money',
-    PayProvider.mtn => 'MTN MoMo',
-    PayProvider.zamtel => 'Zamtel Kwacha',
-    PayProvider.bank => 'Bank',
-  };
-
+/// Brand data for a rail. Presentation only — the enum itself and its API
+/// wire values live in `core/domain/pay_provider.dart` so the payments feature
+/// can share them without importing a widget.
+extension PayProviderBrand on PayProvider {
   String get logoUrl => switch (this) {
-    PayProvider.airtel => 'https://logo.clearbit.com/airtel.com',
-    PayProvider.mtn => 'https://logo.clearbit.com/mtn.com',
-    PayProvider.zamtel => 'https://logo.clearbit.com/zamtel.co.zm',
+    PayProvider.airtelMoney => 'https://logo.clearbit.com/airtel.com',
+    PayProvider.mtnMomo => 'https://logo.clearbit.com/mtn.com',
+    PayProvider.zamtelKwacha => 'https://logo.clearbit.com/zamtel.co.zm',
     PayProvider.bank => 'https://logo.clearbit.com/absa.co.zm',
   };
 
   Color get fallbackColor => switch (this) {
-    PayProvider.airtel => const Color(0xFFE40000),
-    PayProvider.mtn => const Color(0xFFFFCB05),
-    PayProvider.zamtel => const Color(0xFF00954C),
+    PayProvider.airtelMoney => const Color(0xFFE40000),
+    PayProvider.mtnMomo => const Color(0xFFFFCB05),
+    PayProvider.zamtelKwacha => const Color(0xFF00954C),
     PayProvider.bank => const Color(0xFF1A4FBF),
   };
 
+  /// Short form for the fallback tile, where the full name would not fit.
   String get fallbackLabel => switch (this) {
-    PayProvider.airtel => 'Airtel',
-    PayProvider.mtn => 'MTN',
-    PayProvider.zamtel => 'Zamtel',
+    PayProvider.airtelMoney => 'Airtel',
+    PayProvider.mtnMomo => 'MTN',
+    PayProvider.zamtelKwacha => 'Zamtel',
     PayProvider.bank => 'Bank',
   };
 
   Color get fallbackTextColor => switch (this) {
-    PayProvider.mtn => const Color(0xFF00578E),
+    // MTN's brand yellow is too light to read white on.
+    PayProvider.mtnMomo => const Color(0xFF00578E),
     _ => Colors.white,
   };
 }

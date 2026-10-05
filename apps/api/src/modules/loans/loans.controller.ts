@@ -12,7 +12,7 @@ import type { TokenClaims } from '../../common/crypto/token.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/guards/roles.decorator';
 import { RequirePermissions } from '../../common/guards/permissions.decorator';
-import { RecordRepaymentDto } from './dto/loans.dto';
+import { RecordRepaymentDto, RolloverDto } from './dto/loans.dto';
 import { LoansService } from './loans.service';
 
 /** Lender portfolio view. Client-facing reads live in MyLoansController. */
@@ -91,9 +91,10 @@ export class LoanPaymentsController {
   rollover(
     @CurrentUser() u: TokenClaims,
     @Param('id') id: string,
+    @Body() dto: RolloverDto,
     @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.loans.rollover(u.sub, id, scopeOf(u), idempotencyKey);
+    return this.loans.rollover(u.sub, id, scopeOf(u), dto, idempotencyKey);
   }
 }
 

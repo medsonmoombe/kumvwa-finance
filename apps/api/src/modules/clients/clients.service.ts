@@ -9,7 +9,11 @@ import { PrismaService } from '../../infra/prisma.module';
 import { NrcCryptoService } from '../../common/crypto/nrc-crypto.service';
 import { AuditService } from '../audit/audit.service';
 import { FilesService } from '../files/files.service';
-import { minorToKwacha } from '@kumvwa/core';
+import {
+  combinePerformance,
+  minorToKwacha,
+  repaymentPerformance,
+} from '@kumvwa/core';
 import { normalizeZmPhone } from '../../common/utils/phone.util';
 import type { UpdateProfileDto } from './dto/clients.dto';
 
@@ -408,10 +412,17 @@ export class ClientsService {
         orderBy: { createdAt: 'desc' },
         select: {
           id: true, loanRef: true, status: true, principal: true, totalDue: true,
-          paidAmount: true, createdAt: true,
+          paidAmount: true, createdAt: true, termCount: true,
           repayments: {
             select: { id: true, amount: true, method: true, reference: true, createdAt: true },
             orderBy: { createdAt: 'desc' },
+          },
+          // Feeds the on-time payment score shown to the lender.
+          installments: {
+            select: {
+              seq: true, dueDate: true, amount: true, paidAmount: true,
+              penaltyMinor: true, paidAt: true,
+            },
           },
         },
       }),
@@ -431,6 +442,24 @@ export class ClientsService {
         tenantId, diff: { field: 'nrcPhoto', context: 'lender.client_detail' },
       });
     }
+
+    // On-time payment score for THIS lender's book only. A lender must not be
+    // able to judge a borrower on how they repay somebody else.
+    const performance = combinePerformance(
+      loans.map((l) =>
+        repaymentPerformance(
+          l.installments.map((i) => ({
+            seq: i.seq,
+            dueDate: i.dueDate,
+            amountMinor: i.amount,
+            paidAmountMinor: i.paidAmount,
+            penaltyMinor: i.penaltyMinor,
+            paidAt: i.paidAt,
+          })),
+          l.termCount,
+        ),
+      ),
+    );
 
     return {
       id: c.id,
@@ -469,6 +498,17 @@ export class ClientsService {
       ).sort((a, b) => b.recordedAt.getTime() - a.recordedAt.getTime()),
       risk: risk ? { score: risk.score, band: risk.band, source: risk.source, checkedAt: risk.checkedAt } : null,
       limitOverride: override ? { limitKwacha: override.limitKwacha, reason: override.reason, grantedAt: override.createdAt } : null,
+      // On-time payment percentage — the "would you recommend this borrower?"
+      // signal. `hasHistory` is false until an installment has fallen due, so
+      // a brand-new borrower reads as "no history yet" rather than "0%".
+      performance: {
+        onTimeRate: performance.onTimeRate,
+        hasHistory: performance.hasHistory,
+        settled: performance.settled,
+        onTime: performance.onTime,
+        late: performance.late,
+        overdueNow: performance.overdueNow,
+      },
     };
   }
 

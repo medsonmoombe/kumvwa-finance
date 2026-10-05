@@ -24,4 +24,11 @@ export const env = {
     'Kumvwa Finance <no-reply@kumvwa.co.zm>',
   WORKER_BATCH: num(process.env.WORKER_BATCH, 20),
   WORKER_TICK_MS: num(process.env.WORKER_TICK_MS, 15_000),
+  /**
+   * Firebase Cloud Messaging — HTTP v1 service account (JSON, or a path to the
+   * file). Blank leaves push logged to the console instead of sent, which is
+   * the dev default; in-app notifications never depend on it.
+   */
+  FCM_SERVICE_ACCOUNT_JSON: process.env.FCM_SERVICE_ACCOUNT_JSON ?? '',
+  FCM_PROJECT_ID: process.env.FCM_PROJECT_ID ?? '',
 };

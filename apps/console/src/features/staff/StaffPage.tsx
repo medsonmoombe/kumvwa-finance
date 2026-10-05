@@ -115,6 +115,7 @@ function StaffTab({
       <AppTable
         columns={columns}
         rows={users}
+        searchKeys={['displayName', 'email', 'phone', 'role', 'status']}
         onRefresh={reload}
         actions={(user) => user.role === 'tenant_staff' && user.status === 'active' ? [{
           label: 'Resend sign-in email', icon: <FiMail size={12} />, onClick: (row) => void resendAccess(row),
@@ -338,6 +339,7 @@ function RolesTab({
       <AppTable
         columns={columns}
         rows={roles}
+        searchKeys={['name', 'permissions']}
         onRefresh={reload}
         onRowClick={(r) => { if (!r.isSystem) setEditing({ ...r, permissions: [...r.permissions] }); }}
         toolbarRight={

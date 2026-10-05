@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
+import 'package:kumvwa_finance/core/domain/loan_status.dart';
 import 'package:kumvwa_finance/core/network/api_client.dart';
 import 'package:kumvwa_finance/core/network/api_exception.dart';
 import 'package:kumvwa_finance/core/config/env.dart';
@@ -189,7 +190,6 @@ class _HomeDome extends ConsumerWidget {
                                 Container(
                                   width: 38,
                                   height: 38,
-                                  alignment: Alignment.center,
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     color: Colors.white.withValues(alpha: 0.18),
@@ -198,14 +198,44 @@ class _HomeDome extends ConsumerWidget {
                                       width: 1.5,
                                     ),
                                   ),
-                                  child: Text(
-                                    Fmt.initials(session.displayName),
-                                    style: GoogleFonts.poppins(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                    ),
-                                  ),
+                                  clipBehavior: Clip.antiAlias,
+                                  child: session.profileImageUrl != null
+                                      ? Image.network(
+                                          session.profileImageUrl!,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, _, _) {
+                                            // Presigned URLs expire; re-mint
+                                            // rather than sit on a letter.
+                                            ref
+                                                .read(
+                                                  authControllerProvider
+                                                      .notifier,
+                                                )
+                                                .refreshProfileImage();
+                                            return Center(
+                                              child: Text(
+                                                Fmt.initials(
+                                                  session.displayName,
+                                                ),
+                                                style: GoogleFonts.poppins(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        )
+                                      : Center(
+                                          child: Text(
+                                            Fmt.initials(session.displayName),
+                                            style: GoogleFonts.poppins(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ),
                                 ),
                                 if (unread > 0)
                                   Positioned(
@@ -1040,6 +1070,9 @@ class _ActionButtons extends ConsumerWidget {
       ..sort((a, b) =>
           a.nextInstallment!.dueDate.compareTo(b.nextInstallment!.dueDate));
     final hasActive = active.isNotEmpty;
+    // Hide Apply when the client has any outstanding loan — they must clear
+    // it before taking a new one. Only cleared loans don't block the button.
+    final hasOutstanding = loans.any((l) => l.status != LoanStatus.cleared);
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -1056,14 +1089,15 @@ class _ActionButtons extends ConsumerWidget {
             ),
             const SizedBox(width: 12),
           ],
-          Expanded(
-            child: _HomeActionBtn(
-              icon: Icons.add_rounded,
-              label: 'Apply',
-              green: false,
-              onTap: () => context.push('/c/request'),
+          if (!hasOutstanding)
+            Expanded(
+              child: _HomeActionBtn(
+                icon: Icons.add_rounded,
+                label: 'Apply',
+                green: false,
+                onTap: () => context.push('/c/request'),
+              ),
             ),
-          ),
         ],
       ),
     );

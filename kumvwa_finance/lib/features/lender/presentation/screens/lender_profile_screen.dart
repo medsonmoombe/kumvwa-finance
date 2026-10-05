@@ -6,7 +6,7 @@ import 'package:kumvwa_finance/core/network/api_client.dart';
 import 'package:kumvwa_finance/core/theme/app_colors.dart';
 import 'package:kumvwa_finance/core/theme/app_effects.dart';
 import 'package:kumvwa_finance/core/theme/app_text.dart';
-import 'package:kumvwa_finance/core/widgets/app_button.dart';
+import 'package:kumvwa_finance/core/widgets/danger_action_tile.dart';
 import 'package:kumvwa_finance/core/widgets/dome_header.dart';
 import 'package:kumvwa_finance/core/widgets/profile_image_picker.dart';
 import 'package:kumvwa_finance/features/auth/presentation/auth_controller.dart';
@@ -206,14 +206,38 @@ class _LenderProfileScreenState extends ConsumerState<LenderProfileScreen> {
                       ],
                     ),
                   ),
+                  const SizedBox(height: 16),
+
+                  // Platform legal documents. Lender-facing for now: these are
+                  // the terms of the service the lender's business runs on, and
+                  // the privacy policy covering the data it processes here.
+                  _InfoSection(
+                    title: 'Legal',
+                    rows: [
+                      _InfoRow(
+                        icon: Icons.description_outlined,
+                        label: 'Terms of Service',
+                        onTap: () => context.push('/legal/terms'),
+                      ),
+                      _InfoRow(
+                        icon: Icons.privacy_tip_outlined,
+                        label: 'Privacy Policy',
+                        onTap: () => context.push('/legal/privacy'),
+                        showDivider: false,
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 24),
 
-                  AppButton(
+                  // Same component the borrower profile uses, so signing out
+                  // looks and behaves identically on both sides. The previous
+                  // ghost button had no confirmation step at all. Navigation is
+                  // left to the router, which redirects on the auth change.
+                  DangerActionTile(
                     label: 'Sign out',
-                    tone: AppButtonTone.ghost,
-                    onPressed: () {
-                      ref.read(authControllerProvider.notifier).logout();
-                      context.go('/login');
+                    description: 'Staff and lending tools are managed in Kumvwa Console.',
+                    onConfirm: () async {
+                      await ref.read(authControllerProvider.notifier).logout();
                     },
                   ),
                 ],
@@ -305,23 +329,28 @@ class _InfoRow extends StatelessWidget {
   const _InfoRow({
     required this.icon,
     required this.label,
-    required this.value,
+    this.value,
+    this.onTap,
     this.showDivider = true,
     this.multiline = false,
   });
 
   final IconData icon;
   final String label;
-  final String value;
+
+  /// Trailing text. Omit it on a navigable row — [onTap] rows show a chevron
+  /// instead, the way every other push affordance in the app reads.
+  final String? value;
+
+  /// Makes the whole row tappable (e.g. pushing a legal document).
+  final VoidCallback? onTap;
   final bool showDivider;
   final bool multiline;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        if (multiline)
-          Padding(
+    final Widget content = multiline
+        ? Padding(
             padding: const EdgeInsets.fromLTRB(14, 11, 14, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -337,15 +366,14 @@ class _InfoRow extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(left: 26),
                   child: Text(
-                    value,
+                    value ?? '',
                     style: AppText.paragraph.copyWith(color: AppColors.ink),
                   ),
                 ),
               ],
             ),
           )
-        else
-          Padding(
+        : Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
             child: Row(
               children: [
@@ -353,16 +381,39 @@ class _InfoRow extends StatelessWidget {
                 const SizedBox(width: 10),
                 Text(label, style: AppText.rowSub),
                 const Spacer(),
-                Flexible(
-                  child: Text(
-                    value,
-                    textAlign: TextAlign.right,
-                    style: AppText.rowTitle,
+                if (value != null)
+                  Flexible(
+                    child: Text(
+                      value!,
+                      textAlign: TextAlign.right,
+                      style: AppText.rowTitle,
+                    ),
+                  )
+                else if (onTap != null)
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 16,
+                    color: AppColors.muted,
                   ),
-                ),
               ],
             ),
-          ),
+          );
+
+    return Column(
+      children: [
+        if (onTap != null)
+          InkWell(
+            onTap: onTap,
+            borderRadius: showDivider
+                ? BorderRadius.zero
+                : const BorderRadius.only(
+                    bottomLeft: Radius.circular(AppRadii.card),
+                    bottomRight: Radius.circular(AppRadii.card),
+                  ),
+            child: content,
+          )
+        else
+          content,
         if (showDivider)
           const Divider(height: 1, indent: 14, color: AppColors.line2),
       ],

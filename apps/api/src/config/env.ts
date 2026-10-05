@@ -63,9 +63,8 @@ const envSchema = z.object({
   REQUEST_MIN_KWACHA: z.coerce.number().positive().default(100),
   REQUEST_MAX_TERM: z.coerce.number().int().positive().default(12),
   CREDIT_LIMIT_NO_HISTORY_KWACHA: z.coerce.number().positive().default(1000),
-  /** Max consecutive "pay interest & extend" rollovers per loan. */
-  ROLLOVER_MAX: z.coerce.number().int().positive().default(2),
-  FCM_SERVER_KEY: z.string().default(''),
+  /** Max "pay interest & extend" extensions per loan lifetime. Hard-capped at 1. */
+  ROLLOVER_MAX: z.coerce.number().int().positive().default(1),
 
   /**
    * Storage driver: 'local' stores files in the project `docs` folder and
@@ -88,6 +87,50 @@ const envSchema = z.object({
   S3_SECRET_KEY: z.string().default('kumvwa-dev-secret'),
   S3_BUCKET: z.string().default('kumvwa-documents'),
 
+  /**
+   * Payments driver. 'sandbox' routes every rail (MTN/Airtel/Zamtel/card) to
+   * the deterministic sandbox — the only supported value until real
+   * credentials are wired. Prod refuses to boot in sandbox.
+   */
+  PAYMENTS_DRIVER: z.enum(['sandbox', 'live']).default('sandbox'),
+  /** HMAC secret used to verify inbound payment webhooks. */
+  PAYMENTS_WEBHOOK_SECRET: z
+    .string()
+    .min(16)
+    .default('dev-only-payments-webhook-secret'),
+  /** Minutes a payment intent stays open before it can be swept to expired. */
+  PAYMENTS_INTENT_TTL_MIN: z.coerce.number().int().positive().default(15),
+
+  /**
+   * Per-rail credentials. Blank means "this rail is not enabled" — the registry
+   * then refuses it with a 503 naming the missing variable rather than guessing.
+   * Only consulted when PAYMENTS_DRIVER=live.
+   */
+  MTN_MOMO_BASE_URL: z.string().default('https://sandbox.momodeveloper.mtn.com'),
+  MTN_MOMO_SUBSCRIPTION_KEY: z.string().default(''),
+  MTN_MOMO_WEBHOOK_SECRET: z.string().default(''),
+
+  AIRTEL_MONEY_BASE_URL: z.string().default('https://openapi.airtel.africa'),
+  AIRTEL_MONEY_CLIENT_ID: z.string().default(''),
+  AIRTEL_MONEY_CLIENT_SECRET: z.string().default(''),
+  AIRTEL_MONEY_WEBHOOK_SECRET: z.string().default(''),
+
+  ZAMTEL_KWACHA_BASE_URL: z.string().default('https://api.zamtel.co.zm'),
+  ZAMTEL_KWACHA_API_KEY: z.string().default(''),
+  ZAMTEL_KWACHA_WEBHOOK_SECRET: z.string().default(''),
+
+  CARD_PSP_BASE_URL: z.string().default('https://api.payments.example.com'),
+  CARD_PSP_API_KEY: z.string().default(''),
+  CARD_PSP_WEBHOOK_SECRET: z.string().default(''),
+
+  /**
+   * Firebase Cloud Messaging — HTTP v1. The legacy `FCM_SERVER_KEY` send API
+   * was retired by Google, so a service account is the only way to deliver:
+   * paste the service-account JSON here, or point at the file. Blank = push is
+   * logged to the worker console instead of sent (the dev default). In-app
+   * notifications work either way.
+   */
+  FCM_SERVICE_ACCOUNT_JSON: z.string().default(''),
   FCM_PROJECT_ID: z.string().default(''),
   SENTRY_DSN: z.string().default(''),
 });
@@ -183,6 +226,90 @@ export function assertDeployableStorage(env: Env): void {
   }
 }
 
+/**
+ * Deploy guard for payments. The sandbox rail must never run in production —
+ * it would report charges as succeeded without moving any money. And a live
+ * deployment must not keep the shipped dev webhook secret, or anyone could
+ * forge a "payment succeeded" callback.
+ */
+export function assertDeployablePayments(env: Env): void {
+  if (env.NODE_ENV !== 'prod') return;
+  const problems: string[] = [];
+  if (env.PAYMENTS_DRIVER === 'sandbox') {
+    problems.push(
+      'PAYMENTS_DRIVER=sandbox in prod — the sandbox approves charges without moving money. Set PAYMENTS_DRIVER=live and wire the provider credentials.',
+    );
+  }
+  if (env.PAYMENTS_WEBHOOK_SECRET === 'dev-only-payments-webhook-secret') {
+    problems.push(
+      'PAYMENTS_WEBHOOK_SECRET is the shipped dev value — anyone could forge a payment webhook. Set a real secret (openssl rand -base64 48).',
+    );
+  }
+  // `live` with no rail credentials looks configured and fails every payment at
+  // the first request, far from the boot that caused it. Every rail also needs
+  // its own webhook secret, or its callbacks are unverifiable and silently dropped.
+  if (env.PAYMENTS_DRIVER === 'live') {
+    const rails: Array<[string, string]> = [
+      ['MTN MoMo', env.MTN_MOMO_SUBSCRIPTION_KEY],
+      ['Airtel Money', env.AIRTEL_MONEY_CLIENT_ID],
+      ['Zamtel Kwacha', env.ZAMTEL_KWACHA_API_KEY],
+      ['card PSP', env.CARD_PSP_API_KEY],
+    ];
+    for (const [name, key] of rails) {
+      if (!key) continue;
+      if (!/^https:\/\//i.test(railBaseUrl(env, name))) {
+        problems.push(
+          `${name} is enabled but its base URL is not https. Set the matching *_BASE_URL to the provider's https endpoint.`,
+        );
+      }
+      if (!railWebhookSecret(env, name)) {
+        problems.push(
+          `${name} is enabled but no webhook secret is set, so its payment callbacks cannot be verified. Set the matching *_WEBHOOK_SECRET (openssl rand -base64 48).`,
+        );
+      }
+    }
+    if (rails.every(([, key]) => !key)) {
+      problems.push(
+        'PAYMENTS_DRIVER=live but no rail has credentials (MTN_MOMO_SUBSCRIPTION_KEY, AIRTEL_MONEY_CLIENT_ID, ZAMTEL_KWACHA_API_KEY, CARD_PSP_API_KEY are all blank) — every payment would fail. Set at least one, or use PAYMENTS_DRIVER=sandbox.',
+      );
+    }
+  }
+  if (problems.length > 0) {
+    throw new Error(
+      `Payments is not deployable in prod:\n${problems
+        .map((p) => `  - ${p}`)
+        .join('\n')}`,
+    );
+  }
+}
+
+/** Base URL for a rail by display name — keeps the guard above table-driven. */
+function railBaseUrl(env: Env, name: string): string {
+  switch (name) {
+    case 'MTN MoMo':
+      return env.MTN_MOMO_BASE_URL;
+    case 'Airtel Money':
+      return env.AIRTEL_MONEY_BASE_URL;
+    case 'Zamtel Kwacha':
+      return env.ZAMTEL_KWACHA_BASE_URL;
+    default:
+      return env.CARD_PSP_BASE_URL;
+  }
+}
+
+function railWebhookSecret(env: Env, name: string): string {
+  switch (name) {
+    case 'MTN MoMo':
+      return env.MTN_MOMO_WEBHOOK_SECRET;
+    case 'Airtel Money':
+      return env.AIRTEL_MONEY_WEBHOOK_SECRET;
+    case 'Zamtel Kwacha':
+      return env.ZAMTEL_KWACHA_WEBHOOK_SECRET;
+    default:
+      return env.CARD_PSP_WEBHOOK_SECRET;
+  }
+}
+
 /** Fails fast at boot on any missing/weak config. Pure → unit-testable. */
 export function loadEnv(
   raw: Record<string, string | undefined> = process.env,
@@ -195,5 +322,6 @@ export function loadEnv(
     throw new Error(`Invalid environment configuration:\n${issues}`);
   }
   assertDeployableStorage(parsed.data);
+  assertDeployablePayments(parsed.data);
   return parsed.data;
 }

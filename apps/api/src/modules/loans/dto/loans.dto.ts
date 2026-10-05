@@ -23,3 +23,14 @@ export class RecordRepaymentDto {
   @MaxLength(100)
   reference?: string;
 }
+
+export class RolloverDto {
+  /** How the extension fee was paid. */
+  @IsIn([...REPAYMENT_METHODS])
+  method!: RepaymentMethodName;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  reference?: string;
+}

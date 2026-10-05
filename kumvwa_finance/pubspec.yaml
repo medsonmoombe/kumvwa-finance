@@ -53,12 +53,17 @@ flutter_launcher_icons:
   adaptive_icon_background: "#0D2C6E"
   adaptive_icon_foreground: "assets/brand/icon_foreground_1024.png"
 
+# Both splash images are generated from the brand lockup artwork by
+# tool/gen_splash_images.py, then baked into the platform projects with:
+#   dart run flutter_native_splash:create
 flutter_native_splash:
   color: "#F8F9FB"
-  # Mark + "Kumvwa Finance" wordmark (iOS / Android < 12).
+  # The Kumvwa Finance lockup, drawn centred on the splash colour.
+  # iOS / Android < 12 / web.
   image: "assets/brand/splash_logo.png"
   # Android 12+ masks the splash icon to a circle and crops everything
-  # outside it — so this variant ships the mark only, already circular.
+  # outside it — so this variant is a 1152px canvas with the lockup sized to
+  # sit inside the 768px circle that mask leaves.
   android_12:
     color: "#F8F9FB"
     image: "assets/brand/splash_mark.png"

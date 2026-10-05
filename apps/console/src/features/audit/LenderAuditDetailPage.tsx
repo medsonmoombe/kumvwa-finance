@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { FiAlertTriangle, FiInfo, FiZap } from 'react-icons/fi';
 import { Link, useParams } from 'react-router-dom';
 
@@ -14,7 +14,7 @@ const SEV_COLOR: Record<string, 'green' | 'yellow' | 'red'> = {
   info: 'green', warn: 'yellow', critical: 'red',
 };
 
-const SEV_ICON: Record<string, JSX.Element> = {
+const SEV_ICON: Record<string, ReactNode> = {
   info: <FiInfo size={16} className="text-accent-600" />,
   warn: <FiAlertTriangle size={16} className="text-amber-500" />,
   critical: <FiZap size={16} className="text-danger-500" />,

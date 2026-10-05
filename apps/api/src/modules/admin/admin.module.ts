@@ -9,6 +9,7 @@ import {
   AdminAuditController,
   AdminClientsController,
   AdminPlatformController,
+  AdminSettingsController,
   AdminTenantsController,
   AdminUsersController,
 } from './admin.controller';
@@ -22,6 +23,7 @@ import { ReportsModule } from '../reports/reports.module';
   controllers: [
     AdminTenantsController,
     AdminPlatformController,
+    AdminSettingsController,
     AdminUsersController,
     AdminClientsController,
     AdminAuditController,

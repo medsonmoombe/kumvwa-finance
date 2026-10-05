@@ -13,6 +13,16 @@ const base: Record<string, string> = {
   FIELD_ENCRYPTION_KEY: 'd'.repeat(32),
 };
 
+/**
+ * Prod fixtures need one live rail, credential plus callback secret, otherwise
+ * the deployability guard rejects them before the storage assertions under test
+ * ever run. The platform runs one rail at a time, so one rail is enough.
+ */
+const liveRail = {
+  MTN_MOMO_SUBSCRIPTION_KEY: 'test-mtn-key-0123456789abcdef',
+  MTN_MOMO_WEBHOOK_SECRET: 'test-mtn-webhook-secret-0123456789',
+};
+
 describe('loadEnv', () => {
   it('applies defaults for optional values', () => {
     const env = loadEnv(base);
@@ -87,6 +97,9 @@ describe('loadEnv', () => {
       STORAGE_DRIVER: 's3',
       API_PUBLIC_URL: 'https://api.kumvwa.co.zm/api/v1',
       S3_ENDPOINT: 'https://r2.cloudflarestorage.com',
+      PAYMENTS_DRIVER: 'live',
+      PAYMENTS_WEBHOOK_SECRET: 'test-payments-secret-0123456789abcdef',
+      ...liveRail,
     });
     expect(env.STORAGE_DRIVER).toBe('s3');
     expect(env.API_PUBLIC_URL).toBe('https://api.kumvwa.co.zm/api/v1');
@@ -170,7 +183,42 @@ describe('loadEnv', () => {
       STORAGE_DRIVER: 's3',
       API_PUBLIC_URL: 'https://api.kumvwa.co.zm/api/v1',
       S3_ENDPOINT: 'https://s3.us-east-005.backblazeb2.com',
+      PAYMENTS_DRIVER: 'live',
+      PAYMENTS_WEBHOOK_SECRET: 'test-payments-secret-0123456789abcdef',
+      ...liveRail,
     });
     expect(resolveS3Region(env)).toBe('us-east-005');
+  });
+
+  // ── payments deploy guard ──
+  // The sandbox rail approves charges WITHOUT moving money, and the shipped
+  // dev webhook secret would let anyone forge a "payment succeeded" callback.
+  // Both are only fatal in prod, where they'd otherwise fail silently.
+
+  const prodBase = {
+    ...base,
+    NODE_ENV: 'prod',
+    API_PUBLIC_URL: 'https://api.kumvwa.co.zm/api/v1',
+    PAYMENTS_DRIVER: 'live',
+    PAYMENTS_WEBHOOK_SECRET: 'test-payments-secret-0123456789abcdef',
+  };
+
+  it('refuses the sandbox payments driver in prod', () => {
+    expect(() =>
+      loadEnv({ ...prodBase, PAYMENTS_DRIVER: 'sandbox' }),
+    ).toThrow(/PAYMENTS_DRIVER/);
+  });
+
+  it('refuses the shipped dev webhook secret in prod', () => {
+    expect(() =>
+      loadEnv({
+        ...prodBase,
+        PAYMENTS_WEBHOOK_SECRET: 'dev-only-payments-webhook-secret',
+      }),
+    ).toThrow(/PAYMENTS_WEBHOOK_SECRET/);
+  });
+
+  it('keeps sandbox payments working in dev', () => {
+    expect(loadEnv(base).PAYMENTS_DRIVER).toBe('sandbox');
   });
 });

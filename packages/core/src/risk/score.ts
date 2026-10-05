@@ -15,6 +15,12 @@ export interface RepaymentHistory {
   installmentsLate: number;
   /** Worst number of days an installment ran past due (0 when none). */
   daysOverdueWorst: number;
+  /**
+   * Share of everything ever billed that is still unpaid, 0–1. A count of late
+   * installments treats a K50 residue exactly like a K5 000 arrears, so severity
+   * is carried separately here. Optional so existing callers stay valid.
+   */
+  arrearsShare?: number;
 }
 
 export const SCORE_MIN = 300;
@@ -24,6 +30,8 @@ const ON_TIME_BONUS_PER_INSTALLMENT = 15;
 const ON_TIME_BONUS_CAP = 60;
 const LATE_PENALTY_PER_INSTALLMENT = 40;
 const LATE_PENALTY_CAP = 200;
+/** Extra deduction when the client is behind on money, scaled by how much. */
+const ARREARS_PENALTY_MAX = 120;
 const ALL_CLEARED_BONUS = 20;
 
 /**
@@ -42,11 +50,22 @@ export function internalScore(h: RepaymentHistory): number | null {
     h.installmentsLate * LATE_PENALTY_PER_INSTALLMENT,
     LATE_PENALTY_CAP,
   );
+  // Lateness alone understates a large arrears, so the money still outstanding
+  // costs extra on top — and a late-then-settled history pays nothing here,
+  // because the borrower did eventually make it good.
+  score -= arrearsPenalty(h.arrearsShare);
   score -= Math.min(Math.max(h.daysOverdueWorst, 0), 120);
   if (h.loansCleared > 0 && h.loansCleared === h.loansTotal) {
     score += ALL_CLEARED_BONUS;
   }
   return clamp(score, SCORE_MIN, SCORE_MAX);
+}
+
+/** Scales a 0–1 arrears share into a 0–120 point deduction. */
+function arrearsPenalty(share: number | undefined): number {
+  if (share === undefined || !Number.isFinite(share)) return 0;
+  const clamped = Math.min(Math.max(share, 0), 1);
+  return Math.round(clamped * ARREARS_PENALTY_MAX);
 }
 
 export function bandFromScore(score: number): RiskBand {

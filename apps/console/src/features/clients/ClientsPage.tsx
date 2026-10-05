@@ -7,7 +7,9 @@ import {
   AppTable, Drawer, Field, PageActionBar, Pill,
   StatBand, StatBandSkeleton, type Column,
 } from '../../components/kit';
-import { api, apiError } from '../../lib/api';
+import { api, apiError, clientLimitMessage, isClientLimit } from '../../lib/api';
+import { CapacityBanner } from './CapacityBanner';
+import { useLenderCapacity } from './useLenderCapacity';
 
 interface ClientRow {
   id: string; name: string; nrcMasked: string | null; phone: string;
@@ -20,6 +22,7 @@ export function ClientsPage() {
   const [filter, setFilter] = useState('');
   const [error, setError] = useState('');
   const [inviting, setInviting] = useState(false);
+  const [capacity, reloadCapacity] = useLenderCapacity();
   const nav = useNavigate();
 
   const load = useCallback((q = '') => {
@@ -108,6 +111,8 @@ export function ClientsPage() {
         <StatBandSkeleton cols={4} />
       )}
 
+      <CapacityBanner state={capacity} />
+
       {error && <div className="mb-3"><ErrorBox message={error} /></div>}
 
       <AppTable
@@ -137,6 +142,7 @@ export function ClientsPage() {
           onDone={() => {
             setItems(null);
             load();
+            reloadCapacity();
           }}
         />
       </Drawer>
@@ -152,11 +158,12 @@ export function InviteForm({ onDone }: { onDone: () => void }) {
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [limit, setLimit] = useState<string | null>(null);
   const [invite, setInvite] = useState<{ code: string; link: string } | null>(null);
   const [copied, setCopied] = useState('');
 
   async function create() {
-    setBusy(true); setError('');
+    setBusy(true); setError(''); setLimit(null);
     try {
       const res = await api.post<{ code: string; token: string; link: string }>(
         '/invites',
@@ -165,7 +172,11 @@ export function InviteForm({ onDone }: { onDone: () => void }) {
       setInvite({ code: res.data.code ?? res.data.token, link: res.data.link });
       onDone();
     } catch (e) {
-      setError(apiError(e));
+      // Capacity is refused as 402 CLIENT_LIMIT. That is a purchase decision,
+      // not a failure, so it gets its own message and a route to the buy
+      // screen instead of being shown as a generic API error.
+      if (isClientLimit(e)) setLimit(clientLimitMessage(e));
+      else setError(apiError(e));
     } finally {
       setBusy(false);
     }
@@ -229,6 +240,19 @@ export function InviteForm({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="space-y-3">
+      {limit && (
+        <div className="rounded-card border border-[#F0D9B5] bg-[#FDF8F0] px-3 py-2.5">
+          <p className="text-[11.5px] text-ink-2">{limit}</p>
+          <button
+            type="button"
+            onClick={() => window.location.assign('/settings?tab=billing')}
+            className="mt-2 text-[11.5px] font-bold text-brand-600 hover:text-brand-900"
+          >
+            Go to billing →
+          </button>
+        </div>
+      )}
+
       <p className="text-[11.5px] text-ink-muted">
         The client receives an invite code to redeem in the Kumvwa app.
         They complete their profile and appear in your clients list.

@@ -179,6 +179,17 @@ class AuthController extends Notifier<AuthState> {
       state = AuthState.authenticated(updated);
     }
   }
+
+  /// Re-mints the short-lived profile-image URL after it expires, so a photo
+  /// that has been on screen a while doesn't quietly revert to initials.
+  /// Awaits nothing the UI depends on, and no-ops when signed out or offline.
+  Future<void> refreshProfileImage() async {
+    if (state.status != AuthStatus.authenticated) return;
+    final fresh = await ref.read(authRepositoryProvider).refreshProfileImage();
+    if (fresh != null && fresh.profileImageUrl != null) {
+      applyUpdatedSession(fresh);
+    }
+  }
 }
 
 final authControllerProvider = NotifierProvider<AuthController, AuthState>(

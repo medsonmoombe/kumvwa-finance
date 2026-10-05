@@ -10,6 +10,7 @@ import type { Request } from 'express';
 
 import { PrismaService } from '../../infra/prisma.module';
 import { AuditService } from '../audit/audit.service';
+import { BillingService } from '../billing/billing.service';
 import { FilesService } from '../files/files.service';
 import { DEFAULT_PRIMARY_COLOR } from '../terms/terms.service';
 import { PasswordService } from '../../common/crypto/password.service';
@@ -38,6 +39,7 @@ export class InvitesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly billing: BillingService,
     private readonly files: FilesService,
     private readonly passwords: PasswordService,
     private readonly email: EmailService,
@@ -46,6 +48,11 @@ export class InvitesService {
 
   async create(tenantId: string, actorId: string, dto: CreateInviteDto) {
     const phone = this.normalize(dto.phone);
+
+    // Client-slot billing: the first 3 clients are free, each additional one
+    // costs K100/month. Enforced here AND at completion so a lender is told
+    // before the invite email goes out. Throws 402 CLIENT_LIMIT at capacity.
+    await this.billing.assertCanAddClient(tenantId);
 
     // Phone numbers are unique in this system. Refuse to mint a fresh invite
     // for a number that already registered (as a borrower OR a lender) or
@@ -205,6 +212,10 @@ export class InvitesService {
       where: { phone: invite.phone },
       include: { client: { select: { id: true } } },
     });
+
+    // Completing an invite mints (or links) a client, so it must fit within
+    // the lender's paid capacity — the same 402 CLIENT_LIMIT gate as create().
+    await this.billing.assertCanAddClient(invite.tenantId);
 
     // ── Dedupe path: same person, second lender → link + complete only ──
     // The client keeps their existing login; no second account is created.

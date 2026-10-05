@@ -1,13 +1,13 @@
 import fc from 'fast-check';
 
-import {
-  addFrequency,
-  buildSchedule,
-  type Frequency,
-} from './schedule';
+import { addFrequency, buildSchedule, type Frequency } from './schedule';
 import { originationFee } from './fees';
 import { nextPenalty, penaltyCap } from './penalties';
-import { rolloverPlan, rolloverBulletPlan, type RolloverInstallment } from './rollover';
+import {
+  rolloverPlan,
+  rolloverBulletPlan,
+  type RolloverInstallment,
+} from './rollover';
 
 const DAY = 86_400_000;
 
@@ -50,18 +50,19 @@ describe('frequency schedules', () => {
       termCount: 3,
       firstDueDate: new Date(Date.UTC(2026, 0, 31)),
     });
-    expect(s.installments.map((i) => i.dueDate.toISOString().slice(0, 10)))
-      .toEqual(['2026-01-31', '2026-02-28', '2026-03-31']);
+    expect(s.installments.map((i) =>
+      i.dueDate.toISOString().slice(0, 10),
+    )).toEqual(['2026-01-31', '2026-02-28', '2026-03-31']);
   });
 
-  it('PROPERTY: any frequency × terms — Σ installments = principal + interest + fee', () => {
+  it('PROPERTY: any frequency x terms - sum installments = principal + interest + fee', () => {
     fc.assert(
       fc.property(
         fc.constantFrom<Frequency>('monthly', 'weekly', 'fortnightly'),
-        fc.integer({ min: 10000, max: 1_000_000 }), // principal in ngwee
-        fc.integer({ min: 0, max: 5000 }), // rateBps
-        fc.integer({ min: 1, max: 24 }), // termCount
-        fc.integer({ min: 0, max: 200000 }), // fee
+        fc.integer({ min: 10000, max: 1_000_000 }),
+        fc.integer({ min: 0, max: 5000 }),
+        fc.integer({ min: 1, max: 24 }),
+        fc.integer({ min: 0, max: 200000 }),
         (frequency, principal, rateBps, termCount, fee) => {
           const s = buildSchedule({
             principalMinor: BigInt(principal),
@@ -71,12 +72,16 @@ describe('frequency schedules', () => {
             frequency,
             feeMinor: BigInt(fee),
           });
-          const sum = s.installments.reduce((a, i) => a + i.amountMinor, 0n);
+          const sum = s.installments.reduce(
+            (a, i) => a + i.amountMinor,
+            0n,
+          );
           return (
             sum === s.totalDueMinor &&
             s.totalDueMinor ===
               BigInt(principal) +
-                ((BigInt(principal) * BigInt(10000 + rateBps) + 5000n) /
+                ((BigInt(principal) * BigInt(10000 + rateBps) +
+                  5000n) /
                   10000n -
                   BigInt(principal)) +
                 BigInt(fee) &&
@@ -84,8 +89,10 @@ describe('frequency schedules', () => {
               (i, idx) =>
                 i.seq === idx + 1 &&
                 i.dueDate.getTime() >=
-                  s.installments[Math.max(0, idx - 1)]!.dueDate.getTime(),
-            )
+                  s.installments[
+                    Math.max(0, idx - 1),
+                  ]!.dueDate.getTime(),
+            ),
           );
         },
       ),
@@ -152,7 +159,7 @@ describe('penalties', () => {
   it('PROPERTY: penalty never exceeds the cap and never decreases', () => {
     fc.assert(
       fc.property(
-        fc.integer({ min: 1, max: 1000000 }), // installment amount
+        fc.integer({ min: 1, max: 1_000_000 }), // installment amount
         fc.integer({ min: 0, max: 100 }), // paid fraction %
         fc.integer({ min: 1, max: 500 }), // bpsPerDay
         fc.integer({ min: 0, max: 5000 }), // capBps
@@ -160,7 +167,8 @@ describe('penalties', () => {
         (amount, paidPct, bpsPerDay, capBps, days) => {
           const terms = { bpsPerDay, capBps };
           const unpaid =
-            BigInt(amount) - (BigInt(amount) * BigInt(paidPct)) / 100n;
+            BigInt(amount) -
+              (BigInt(amount) * BigInt(paidPct)) / 100n;
           let current = 0n;
           let prev = 0n;
           for (let d = 0; d < days; d++) {
@@ -182,40 +190,56 @@ describe('penalties', () => {
 });
 
 describe('rolloverPlan', () => {
+  // Interest is spread proportionally across the three installments below.
+  const interest = 46_000n;
+  const totalAmount = 460_000n;
   const mk = (): RolloverInstallment[] => [
-    { seq: 1, dueDate: new Date(Date.UTC(2025, 7, 12)), amountMinor: 153333n, paidAmountMinor: 0n },
-    { seq: 2, dueDate: new Date(Date.UTC(2025, 8, 12)), amountMinor: 153333n, paidAmountMinor: 0n },
-    { seq: 3, dueDate: new Date(Date.UTC(2025, 9, 12)), amountMinor: 153334n, paidAmountMinor: 0n },
+    {
+      seq: 1,
+      dueDate: new Date(Date.UTC(2025, 7, 12)),
+      amountMinor: 153333n,
+      paidAmountMinor: 0n,
+      interestMinor: (interest * 153333n) / totalAmount,
+    },
+    {
+      seq: 2,
+      dueDate: new Date(Date.UTC(2025, 8, 12)),
+      amountMinor: 153333n,
+      paidAmountMinor: 0n,
+      interestMinor: (interest * 153333n) / totalAmount,
+    },
+    {
+      seq: 3,
+      dueDate: new Date(Date.UTC(2025, 9, 12)),
+      amountMinor: 153334n,
+      paidAmountMinor: 0n,
+      interestMinor:
+        interest -
+        (interest * 153333n) / totalAmount * 2n,
+    },
   ];
 
-  it('shifts unpaid, appends the share, sums correctly', () => {
+  it('shifts unpaid and does not append a new installment', () => {
     const p = rolloverPlan({
       installments: mk(),
-      interestShareMinor: 20000n,
-      today: new Date(Date.UTC(2025, 7, 10)),
+      principalMinor: 400_000n,
       rolloverCount: 0,
       maxRollovers: 2,
     });
-    expect(p.paymentMinor).toBe(20000n);
+    expect('appended' in p).toBe(false);
     expect(p.shifts).toHaveLength(3);
-    expect(p.shifts[0]!.newDueDate).toEqual(new Date(Date.UTC(2025, 8, 12)));
-    // Shifted seq3 lands on Nov 12 — the appended installment goes one
-    // month PAST that, keeping the schedule strictly increasing.
-    expect(p.appended).toEqual({
-      seq: 4,
-      dueDate: new Date(Date.UTC(2025, 11, 12)),
-      amountMinor: 20000n,
-    });
-    expect(p.newTotalDueMinor).toBe(480000n); // 460,000 + 20,000
+    expect(p.shifts[0]!.newDueDate).toEqual(
+      new Date(Date.UTC(2025, 8, 12)),
+    );
+    expect(p.newTotalDueMinor).toBe(totalAmount + interest);
   });
 
   it('settled installments do not shift', () => {
     const insts = mk();
-    insts[0]!.paidAmountMinor = insts[0]!.amountMinor; // seq 1 settled
+    insts[0]!.paidAmountMinor = insts[0]!.amountMinor;
     const p = rolloverPlan({
       installments: insts,
-      interestShareMinor: 20000n,
-      today: new Date(Date.UTC(2025, 7, 10)),
+      principalMinor: 400_000n,
       rolloverCount: 0,
       maxRollovers: 2,
     });
@@ -226,128 +250,140 @@ describe('rolloverPlan', () => {
     expect(() =>
       rolloverPlan({
         installments: mk(),
-        interestShareMinor: 20000n,
-        today: new Date(Date.UTC(2025, 7, 10)),
-        rolloverCount: 2,
-        maxRollovers: 2,
-      }),
-    ).toThrow(/limit/i);
-  });
-
-  it('rejects a non-positive share and a fully-paid loan', () => {
-    expect(() =>
-      rolloverPlan({
-        installments: mk(),
-        interestShareMinor: 0n,
-        today: new Date(Date.UTC(2025, 7, 10)),
+        principalMinor: 400_000n, // totalDue (460k) + fee (46k) = 506k < 800k cap
         rolloverCount: 0,
         maxRollovers: 2,
       }),
-    ).toThrow(/carry/i);
-    const paid = mk().map((i) => ({ ...i, paidAmountMinor: i.amountMinor }));
-    expect(() =>
-      rolloverPlan({
-        installments: paid,
-        interestShareMinor: 20000n,
-        today: new Date(Date.UTC(2025, 7, 10)),
-        rolloverCount: 0,
-        maxRollovers: 2,
-      }),
-    ).toThrow(/cleared/i);
+    ).toThrow(/no interest remains/i);
   });
 
-  it(
-    'PROPERTY: after N rollovers Σ = original Σ + N×share; dates strictly increasing',
-    () => {
-      fc.assert(
-        fc.property(
-          fc.integer({ min: 1, max: 2 }),
-          fc.bigInt({ min: 10000n, max: 100000n }),
-          (n, share) => {
-            let insts = mk();
-            let sum = insts.reduce((a, i) => a + i.amountMinor, 0n);
-            for (let k = 0; k < n; k++) {
-              const p = rolloverPlan({
-                installments: insts,
-                interestShareMinor: share,
-                today: new Date(Date.UTC(2025, 7, 10)),
-                rolloverCount: k,
-                maxRollovers: 2,
-              });
-              insts = insts.map((i) => ({
-                ...i,
-                dueDate: p.shifts.find((s) => s.seq === i.seq)!.newDueDate,
-              }));
-              insts.push({ ...p.appended, paidAmountMinor: 0n });
-              sum += share;
-              const newSum = insts.reduce((a, i) => a + i.amountMinor, 0n);
-              if (newSum !== sum) return false;
-              for (let x = 1; x < insts.length; x++) {
-                if (insts[x]!.dueDate <= insts[x - 1]!.dueDate) return false;
-              }
+  it('PROPERTY: after N extensions sum = original sum + N x fee; dates strictly increasing', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 2 }),
+        fc.bigInt({ min: 10000n, max: 100000n }),
+        (n, principalMinor) => {
+          const interestMinor = principalMinor;
+          const per = principalMinor / 3n;
+          const insts: RolloverInstallment[] = [
+            {
+              seq: 1,
+              dueDate: new Date(Date.UTC(2025, 7, 12)),
+              amountMinor: per,
+              paidAmountMinor: 0n,
+              interestMinor: interestMinor / 3n,
+            },
+            {
+              seq: 2,
+              dueDate: new Date(Date.UTC(2025, 8, 12)),
+              amountMinor: per,
+              paidAmountMinor: 0n,
+              interestMinor: interestMinor / 3n,
+            },
+            {
+              seq: 3,
+              dueDate: new Date(Date.UTC(2025, 9, 12)),
+              amountMinor: principalMinor - per * 2n,
+              paidAmountMinor: 0n,
+              interestMinor:
+                interestMinor - (interestMinor / 3n) * 2n,
+            },
+          ];
+          let sum = insts.reduce((a, i) => a + i.amountMinor, 0n);
+          for (let k = 0; k < n; k++) {
+            const p = rolloverPlan({
+              installments: insts,
+              principalMinor,
+              rolloverCount: k,
+              maxRollovers: 5,
+            });
+            if ('appended' in p) return false;
+            insts = insts.map((i) => ({
+              ...i,
+              dueDate: p.shifts.find((s) => s.seq === i.seq)
+                !.newDueDate,
+            }));
+            sum += p.extensionFeeMinor;
+            const newSum = insts.reduce(
+              (a, i) => a + i.amountMinor,
+              0n,
+            );
+            if (newSum !== sum) return false;
+            for (let x = 1; x < insts.length; x++) {
+              if (insts[x]!.dueDate <= insts[x - 1]!.dueDate)
+                return false;
             }
-            return true;
-          },
-        ),
-        { numRuns: 300 },
-      );
-    },
-  );
+          }
+          return true;
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
 
   describe('rolloverBulletPlan (bullet loans)', () => {
     const base = {
       dueDate: new Date(Date.UTC(2026, 0, 12)),
       amountMinor: 56_875n,
       paidAmountMinor: 20_000n,
-      interestShareMinor: 3_791n, // one month's interest share
+      interestMinor: 10_000n,
       rolloverCount: 0,
       maxRollovers: 2,
+      principalMinor: 50_000n,
     };
 
-    it('pays the share, moves maturity +1 month, grows totalDue by the share', () => {
+    it('pays the remaining-interest fee, moves maturity +1 month, grows totalDue by the fee', () => {
       const p = rolloverBulletPlan(base);
-      expect(p.paymentMinor).toBe(base.interestShareMinor);
+      expect(p.paymentMinor).toBe(base.interestMinor);
       expect(p.newDueDate).toEqual(new Date(Date.UTC(2026, 1, 12)));
-      expect(p.amountIncreaseMinor).toBe(base.interestShareMinor);
+      expect(p.amountIncreaseMinor).toBe(base.interestMinor);
       expect(p.newTotalDueMinor).toBe(
-        base.amountMinor + base.interestShareMinor,
+        base.amountMinor + base.interestMinor,
       );
     });
 
     it('enforces the rollover cap', () => {
-      expect(() => rolloverBulletPlan({ ...base, rolloverCount: 2 })).toThrow(
-        'Rollover limit reached',
-      );
+      expect(() =>
+        rolloverBulletPlan({
+          ...base,
+          rolloverCount: 2,
+        }),
+      ).toThrow(/no further extensions/i);
     });
 
-    it('refuses a cleared installment and a non-positive share', () => {
+    it('refuses a cleared installment and a loan with no remaining interest', () => {
       expect(() =>
-        rolloverBulletPlan({ ...base, paidAmountMinor: base.amountMinor }),
-      ).toThrow('Loan already cleared');
+        rolloverBulletPlan({
+          ...base,
+          paidAmountMinor: base.amountMinor,
+        }),
+      ).toThrow(/fully repaid/i);
       expect(() =>
-        rolloverBulletPlan({ ...base, interestShareMinor: 0n }),
-      ).toThrow('Nothing to carry');
+        rolloverBulletPlan({
+          ...base,
+          interestMinor: 0n,
+        }),
+      ).toThrow(/no interest remains/i);
     });
 
-    it('PROPERTY: outstanding is unchanged by the rollover itself', () => {
+    it('PROPERTY: outstanding is unchanged by the extension itself', () => {
       fc.assert(
         fc.property(
           fc.bigInt({ min: 1_000n, max: 1_000_000n }),
           fc.bigInt({ min: 0n, max: 999_999n }),
           fc.bigInt({ min: 1n, max: 50_000n }),
-          (amount, paidRaw, share) => {
-            const paid = paidRaw % amount; // always < amount
+          (amount, paidRaw, interestMinor) => {
+            const paid = paidRaw % amount;
             const outstandingBefore = amount - paid;
             const p = rolloverBulletPlan({
               dueDate: new Date(Date.UTC(2026, 0, 12)),
               amountMinor: amount,
               paidAmountMinor: paid,
-              interestShareMinor: share,
+              interestMinor,
               rolloverCount: 0,
               maxRollovers: 5,
+              principalMinor: amount - interestMinor,
             });
-            // totalDue and paid both grow by exactly the share (the repayment
-            // row), so (totalDue − paid) is invariant across a rollover.
             const outstandingAfter =
               p.newTotalDueMinor - (paid + p.paymentMinor);
             return outstandingAfter === outstandingBefore;

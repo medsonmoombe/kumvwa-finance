@@ -113,6 +113,46 @@ export async function bootRefresh(): Promise<boolean> {
 }
 
 /**
+ * Downloads a guarded endpoint as a file.
+ *
+ * A plain `<a href>`/`window.open` CANNOT work for these routes: the access
+ * token is memory-only and attached by the request interceptor above, so a
+ * browser navigation arrives with no `Authorization` header and the API — which
+ * guards `/reports/loans.csv` with `@Roles` + `@RequirePermissions` — answers
+ * 401. This still works for the PDF links because `/terms/*` is `@Public()`.
+ *
+ * Going through axios keeps the bearer token *and* the silent
+ * refresh-and-retry, so an expired access token re-authenticates instead of
+ * dumping the user at a JSON 401 in a new tab.
+ */
+export async function downloadFile(
+  path: string,
+  fallbackFilename: string,
+): Promise<void> {
+  const res = await api.get(path, { responseType: 'blob' });
+  const url = URL.createObjectURL(res.data as Blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filenameFromHeaders(res.headers, fallbackFilename);
+  document.body.append(a);
+  a.click();
+  a.remove();
+  // Revoked on the next tick so the click has already consumed the URL.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** Prefers the server's `Content-Disposition` name (it carries the date). */
+function filenameFromHeaders(
+  headers: Record<string, unknown>,
+  fallback: string,
+): string {
+  const raw = headers['content-disposition'];
+  if (typeof raw !== 'string') return fallback;
+  const match = /filename="?([^";]+)"?/.exec(raw);
+  return match?.[1] ?? fallback;
+}
+
+/**
  * Nest returns `message` as a string, or an array from ValidationPipe. A body
  * without one — or no response at all — tells the user nothing, so every
  * branch here names what actually went wrong.
@@ -140,4 +180,42 @@ export function apiError(err: unknown): string {
   // reason we want to show.
   if (err instanceof Error && err.message.trim()) return err.message;
   return 'Something went wrong';
+}
+
+/** The 402 body the billing capacity gate returns. */
+interface ClientLimitBody {
+  code?: string;
+  message?: string;
+  capacity?: number;
+  used?: number;
+  remaining?: number;
+  unitPriceMinor?: string;
+}
+
+function errorBody(err: unknown): ClientLimitBody | undefined {
+  return axios.isAxiosError(err)
+    ? (err.response?.data as ClientLimitBody | undefined)
+    : undefined;
+}
+
+/**
+ * True when the API refused the request for client capacity rather than
+ * breaking. Distinguishing this from a plain failure matters: the fix is to buy
+ * a slot, not to retry or report a bug, so callers route to billing instead of
+ * showing an error.
+ */
+export function isClientLimit(err: unknown): boolean {
+  return (
+    axios.isAxiosError(err) &&
+    err.response?.status === 402 &&
+    errorBody(err)?.code === 'CLIENT_LIMIT'
+  );
+}
+
+/** The server's own explanation, including the live price, ready to display. */
+export function clientLimitMessage(err: unknown): string {
+  const body = errorBody(err);
+  return body?.message?.trim()
+    ? body.message
+    : 'You have reached your client limit. Buy an extra client slot to add more.';
 }

@@ -8,41 +8,12 @@ import {
 import { PrismaService } from '../../infra/prisma.module';
 import { AuditService } from '../audit/audit.service';
 import { FilesService } from '../files/files.service';
-
-/**
- * DRAFT v1 — replace with the legally reviewed text from the boss/lawyer.
- * Because acceptances record a version, swapping this for real copy later is
- * simply publishing v2; nothing here is binding until then.
- */
-const PLATFORM_TERMS_V1 = `KUMVWA FINANCE — PLATFORM TERMS OF SERVICE (v1 · DRAFT)
-
-1. WHAT KUMVWA IS
-Kumvwa Finance is a software platform providing loan management tools to
-verified lending businesses ("Lenders"). Kumvwa is NOT a lender and does not
-provide credit.
-
-2. LENDING DECISIONS ARE YOURS
-Each Lender is solely responsible for assessing borrowers, setting loan terms,
-approving or declining loans, and collecting repayments. Kumvwa does not assess
-credit risk on any borrower's behalf, and any risk indicator shown in the
-platform is informational only.
-
-3. NO LIABILITY FOR LENDING OUTCOMES
-To the maximum extent permitted by law, Kumvwa is not liable for any loss
-arising from lending decisions, borrower default, repayment behaviour, or the
-use of information provided through the platform.
-
-4. LENDER ELIGIBILITY
-Lender accounts are available only to businesses holding a valid Bank of Zambia
-registration, which must be maintained in good standing. Kumvwa may suspend
-accounts whose registration lapses.
-
-5. DATA AND PRIVACY
-Personal data is processed per the Privacy Policy and the Zambia Data
-Protection Act, 2021. Lenders are independently responsible for their lawful
-basis for processing borrower data they enter into the platform.
-
-[FULL TEXT PENDING LEGAL REVIEW — v1 placeholder]`;
+import {
+  DEFAULT_LEGAL_DOCUMENTS,
+  LEGAL_DOCUMENT_KINDS,
+  LEGAL_DOCUMENT_TITLES,
+  type LegalDocumentKind,
+} from './legal-documents';
 
 export type AcceptScope = 'platform_business' | 'platform_client' | 'tenant';
 
@@ -57,21 +28,47 @@ export class TermsService implements OnModuleInit {
     private readonly audit: AuditService,
   ) {}
 
-  /** Idempotent bootstrap — v1 template exists before any registration. */
+  /**
+   * Idempotent bootstrap — v1 of each document exists before any registration.
+   *
+   * A database is only ever missing one of these if it was created before the
+   * document existed, so an existing version 1 is never overwritten: that would
+   * silently change terms a user had already accepted.
+   */
   async onModuleInit(): Promise<void> {
-    const existing = await this.prisma.platformTerms.findUnique({
-      where: { version: 1 },
-    });
-    if (!existing) {
-      await this.prisma.platformTerms.create({
-        data: { version: 1, body: PLATFORM_TERMS_V1 },
-      });
-    }
+    await Promise.all(
+      LEGAL_DOCUMENT_KINDS.map((kind) =>
+        // Upsert on the (kind, version) key rather than find-then-create: two
+        // API instances booting at the same time both see the row missing, and
+        // the loser of that race would fail startup on the unique constraint.
+        // `update: {}` keeps the guarantee that an existing version 1 body is
+        // never rewritten.
+        this.prisma.platformTerms.upsert({
+          where: { kind_version: { kind, version: 1 } },
+          create: { kind, version: 1, body: DEFAULT_LEGAL_DOCUMENTS[kind] },
+          update: {},
+        }),
+      ),
+    );
   }
 
-  platformLatest() {
+  documentTitle(kind: LegalDocumentKind) {
+    return LEGAL_DOCUMENT_TITLES[kind];
+  }
+
+  platformLatest(kind: LegalDocumentKind = 'terms') {
     return this.prisma.platformTerms.findFirst({
+      where: { kind },
       orderBy: { version: 'desc' },
+    });
+  }
+
+  /** Version list for the admin history view. */
+  platformHistory(kind: LegalDocumentKind) {
+    return this.prisma.platformTerms.findMany({
+      where: { kind },
+      orderBy: { version: 'desc' },
+      select: { id: true, version: true, publishedAt: true },
     });
   }
 
@@ -84,20 +81,30 @@ export class TermsService implements OnModuleInit {
     });
   }
 
-  /** Platform admins publish a new platform terms version. */
-  async publishPlatformTerms(actorId: string, body: string) {
-    const latest = await this.platformLatest();
+  /**
+   * Platform admins publish a new version of a legal document.
+   *
+   * Always a new version rather than an edit, because `TermsAcceptance` rows
+   * reference the version a user agreed to; mutating a published body would
+   * make the recorded acceptance a lie.
+   */
+  async publishPlatformDocument(
+    actorId: string,
+    kind: LegalDocumentKind,
+    body: string,
+  ) {
+    const latest = await this.platformLatest(kind);
     const created = await this.prisma.platformTerms.create({
-      data: { version: (latest?.version ?? 0) + 1, body: body.trim() },
+      data: { kind, version: (latest?.version ?? 0) + 1, body: body.trim() },
     });
     await this.audit.record({
       actorId,
       action: 'terms.publish_platform',
       entity: 'PlatformTerms',
       entityId: created.id,
-      diff: { version: created.version },
+      diff: { kind, version: created.version },
     });
-    return { version: created.version };
+    return { kind, version: created.version };
   }
 
   /** Publishes a NEW version (never edits history — acceptances reference versions). */

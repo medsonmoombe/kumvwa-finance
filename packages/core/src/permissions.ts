@@ -13,6 +13,15 @@ export const PERMISSION_CATALOG = {
     { key: 'loans.repayment', label: 'Record repayments' },
     { key: 'loans.rollover', label: 'Approve extensions' },
   ],
+  Payments: [
+    { key: 'payments.read', label: 'View payments' },
+    { key: 'payments.charge', label: 'Take payments (MoMo / card)' },
+    { key: 'payments.disburse', label: 'Disburse loan funds' },
+  ],
+  Billing: [
+    { key: 'billing.read', label: 'View billing and usage' },
+    { key: 'billing.manage', label: 'Buy client slots / manage billing' },
+  ],
   Configuration: [
     { key: 'products.manage', label: 'Manage loan products' },
     { key: 'policy.manage', label: 'Manage lending rules' },

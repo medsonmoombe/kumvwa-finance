@@ -23,8 +23,15 @@ class _FakeAuthRepository implements AuthRepository {
   var restoreCalls = 0;
   var loginCalls = 0;
   var logoutCalls = 0;
+  var profileRefreshCalls = 0;
   var lastPhone = '';
   var lastPassword = '';
+
+  @override
+  Future<UserSession?> refreshProfileImage() async {
+    profileRefreshCalls++;
+    return restored;
+  }
 
   @override
   Future<UserSession?> restoreSession() async {

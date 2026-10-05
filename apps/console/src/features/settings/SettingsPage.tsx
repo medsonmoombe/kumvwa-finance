@@ -1,20 +1,36 @@
 import { useEffect, useState } from 'react';
-import { FiCheck, FiFileText, FiInfo, FiLock, FiShield, FiUploadCloud } from 'react-icons/fi';
+import { FiCheck, FiCreditCard, FiFileText, FiInfo, FiLock, FiShield, FiUploadCloud } from 'react-icons/fi';
 
 import { ErrorBox, inputCls, labelCls } from '../../components/ui';
 import { PageActionBar, Pill } from '../../components/kit';
 import { api, apiError } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { BillingTab } from './BillingTab';
 import { BrandingTab } from './BrandingTab';
 import { PolicyTab } from './PolicyTab';
 import { TermsTab } from './TermsTab';
 import { SecurityTab } from './SecurityTab';
 
-type Tab = 'business' | 'branding' | 'terms' | 'policy' | 'security';
+type Tab = 'business' | 'branding' | 'terms' | 'policy' | 'billing' | 'security';
+
+const TABS: readonly Tab[] = [
+  'business',
+  'branding',
+  'terms',
+  'policy',
+  'billing',
+  'security',
+];
+
+/** `?tab=billing` so the capacity banner can deep-link straight to buying slots. */
+function tabFromQuery(): Tab {
+  const q = new URLSearchParams(window.location.search).get('tab');
+  return TABS.includes(q as Tab) ? (q as Tab) : 'business';
+}
 
 export function SettingsPage() {
   const { tenant, refreshSession } = useAuth();
-  const [tab, setTab] = useState<Tab>('business');
+  const [tab, setTab] = useState<Tab>(tabFromQuery);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
@@ -66,9 +82,21 @@ export function SettingsPage() {
           ['branding', 'App Branding', <FiUploadCloud key="b" size={12} />],
           ['terms', 'Lending Terms', <FiFileText key="c" size={12} />],
           ['policy', 'Lending Rules', <FiShield key="d" size={12} />],
+          ['billing', 'Billing', <FiCreditCard key="f" size={12} />],
           ['security', 'Security', <FiLock key="e" size={12} />],
         ] as Array<[Tab, string, React.ReactNode]>).map(([id, lbl, icon]) => (
-          <button key={id} onClick={() => { setTab(id); setOk(''); setError(''); }}
+          <button key={id} onClick={() => {
+            setTab(id);
+            setOk('');
+            setError('');
+            // Keep the URL in step so a deep link survives a reload and so the
+            // browser Back button returns to the tab the user came from.
+            window.history.replaceState(
+              null,
+              '',
+              id === 'business' ? '/settings' : `/settings?tab=${id}`,
+            );
+          }}
             className={`-mb-px flex items-center gap-1.5 border-b-2 px-4 pb-2.5 pt-1 text-[11.5px] font-bold transition-colors ${
               tab === id ? 'border-brand-500 text-brand-600' : 'border-transparent text-ink-muted hover:text-ink'
             }`}>
@@ -142,6 +170,7 @@ export function SettingsPage() {
       {tab === 'branding' && <BrandingTab onFlash={setOk} onError={setError} />}
       {tab === 'terms' && <TermsTab onFlash={setOk} />}
       {tab === 'policy' && <PolicyTab onFlash={setOk} onError={setError} />}
+      {tab === 'billing' && <BillingTab onFlash={setOk} onError={setError} />}
       {tab === 'security' && <SecurityTab onFlash={setOk} onError={setError} />}
     </div>
   );

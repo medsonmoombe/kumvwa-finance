@@ -1,4 +1,5 @@
 import {
+  Allow,
   IsBoolean,
   IsIn,
   IsOptional,
@@ -29,6 +30,26 @@ export class SetFlagDto {
 
   @IsBoolean()
   value!: boolean;
+}
+
+/**
+ * The general settings write. `value` stays untyped at the DTO layer because the
+ * catalogue decides the shape per key — PlatformService.coerce validates it
+ * against that key's type and range, which is stricter than any single
+ * class-validator decorator could be for a mixed-type payload.
+ */
+export class SetSettingDto {
+  @IsString()
+  @MinLength(2)
+  @MaxLength(64)
+  key!: string;
+
+  // @Allow, not @IsDefined: the value is deliberately untyped here and is
+  // validated against the catalogue in PlatformService, which knows what each
+  // key actually expects. Without a decorator the global ValidationPipe's
+  // `forbidNonWhitelisted` rejects every settings write as an unknown property.
+  @Allow()
+  value?: unknown;
 }
 
 export class UpdateUserStatusDto {

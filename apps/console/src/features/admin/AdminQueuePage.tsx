@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { FiCheck, FiFileText } from 'react-icons/fi';
+import { FiFileText } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 
 import { Badge, ErrorBox, inputCls } from '../../components/ui';
 import {
-  AppTable, BandCardSkeleton, Drawer, PageActionBar, Pill, Sk, TextAreaSkeleton,
+  AppTable, Drawer, PageActionBar, Pill,
   type Column, type FilterOption,
 } from '../../components/kit';
 import { api, apiError } from '../../lib/api';
@@ -17,8 +17,6 @@ interface TenantRow {
   ownerPhone: string | null; ownerName: string | null; createdAt: string;
   review?: { canApprove: boolean; blockers: string[] };
 }
-
-interface PlatformTerms { version: number; body: string; publishedAt: string }
 
 const FILTERS: FilterOption[] = [
   { value: '', label: 'All' },
@@ -35,86 +33,6 @@ function formatBytes(n: number) {
   if (n < 1024) return `${n} B`;
   if (n < 1048576) return `${(n / 1024).toFixed(0)} KB`;
   return `${(n / 1048576).toFixed(1)} MB`;
-}
-
-// ── Platform Terms editor ──────────────────────────────────────────────────
-
-function PlatformTermsEditor() {
-  const [current, setCurrent] = useState<PlatformTerms | null>(null);
-  const [draft, setDraft] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [publishing, setPublishing] = useState(false);
-  const [error, setError] = useState('');
-  const [flash, setFlash] = useState('');
-
-  useEffect(() => {
-    api.get<PlatformTerms>('/admin/terms/platform')
-      .then((r) => { setCurrent(r.data); setDraft(r.data.body); })
-      .catch(() => setError('Could not load platform terms'))
-      .finally(() => setLoading(false));
-  }, []);
-
-  async function publish() {
-    setPublishing(true); setError(''); setFlash('');
-    try {
-      const res = await api.post<{ version: number }>('/admin/terms/platform', { body: draft });
-      setFlash(`Platform Terms v${res.data.version} published — all users will be asked to re-accept.`);
-      setCurrent((c) => c ? { ...c, version: res.data.version, body: draft, publishedAt: new Date().toISOString() } : null);
-    } catch (e) { setError(apiError(e)); }
-    finally { setPublishing(false); }
-  }
-
-  if (loading) {
-    return (
-      <BandCardSkeleton title="w-48" right>
-        <div className="p-4">
-          <Sk w="w-3/4" h="h-2" className="mb-2" />
-          <TextAreaSkeleton height={300} />
-          <div className="mt-3 flex items-center justify-between">
-            <Sk w="w-32" h="h-2" />
-            <Sk w="w-28" h="h-8" />
-          </div>
-        </div>
-      </BandCardSkeleton>
-    );
-  }
-
-  return (
-    <div className="overflow-hidden rounded-card border border-line bg-white">
-      <div className="band">
-        <span className="t">{current ? `Platform Terms · v${current.version}` : 'Publish Platform Terms v1'}</span>
-        {current && (
-          <a href={`${import.meta.env.VITE_API_URL ?? 'http://localhost:8080/api/v1'}/terms/platform/pdf`}
-            target="_blank" rel="noopener noreferrer"
-            className="ml-auto flex items-center gap-1 text-[10.5px] font-bold text-brand-600 hover:underline">
-            <FiFileText size={11} /> Current PDF
-          </a>
-        )}
-      </div>
-      <div className="p-4">
-        {error && <div className="mb-3"><ErrorBox message={error} /></div>}
-        {flash && (
-          <div className="mb-3 flex items-center gap-2 rounded-[3px] border border-emerald-200 bg-accent-50 px-3 py-2 text-[11.5px] font-semibold text-accent-700">
-            <FiCheck size={12} /> {flash}
-          </div>
-        )}
-        <p className="mb-2 text-[11px] text-ink-muted">
-          Publishing a new version requires all registered businesses to re-accept before they can continue.
-        </p>
-        <textarea
-          className={`${inputCls} min-h-[300px] font-mono text-[12px] leading-relaxed`}
-          value={draft} onChange={(e) => setDraft(e.target.value)}
-        />
-        <div className="mt-3 flex items-center justify-between">
-          <span className="text-[10.5px] text-ink-muted">{draft.trim().length} chars · min 50</span>
-          <Pill onClick={publish}
-            disabled={publishing || draft.trim().length < 50 || draft.trim() === current?.body.trim()}>
-            {publishing ? 'Publishing…' : current ? `Publish v${current.version + 1}` : 'Publish v1'}
-          </Pill>
-        </div>
-      </div>
-    </div>
-  );
 }
 
 // ── Main page ──────────────────────────────────────────────────────────────
@@ -239,11 +157,19 @@ export function AdminQueuePage() {
       {error && <div className="mb-3"><ErrorBox message={error} /></div>}
 
       {tab === 'terms' ? (
-        <PlatformTermsEditor />
+        <div className="overflow-hidden rounded-card border border-line bg-white">
+          <div className="p-4">
+            <p className="text-[12px] text-ink-muted">
+              Platform Terms now live with the rest of the platform configuration.
+            </p>
+            <Pill onClick={() => nav('/admin/settings?tab=terms')}>Open Platform Settings</Pill>
+          </div>
+        </div>
       ) : (
         <AppTable
           columns={columns}
           rows={rows}
+          searchKeys={['name', 'type', 'status', 'ownerName', 'ownerPhone']}
           filters={FILTERS}
           activeFilter={filter}
           onFilterChange={setFilter}

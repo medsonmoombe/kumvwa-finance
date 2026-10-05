@@ -25,7 +25,10 @@ import 'package:kumvwa_finance/features/notifications/presentation/screens/notif
 import 'package:kumvwa_finance/features/notifications/presentation/screens/notification_detail_screen.dart';
 import 'package:kumvwa_finance/features/clients/presentation/screens/client_invite_screen.dart';
 import 'package:kumvwa_finance/features/clients/presentation/screens/invite_code_screen.dart';
+import 'package:kumvwa_finance/features/clients/presentation/screens/lender_invite_client_screen.dart';
 import 'package:kumvwa_finance/features/loans/presentation/screens/client_home_screen.dart';
+import 'package:kumvwa_finance/features/legal/data/legal_documents_repository.dart';
+import 'package:kumvwa_finance/features/legal/presentation/legal_document_screen.dart';
 import 'package:kumvwa_finance/features/loans/presentation/screens/client_loan_detail_screen.dart';
 import 'package:kumvwa_finance/features/loans/presentation/screens/client_loan_history_screen.dart';
 import 'package:kumvwa_finance/features/loans/presentation/screens/client_request_loan_screen.dart';
@@ -34,12 +37,14 @@ import 'package:kumvwa_finance/features/loans/presentation/screens/request_statu
 import 'package:kumvwa_finance/features/notifications/domain/app_notification.dart';
 import 'package:kumvwa_finance/features/onboarding/domain/registration_gate.dart';
 import 'package:kumvwa_finance/features/onboarding/presentation/screens/profile_stepper_screen.dart';
+import 'package:kumvwa_finance/features/payments/presentation/payment_receipts_screen.dart';
 import 'package:kumvwa_finance/features/profile/presentation/screens/client_profile_screen.dart';
 import 'package:kumvwa_finance/features/profile/presentation/screens/complete_profile_screen.dart';
 
 /// Client-only app. The lender surface lives in the web console; the mobile
 /// reference implementation is preserved on the `lender-mobile-reference`
 /// branch.
+///
 /// Where a borrower must land, given who they are and what they still owe.
 ///
 /// Pure so the rules can be tested without standing up the router: [status]
@@ -53,6 +58,12 @@ String? appRedirect({
   required String? role,
 }) {
   if (location.startsWith('/dev')) return null;
+
+  // Platform legal documents are public content: readable before sign-in and
+  // from both the client and lender surfaces, so no auth state gates them.
+  // Without this, the Terms/Privacy rows on the profile screens were bounced
+  // straight back to `/c/home` (or `/lender/home`) and never opened.
+  if (location.startsWith('/legal')) return null;
 
   const preLogin = ['/splash', '/login', '/register', '/invite'];
 
@@ -171,7 +182,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (_, _) => const LenderApplicationReviewScreen(),
       ),
 
-      // ── Lender shell ──────────────────────────────────────────────────────
+      // ── Lender shell ────────────────────────────────────────────────
       StatefulShellRoute.indexedStack(
         builder: (_, _, shell) => LenderShell(shell: shell),
         branches: [
@@ -191,10 +202,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 name: 'lender-clients',
                 builder: (_, _) => const LenderClientsScreen(),
                 routes: [
+                  // Static segment first: `/lender/clients/new` must not fall
+                  // through to `:id` and open a client-detail screen for a
+                  // client literally named "new".
+                  GoRoute(
+                    path: 'new',
+                    name: 'lender-client-new',
+                    builder: (_, _) => const LenderInviteClientScreen(),
+                  ),
                   GoRoute(
                     path: ':id',
                     name: 'lender-client-detail',
-                    builder: (_, state) => LenderClientDetailScreen(clientId: state.pathParameters['id']!),
+                    builder: (_, state) => LenderClientDetailScreen(
+                      clientId: state.pathParameters['id']!,
+                    ),
                   ),
                 ],
               ),
@@ -232,6 +253,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
           ),
         ],
       ),
+
       GoRoute(
         path: '/invite/:token',
         name: 'client-invite',
@@ -241,7 +263,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/lender/loans/:id',
         name: 'lender-loan-detail',
-        builder: (_, state) => LenderLoanDetailScreen(loanId: state.pathParameters['id']!),
+        builder: (_, state) =>
+            LenderLoanDetailScreen(loanId: state.pathParameters['id']!),
       ),
       // Dev-only: never registered in release, so the loaders preview
       // cannot ship.
@@ -308,6 +331,31 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/c/register',
         name: 'client-register',
         builder: (_, _) => const ProfileStepperScreen(),
+      ),
+
+      // ---------- payment receipts ----------
+      // A pushed route rather than a tab: a borrower looks at receipts to answer
+      // "did that payment go through?", and that is a one-off lookup, not a
+      // place they live. Sits outside the shell so it gets a real back button
+      // and no bottom-nav chrome.
+      GoRoute(
+        path: '/c/payments',
+        name: 'client-payments',
+        builder: (_, state) => PaymentReceiptsScreen(
+          loanId: state.uri.queryParameters['loanId'],
+          loanRef: state.uri.queryParameters['loanRef'],
+        ),
+      ),
+
+      // Platform legal documents. Public content, but routed here so it gets a
+      // real back button and no bottom-nav chrome. Shared by client and lender
+      // because the documents themselves are platform-wide.
+      GoRoute(
+        path: '/legal/:kind',
+        name: 'legal-document',
+        builder: (_, state) => LegalDocumentScreen(
+          kind: LegalDocumentKind.parse(state.pathParameters['kind'] ?? 'terms'),
+        ),
       ),
 
       // ---------- client shell (borrower bottom-nav tabs) ----------

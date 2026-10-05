@@ -14,6 +14,7 @@ void main() {
       final invite = await repo.createInvite(
         clientName: '  Mwansa Bwalya  ',
         phone: ' 0971234567 ',
+        email: 'mwansa@example.com',
       );
 
       expect(invite.code, 'KMV-1000');
@@ -24,10 +25,15 @@ void main() {
   );
 
   test('codes increment across invites', () async {
-    final first = await repo.createInvite(clientName: 'A', phone: '0971111111');
+    final first = await repo.createInvite(
+      clientName: 'A',
+      phone: '0971111111',
+      email: 'a@example.com',
+    );
     final second = await repo.createInvite(
       clientName: 'B',
       phone: '0972222222',
+      email: 'b@example.com',
     );
 
     expect(first.code, 'KMV-1000');
@@ -35,7 +41,11 @@ void main() {
   });
 
   test('getByCode is case- and whitespace-insensitive', () async {
-    await repo.createInvite(clientName: 'A', phone: '0971111111');
+    await repo.createInvite(
+      clientName: 'A',
+      phone: '0971111111',
+      email: 'a@example.com',
+    );
 
     final invite = await repo.getByCode('  kmv-1000 ');
 
@@ -59,6 +69,7 @@ void main() {
     final invite = await repo.createInvite(
       clientName: 'A',
       phone: '0971111111',
+      email: 'a@example.com',
     );
 
     await repo.submitAccount(

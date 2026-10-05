@@ -99,6 +99,7 @@ export function ProductsPage() {
       <AppTable
         columns={columns}
         rows={visible}
+        searchKeys={['name', 'code', 'frequency', 'repaymentStructure']}
         filters={[
           { value: 'active', label: 'Active' },
           { value: 'all', label: 'All' },

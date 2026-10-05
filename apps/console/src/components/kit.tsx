@@ -14,6 +14,8 @@ const BAND_GRID: Record<number, string> = {
   4: 'grid-cols-2 sm:grid-cols-4',
   5: 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-5',
   6: 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-6',
+  7: 'grid-cols-2 sm:grid-cols-4 lg:grid-cols-7',
+  8: 'grid-cols-2 sm:grid-cols-4 lg:grid-cols-8',
 };
 const bandGrid = (cols: number) => BAND_GRID[cols] ?? 'grid-cols-2 sm:grid-cols-3';
 
@@ -414,11 +416,63 @@ export interface TableAction<T> {
 
 export interface FilterOption { value: string; label: string; }
 
+/**
+ * Case-insensitive match of `q` against the given row keys.
+ *
+ * Handles the shapes that actually show up in these tables: strings, numbers,
+ * booleans, `null` (never matches), arrays (e.g. a client's `lenders`), and
+ * nested objects (serialised, so `status: 'active'` and friends are findable).
+ */
+export function rowMatches<T>(row: T, keys: readonly string[], q: string): boolean {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return true;
+  const rec = row as Record<string, unknown>;
+  return keys.some((key) => {
+    const v = rec[key];
+    if (v == null) return false;
+    if (Array.isArray(v)) return v.some((i) => String(i).toLowerCase().includes(needle));
+    if (typeof v === 'object') return JSON.stringify(v).toLowerCase().includes(needle);
+    return String(v).toLowerCase().includes(needle);
+  });
+}
+
+/** The console's single search control — AppTable's toolbar and hand-rolled
+ *  list pages both use this so the field looks and behaves the same. */
+export function SearchInput({ value, onChange, placeholder = 'Search…', className = '' }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; className?: string;
+}) {
+  return (
+    <div className={`relative min-w-0 ${className}`}>
+      <FiSearch size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-muted" />
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="h-[26px] w-full min-w-0 rounded-[3px] border border-line bg-white pl-7 pr-3 text-[11px] outline-none transition-all sm:w-[180px] sm:focus:w-[220px]"
+      />
+      {value && (
+        <button onClick={() => onChange('')} aria-label="Clear search"
+          className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink">
+          <FiX size={10} />
+        </button>
+      )}
+    </div>
+  );
+}
+
 export interface AppTableProps<T extends { id: string }> {
   columns: Array<Column<T>>;
   rows: T[] | null;
   /** Called when the search query or active filter changes. */
   onSearch?: (q: string) => void;
+  /**
+   * Row keys to match the search box against in the browser.
+   *
+   * Supply this for lists that are already fully loaded and have no server-side
+   * `q` parameter — the table then filters the rows it holds. When the endpoint
+   * supports `?q=`, use `onSearch` instead and the server does the matching.
+   */
+  searchKeys?: readonly string[];
   /** Filter chip options — first item should be { value: '', label: 'All' }. */
   filters?: FilterOption[];
   activeFilter?: string;
@@ -508,7 +562,7 @@ function RowMenu<T extends { id: string }>({
 }
 
 export function AppTable<T extends { id: string }>({
-  columns, rows, onSearch, filters, activeFilter, onFilterChange,
+  columns, rows, onSearch, searchKeys, filters, activeFilter, onFilterChange,
   onRefresh, actions, onRowClick, empty, pageSize = 20, toolbarRight,
 }: AppTableProps<T>) {
   const [q, setQ] = useState('');
@@ -523,11 +577,17 @@ export function AppTable<T extends { id: string }>({
     onSearch?.(v);
   }
 
+  // Client-side search: only when the page supplied keys. Otherwise the query
+  // belongs to the server (onSearch), and filtering here would filter an
+  // already-sliced result set a second time.
+  const searched = searchKeys?.length ? (rows ?? null)?.filter((row) => rowMatches(row, searchKeys, q)) ?? null : rows;
+
   // client-side pagination (server-side: pass already-sliced rows)
-  const total = rows?.length ?? 0;
+  const total = searched?.length ?? 0;
   const pages = Math.max(1, Math.ceil(total / pageSize));
-  const slice = rows?.slice((page - 1) * pageSize, page * pageSize) ?? null;
+  const slice = searched?.slice((page - 1) * pageSize, page * pageSize) ?? null;
   const hasChips = !!filters && filters.length > 1;
+  const showSearch = !!onSearch || !!searchKeys?.length;
 
   const allCols = [
     ...columns,
@@ -558,22 +618,16 @@ export function AppTable<T extends { id: string }>({
             ))}
           </div>
         )}
-        {/* search — full width on a phone unless the chips already took the row */}
-        <div className={`relative min-w-0 sm:ml-auto sm:w-auto ${hasChips ? 'w-full' : 'w-full flex-1 sm:flex-none'}`}>
-          <FiSearch size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-muted" />
-          <input
+        {/* search — full width on a phone unless the chips already took the row.
+            Only rendered when the page actually wired a search, so the toolbar
+            never shows a field that cannot do anything. */}
+        {showSearch && (
+          <SearchInput
             value={q}
-            onChange={(e) => handleSearch(e.target.value)}
-            placeholder="Search…"
-            className="h-[26px] w-full min-w-0 rounded-[3px] border border-line bg-white pl-7 pr-3 text-[11px] outline-none transition-all sm:w-[180px] sm:focus:w-[220px]"
+            onChange={handleSearch}
+            className={`sm:ml-auto sm:w-auto ${hasChips ? 'w-full' : 'w-full flex-1 sm:flex-none'}`}
           />
-          {q && (
-            <button onClick={() => handleSearch('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink">
-              <FiX size={10} />
-            </button>
-          )}
-        </div>
+        )}
         {toolbarRight}
         {onRefresh && (
           <button onClick={onRefresh} aria-label="Refresh"
@@ -603,7 +657,7 @@ export function AppTable<T extends { id: string }>({
               {slice.length === 0 ? (
                 <tr>
                   <td colSpan={allCols.length} className="px-3 py-10 text-center text-[12px] text-ink-muted">
-                    {empty ?? 'No records'}
+                    {q.trim() ? 'No records match your search' : empty ?? 'No records'}
                   </td>
                 </tr>
               ) : (

@@ -7,9 +7,11 @@ import {
   AppTable, Drawer, PageActionBar, Pill, StatBand, StatBandSkeleton,
   type Column, type FilterOption,
 } from '../../components/kit';
-import { api, apiError } from '../../lib/api';
+import { api } from '../../lib/api';
 import { date } from '../../lib/format';
+import { CapacityBanner } from './CapacityBanner';
 import { InviteForm } from './ClientsPage';
+import { useLenderCapacity } from './useLenderCapacity';
 
 export interface InviteRow {
   id: string;
@@ -39,6 +41,7 @@ export function InvitesPage() {
   const [filter, setFilter] = useState('');
   const [error, setError] = useState('');
   const [inviting, setInviting] = useState(false);
+  const [capacity, reloadCapacity] = useLenderCapacity();
 
   const load = useCallback(() => {
     setError('');
@@ -107,11 +110,14 @@ export function InvitesPage() {
         <StatBandSkeleton cols={4} />
       )}
 
+      <CapacityBanner state={capacity} />
+
       {error && <div className="mb-3"><ErrorBox message={error} /></div>}
 
       <AppTable
         columns={columns}
         rows={items}
+        searchKeys={['clientName', 'phone', 'status', 'id']}
         filters={FILTERS}
         activeFilter={filter}
         onFilterChange={setFilter}
@@ -131,7 +137,15 @@ export function InvitesPage() {
         title="Invite a Client"
         sub="The client receives an invite code to redeem in the app."
       >
-        <InviteForm onDone={() => { setInviting(false); load(); }} />
+        <InviteForm
+          onDone={() => {
+            setInviting(false);
+            load();
+            // A completed invite claims a slot, so the banner's numbers are now
+            // stale. Re-read them rather than leaving the old count on screen.
+            reloadCapacity();
+          }}
+        />
       </Drawer>
     </div>
   );
